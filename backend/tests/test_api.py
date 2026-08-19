@@ -14,7 +14,7 @@ def test_health():
 def test_runners_listed():
     res = client.get("/api/runners")
     assert res.status_code == 200
-    assert set(res.json()) >= {"local", "wsl"}
+    assert set(res.json()) >= {"pyoqp", "local", "wsl"}
 
 
 def test_submit_without_openqp_fails_gracefully(tmp_path, monkeypatch):
@@ -38,3 +38,15 @@ def test_submit_without_openqp_fails_gracefully(tmp_path, monkeypatch):
     # Without an OpenQP install the job must fail with a clear error,
     # never hang or crash the server.
     assert info["status"] in ("done", "failed")
+
+    files = client.get(f"/api/jobs/{job_id}/files").json()
+    names = {f["name"] for f in files}
+    assert "input.oqp" in names
+
+    res = client.get(f"/api/jobs/{job_id}/files/input.oqp")
+    assert res.status_code == 200
+    assert "system=O 0 0 0" in res.text
+
+    # Path escapes must 404, not leak files outside the job directory.
+    res = client.get(f"/api/jobs/{job_id}/files/..%2F..%2Fpyproject.toml")
+    assert res.status_code == 404

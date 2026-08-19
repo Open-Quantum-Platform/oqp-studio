@@ -1,0 +1,1857 @@
+
+   PyOQP started at 2026-08-02 17:17:59
+   PyOQP build: OpenQP (git HEAD 2b08607666ca813eefe231490fe66973d86a870b+dirty)
+
+
+   ==============================================
+   PyOQP: Symmetry metadata
+   ==============================================
+
+   PyOQP symmetry status:                      disabled
+   PyOQP symmetry requested point group:       auto
+   PyOQP symmetry requested subgroup:          auto
+   PyOQP symmetry detected point group:        c1
+   PyOQP symmetry detected subgroup:           c1
+   PyOQP symmetry label MO:                   yes
+   PyOQP symmetry label states:               yes
+   PyOQP symmetry label modes:                yes
+   PyOQP symmetry use integral symmetry:      no
+   PyOQP symmetry use response symmetry:      no
+   PyOQP symmetry strict:                     no
+   PyOQP symmetry tolerance:                  1e-05
+
+   Performance settings (perf = 1)
+     scf.xc_c2f        = off       (preset)
+     scf.xc_phi_cache  = off       (preset)
+     scf.xc_incdft     = off       (preset)
+     scf.grad_cutoff   = 1.0d-10   (preset)
+     tdhf.resp_cutoff  = 1e-8      (preset)
+     tdhf.fp32         = off       (preset)
+     tdhf.zv_warmstart = on        (preset)
+
+
+          ***********************************************************
+          *                                                         *
+          *             OpenQP: Open Quantum Platform               *
+          *                                                         *
+          *                Version: 1.0 Aug, 2024                   *
+          *                                                         *
+          ***********************************************************
+          *     The most efficient implementation of MRSF-TDDFT.    *
+          ***********************************************************
+          *                                                         *
+          *   OpenQP was initiated by Prof. Cheol Ho Choi in 2012.  *
+          *                                                         *
+          *   It has since been developed by:                       *
+          *   Dr. Vladimir Mironov                                  *
+          *   Dr. Konstantin Komarov                                *
+          *   Mr. Igor Gerasimov                                    *
+          *   Dr. Hiroya Nakata                                     *
+          *   Dr. Mohsen Mazaherifar                                *
+          *   Mr. Vladimir Makhnev                                  *
+          *   Mr. Alireza Lashkaripour                              *
+          *                                                         *
+          *   In 2024, Prof. Jingbai Li at Hoffmann Institute of    *
+          *   Advanced Materials began developing PyOQP.            *
+          *                                                         *
+          ***********************************************************
+
+                     Job Details:
+                      Start Time: Sun Aug  2 17:17:59 2026    
+                      Host: redacted                    
+                      Resources Allocated:
+                        OpenMP Threads:   16
+
+   ==============================================
+   PyOQP: Entering Electronic Energy Calculation
+   ==============================================
+
+   PyOQP natom:                        3
+   PyOQP charge:                       0
+    
+
+                    ++++++++++++++++++++++++++++++++++++++++
+                      MODULE: apply_basis 
+                      Setting up basis set information
+                    ++++++++++++++++++++++++++++++++++++++++
+
+     Basis Sets options
+     ------------------
+     Basis Sets: 6-31g*
+     Number of Shells  =      10     Number of Primitives  =      23
+     Number of Basis Set functions  =      19
+     Maximum Angluar Momentum =       2
+
+     AO angular type: Cartesian (6d/10f/15g)
+
+
+     ====================== Basis Set Details ======================
+
+                 Exponent             Normalized Coefficient
+     O 
+          S
+                5.48467E+03                8.31724E-01
+                8.25235E+02                1.53082E+00
+                1.88047E+02                2.47715E+00
+                5.29645E+01                3.25628E+00
+                1.68976E+01                2.79289E+00
+                5.79964E+00                9.54938E-01
+          S
+                1.55396E+01               -6.17934E-01
+                3.59993E+00               -2.75721E-01
+                1.01376E+00                8.14208E-01
+          P
+                1.55396E+01                3.11694E+00
+                3.59993E+00                2.40144E+00
+                1.01376E+00                1.05436E+00
+          S
+                2.70006E-01                2.66956E-01
+          P
+                2.70006E-01                2.77432E-01
+          D
+                8.00000E-01                1.11382E+00
+     H 
+          S
+                1.87311E+01                2.14935E-01
+                2.82539E+00                3.64571E-01
+                6.40122E-01                4.15051E-01
+          S
+                1.61278E-01                1.81381E-01
+     H 
+          S
+                1.87311E+01                2.14935E-01
+                2.82539E+00                3.64571E-01
+                6.40122E-01                4.15051E-01
+          S
+                1.61278E-01                1.81381E-01
+
+     ==================== End of Basis Set Data ====================
+
+                    ++++++++++++++++++++++++++++++++++++++++
+                       MODULE: int1e
+                       Computing H, S and T Matrices
+                    ++++++++++++++++++++++++++++++++++++++++
+
+                     ================================
+                     Cartesian Coordinate in Angstrom
+                     ================================
+        ATOM     ZNUC           X              Y              Z
+      --------------------------------------------------------------
+          1      8.0    -0.000000000     0.000000000    -0.041061554
+          2      1.0    -0.533194329     0.533194329    -0.614469223
+          3      1.0     0.533194329    -0.533194329    -0.614469223
+
+ ...... End Of One Electron Integrals ......
+
+
+                    ++++++++++++++++++++++++++++++++++++++++
+                       MODULE: Guess_Huckel
+                       Initial guess using Huckel theory
+                    ++++++++++++++++++++++++++++++++++++++++
+
+ ...... End of initial orbital guess ......
+
+   Step  CPU time (seconds):      0.000   Wall time (seconds):      0.000
+   Total CPU time (seconds):      0.000   Wall time (seconds):      0.000
+
+   ==============================================
+      PyOQP: Orbital Guess
+   ==============================================
+
+   PyOQP guess type:                   huckel
+   PyOQP guess file:                   compute orbitals
+   PyOQP guess alpha:                  computed
+   PyOQP guess beta:                   copied
+   PyOQP guess swapmo:                 
+
+
+   ==============================================
+   PyOQP: Normal SCF steps
+   ==============================================
+
+   PyOQP method:                       hf
+   PyOQP hf/functional:                pbe
+   PyOQP basis:                        6-31g*
+   PyOQP scf type:                     rhf
+   PyOQP scf maxit:                    30
+   PyOQP scf forced attempt:           2
+   PyOQP scf multiplicity:             1
+   PyOQP scf convergence:              1e-06
+   PyOQP scf incremental:              True
+   PyOQP diis type:                    cdiis
+   PyOQP cdiis switch:                 0.3
+   PyOQP vdiis/vshift switch:          0.003
+   PyOQP vshift:                       0.0
+
+
+                    ++++++++++++++++++++++++++++++++++++++++
+                       MODULE: HF_DFT_Energy
+                       Computing HF/DFT SCF Energy
+                    ++++++++++++++++++++++++++++++++++++++++
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+     DFT Threshold         = 0.147E-07
+     Molecular grid: 21862 points in 374 slices
+   Step  CPU time (seconds):      0.004   Wall time (seconds):      0.003
+   Total CPU time (seconds):      0.004   Wall time (seconds):      0.003
+
+     SCF options
+     ------------------
+     SCF type = RHF     MaxIT = 30     Conv =  1.00E-06
+     Converger = c-DIIS   MaxDIIS = 7
+     DIIS reset every 10 iters when error >  5.00E-03
+
+   Direct SCF iterations begin.
+   =============================================================================================
+    Iter         Energy            Delta E         Int Skip     DIIS Error     Shift     Method
+   =============================================================================================
+       1     -76.0752448455    -76.0752448455             0     0.75148107     0.000     SD
+       2     -76.3081561005     -0.2329112550             0     0.13880636     0.000     C-DIIS
+       3     -76.3186545016     -0.0104984011             0     0.04533245     0.000     C-DIIS
+       4     -76.3202157388     -0.0015612371             0     0.03010670     0.000     C-DIIS
+       5     -76.3209025927     -0.0006868539             0     0.00150301     0.000     C-DIIS
+       6     -76.3209048770     -0.0000022843             0     0.00002538     0.000     C-DIIS
+       7     -76.3209048783     -0.0000000013             0     0.00000081     0.000     C-DIIS
+   ----------------------------------------------------------------
+          SCF convergence achieved ....
+
+ Final RHF energy is      -76.3209048783 after   7 iterations
+
+
+ DFT: XC energy              =        -9.2704533133
+ DFT: total electron density =        10.0001525810
+ DFT: number of electrons    =        10
+
+
+          ===============================
+          Molecular Orbitals and Energies
+          ===============================
+
+   -------------- Alpha Orbitals -------------
+
+                          1                2                3                4                5
+                  -18.7513752225    -0.9135217961    -0.4713365989    -0.3088779057    -0.2285375021
+    1  O  1  S     -0.9925592930     0.2080043187     0.0000000000     0.0906191835     0.0000000000
+    2  O  1  S     -0.0272129385    -0.4655816047     0.0000000000    -0.1818587710     0.0000000000
+    3  O  1  X     -0.0000000000     0.0000000000    -0.3680109396     0.0000000000     0.4534644657
+    4  O  1  Y      0.0000000000     0.0000000000     0.3680109396     0.0000000000     0.4534644657
+    5  O  1  Z      0.0010753460     0.1389221312     0.0000000000    -0.5531358872    -0.0000000000
+    6  O  1  S     -0.0109007995    -0.4258361497    -0.0000000000    -0.4198716908    -0.0000000000
+    7  O  1  X      0.0000000000    -0.0000000000    -0.1838495567     0.0000000000     0.3602887978
+    8  O  1  Y     -0.0000000000     0.0000000000     0.1838495567    -0.0000000000     0.3602887978
+    9  O  1  Z      0.0000474386     0.0625909626     0.0000000000    -0.3742478118     0.0000000000
+   10  O  1 XX      0.0083307918    -0.0050395185     0.0000000000    -0.0019696849     0.0000000000
+   11  O  1 YY      0.0083307918    -0.0050395185     0.0000000000    -0.0019696849     0.0000000000
+   12  O  1 ZZ      0.0083233908    -0.0172428913     0.0000000000     0.0531223362     0.0000000000
+   13  O  1 XY      0.0000195389     0.0180730394     0.0000000000     0.0032740150    -0.0000000000
+   14  O  1 XZ     -0.0000000000     0.0000000000     0.0274750543    -0.0000000000    -0.0262087752
+   15  O  1 YZ      0.0000000000    -0.0000000000    -0.0274750543     0.0000000000    -0.0262087752
+   16  H  2  S     -0.0003528670    -0.1455683242     0.2422720715     0.1398985411    -0.0000000000
+   17  H  2  S      0.0011438331    -0.0065315917     0.1376864944     0.1113667943     0.0000000000
+   18  H  3  S     -0.0003528670    -0.1455683242    -0.2422720715     0.1398985411    -0.0000000000
+   19  H  3  S      0.0011438331    -0.0065315917    -0.1376864944     0.1113667943     0.0000000000
+
+                          6                7                8                9               10
+                    0.0483294210     0.1328277590     0.7438047982     0.8194551941     0.8431642247
+    1  O  1  S     -0.1023854616     0.0000000000     0.0000000000    -0.0351250252    -0.0000000000
+    2  O  1  S      0.1364967633     0.0000000000    -0.0000000000     0.0337170535     0.0000000000
+    3  O  1  X      0.0000000000     0.3020630865    -0.1276639545    -0.0000000000    -0.6799758582
+    4  O  1  Y      0.0000000000    -0.3020630865     0.1276639545    -0.0000000000    -0.6799758582
+    5  O  1  Z     -0.2828752373     0.0000000000     0.0000000000    -0.7769582222     0.0000000000
+    6  O  1  S      1.2704075492    -0.0000000000     0.0000000000     0.0426539347    -0.0000000000
+    7  O  1  X     -0.0000000000     0.5347700104    -0.3260416621    -0.0000000000     0.7331704902
+    8  O  1  Y      0.0000000000    -0.5347700104     0.3260416621     0.0000000000     0.7331704902
+    9  O  1  Z     -0.4588579224     0.0000000000    -0.0000000000     0.4928746124    -0.0000000000
+   10  O  1 XX     -0.0495849311    -0.0000000000    -0.0000000000    -0.0495186627     0.0000000000
+   11  O  1 YY     -0.0495849311     0.0000000000    -0.0000000000    -0.0495186627     0.0000000000
+   12  O  1 ZZ     -0.0250245358    -0.0000000000    -0.0000000000    -0.0362942917     0.0000000000
+   13  O  1 XY     -0.0069845849     0.0000000000    -0.0000000000     0.1520099338     0.0000000000
+   14  O  1 XZ      0.0000000000    -0.0123320928    -0.1435771724    -0.0000000000    -0.0121793744
+   15  O  1 YZ     -0.0000000000     0.0123320928     0.1435771724     0.0000000000    -0.0121793744
+   16  H  2  S     -0.1052337169     0.1162776322    -0.8395561148    -0.6411747411    -0.0000000000
+   17  H  2  S     -0.9732832107     1.2924231301     0.6315042107     0.4988443577     0.0000000000
+   18  H  3  S     -0.1052337169    -0.1162776322     0.8395561148    -0.6411747411    -0.0000000000
+   19  H  3  S     -0.9732832107    -1.2924231301    -0.6315042107     0.4988443577     0.0000000000
+
+                         11               12               13               14               15
+                    0.8528762763     1.0178533282     1.1452351162     1.6595512089     1.6700597079
+    1  O  1  S     -0.0215416574    -0.0000000000     0.0793279633     0.0083324540     0.0000000000
+    2  O  1  S      0.7733886186     0.0000000000     1.5098551782     0.1008139194    -0.0000000000
+    3  O  1  X      0.0000000000    -0.6959998573    -0.0000000000    -0.0000000000     0.0000000000
+    4  O  1  Y      0.0000000000     0.6959998573     0.0000000000     0.0000000000    -0.0000000000
+    5  O  1  Z      0.4796318906    -0.0000000000    -0.3679343628    -0.0077843741     0.0000000000
+    6  O  1  S     -1.2060104793    -0.0000000000    -3.7183374526    -0.2888628522     0.0000000000
+    7  O  1  X     -0.0000000000     1.1817769652    -0.0000000000     0.0000000000    -0.0000000000
+    8  O  1  Y     -0.0000000000    -1.1817769652     0.0000000000    -0.0000000000     0.0000000000
+    9  O  1  Z     -0.8301090629     0.0000000000     1.0520946690     0.1566411559    -0.0000000000
+   10  O  1 XX      0.2054767356     0.0000000000     0.4645639114    -0.4700444243    -0.8660254038
+   11  O  1 YY      0.2054767356     0.0000000000     0.4645639114    -0.4700444243     0.8660254038
+   12  O  1 ZZ      0.2562853398    -0.0000000000     0.3816633763     1.0130149041     0.0000000000
+   13  O  1 XY      0.1295949942     0.0000000000    -0.2274584859     0.1065206851     0.0000000000
+   14  O  1 XZ     -0.0000000000     0.0070473761    -0.0000000000    -0.0000000000     0.0000000000
+   15  O  1 YZ      0.0000000000    -0.0070473761     0.0000000000    -0.0000000000     0.0000000000
+   16  H  2  S     -0.5783083251    -0.0179605846     0.3089362203     0.0932017848     0.0000000000
+   17  H  2  S      0.4037073798     0.9857656348     0.8322522230     0.0493454228    -0.0000000000
+   18  H  3  S     -0.5783083251     0.0179605846     0.3089362203     0.0932017848     0.0000000000
+   19  H  3  S      0.4037073798    -0.9857656348     0.8322522230     0.0493454228    -0.0000000000
+
+                         16               17               18               19
+                    1.7097049626     2.2325051389     2.5366775699     3.4797671028
+    1  O  1  S     -0.0000000000    -0.0533802808    -0.0000000000    -0.4714949210
+    2  O  1  S      0.0000000000    -0.5168136719     0.0000000000     0.2598730180
+    3  O  1  X      0.0050997685    -0.0000000000     0.0113900246     0.0000000000
+    4  O  1  Y      0.0050997685     0.0000000000    -0.0113900246    -0.0000000000
+    5  O  1  Z      0.0000000000     0.0428969018    -0.0000000000     0.1200095567
+    6  O  1  S     -0.0000000000     1.6125541020    -0.0000000000     3.7772611494
+    7  O  1  X      0.0260040647    -0.0000000000    -0.6478322892     0.0000000000
+    8  O  1  Y      0.0260040647     0.0000000000     0.6478322892     0.0000000000
+    9  O  1  Z      0.0000000000    -0.7549004995     0.0000000000    -0.3330907375
+   10  O  1 XX      0.0000000000    -0.1740630362    -0.0000000000    -1.5653623499
+   11  O  1 YY     -0.0000000000    -0.1740630362    -0.0000000000    -1.5653623499
+   12  O  1 ZZ      0.0000000000     0.0329079077    -0.0000000000    -1.5657791661
+   13  O  1 XY      0.0000000000    -1.0987509499     0.0000000000    -0.0237162928
+   14  O  1 XZ      0.7065159325     0.0000000000     0.9161279193    -0.0000000000
+   15  O  1 YZ      0.7065159325    -0.0000000000    -0.9161279193     0.0000000000
+   16  H  2  S      0.0000000000    -0.8518241962    -0.9740409726     0.1305456028
+   17  H  2  S     -0.0000000000    -0.1568127210     0.0246924890    -0.5821955490
+   18  H  3  S     -0.0000000000    -0.8518241962     0.9740409726     0.1305456028
+   19  H  3  S     -0.0000000000    -0.1568127210    -0.0246924890    -0.5821955490
+
+          =================
+          Energy components
+          =================
+
+         Wavefunction normalization =       1.0000000000
+
+                One electron energy =    -123.2570248549
+                Two electron energy =      37.6474266728
+           Nuclear repulsion energy =       9.2886933038
+                                      ------------------
+                       TOTAL energy =     -76.3209048783
+
+ Electron-electron potential energy =      37.6474266728
+  Nucleus-electron potential energy =    -199.0883663101
+   Nucleus-nucleus potential energy =       9.2886933038
+                                      ------------------
+             TOTAL potential energy =    -152.1522463335
+               TOTAL kinetic energy =      75.8313414551
+                 Virial ratio (V/T) =       2.0064559510
+
+   Step  CPU time (seconds):      2.310   Wall time (seconds):      0.165
+   Total CPU time (seconds):      2.314   Wall time (seconds):      0.168
+
+   ==============================================
+   PyOQP: SCF converged with diis
+   ==============================================
+
+   ==============================================
+   PyOQP: Dispersion Correction
+   ==============================================
+
+   PyOQP dftd correction:                            False
+   PyOQP dftd method:                       dftd4 (native)
+   PyOQP dftd functional:                              pbe
+
+
+   ==============================================
+   PyOQP: Final Energy
+   ==============================================
+   PyOQP electronic energies
+   PyOQP state 0      -76.32090488    
+
+   PyOQP dftd correction 0.00000000      
+
+   PyOQP dispersion corrected energies
+   PyOQP state 0      -76.32090488    
+
+   ==============================================
+   PyOQP: Entering Hessian Calculation
+   ==============================================
+
+PyOQP: Native OpenQP HF/DFT Hessian CPHF response prepass
+  nbf=    19 nocc=     5 nvir=    14 rhs=     9
+  Storing native OpenQP HF/DFT analytic Hessian matrix in OQP::hf_hessian.
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.003 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.004 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.004 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.003 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.003 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.003 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.004 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.002 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.002 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.003 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.002 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.003 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.003 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.004 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.010 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.006 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.005 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.003 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+
+   ------------------------------------------------------------
+      CPHF/CPKS iterative solver
+      right-hand sides =    9   nocc =    5   nvir =   14
+      tolerance = 1.000E-09   max iterations =   100
+   ------------------------------------------------------------
+ INITIAL CPHF ERROR RHS    1 =    6.610E-02 / 1.000E-09
+ CPHF ITER RHS    1 ITER#   1 ERROR =    1.412E-03 / 1.000E-09
+ CPHF ITER RHS    1 ITER#   2 ERROR =    2.402E-05 / 1.000E-09
+ CPHF ITER RHS    1 ITER#   3 ERROR =    2.874E-07 / 1.000E-09
+ CPHF ITER RHS    1 ITER#   4 ERROR =    4.510E-10 / 1.000E-09
+ CPHF RHS    1 completed in    4 iterations; CPU time =     0.253 s; wall time =     0.039 s
+ INITIAL CPHF ERROR RHS    2 =    6.610E-02 / 1.000E-09
+ CPHF ITER RHS    2 ITER#   1 ERROR =    1.412E-03 / 1.000E-09
+ CPHF ITER RHS    2 ITER#   2 ERROR =    2.402E-05 / 1.000E-09
+ CPHF ITER RHS    2 ITER#   3 ERROR =    2.874E-07 / 1.000E-09
+ CPHF ITER RHS    2 ITER#   4 ERROR =    4.510E-10 / 1.000E-09
+ CPHF RHS    2 completed in    4 iterations; CPU time =     0.226 s; wall time =     0.021 s
+ INITIAL CPHF ERROR RHS    3 =    7.517E-02 / 1.000E-09
+ CPHF ITER RHS    3 ITER#   1 ERROR =    2.268E-02 / 1.000E-09
+ CPHF ITER RHS    3 ITER#   2 ERROR =    1.747E-04 / 1.000E-09
+ CPHF ITER RHS    3 ITER#   3 ERROR =    2.993E-06 / 1.000E-09
+ CPHF ITER RHS    3 ITER#   4 ERROR =    7.476E-09 / 1.000E-09
+ CPHF ITER RHS    3 ITER#   5 ERROR =    1.379E-11 / 1.000E-09
+ CPHF RHS    3 completed in    5 iterations; CPU time =     0.285 s; wall time =     0.040 s
+ INITIAL CPHF ERROR RHS    4 =    3.530E-02 / 1.000E-09
+ CPHF ITER RHS    4 ITER#   1 ERROR =    6.784E-03 / 1.000E-09
+ CPHF ITER RHS    4 ITER#   2 ERROR =    2.033E-04 / 1.000E-09
+ CPHF ITER RHS    4 ITER#   3 ERROR =    2.228E-06 / 1.000E-09
+ CPHF ITER RHS    4 ITER#   4 ERROR =    6.749E-08 / 1.000E-09
+ CPHF ITER RHS    4 ITER#   5 ERROR =    5.417E-10 / 1.000E-09
+ CPHF RHS    4 completed in    5 iterations; CPU time =     0.305 s; wall time =     0.047 s
+ INITIAL CPHF ERROR RHS    5 =    3.530E-02 / 1.000E-09
+ CPHF ITER RHS    5 ITER#   1 ERROR =    6.784E-03 / 1.000E-09
+ CPHF ITER RHS    5 ITER#   2 ERROR =    2.033E-04 / 1.000E-09
+ CPHF ITER RHS    5 ITER#   3 ERROR =    2.228E-06 / 1.000E-09
+ CPHF ITER RHS    5 ITER#   4 ERROR =    6.749E-08 / 1.000E-09
+ CPHF ITER RHS    5 ITER#   5 ERROR =    5.417E-10 / 1.000E-09
+ CPHF RHS    5 completed in    5 iterations; CPU time =     0.302 s; wall time =     0.045 s
+ INITIAL CPHF ERROR RHS    6 =    3.845E-02 / 1.000E-09
+ CPHF ITER RHS    6 ITER#   1 ERROR =    8.896E-03 / 1.000E-09
+ CPHF ITER RHS    6 ITER#   2 ERROR =    1.343E-04 / 1.000E-09
+ CPHF ITER RHS    6 ITER#   3 ERROR =    3.457E-06 / 1.000E-09
+ CPHF ITER RHS    6 ITER#   4 ERROR =    4.089E-08 / 1.000E-09
+ CPHF ITER RHS    6 ITER#   5 ERROR =    3.289E-10 / 1.000E-09
+ CPHF RHS    6 completed in    5 iterations; CPU time =     0.303 s; wall time =     0.048 s
+ INITIAL CPHF ERROR RHS    7 =    3.530E-02 / 1.000E-09
+ CPHF ITER RHS    7 ITER#   1 ERROR =    6.784E-03 / 1.000E-09
+ CPHF ITER RHS    7 ITER#   2 ERROR =    2.033E-04 / 1.000E-09
+ CPHF ITER RHS    7 ITER#   3 ERROR =    2.228E-06 / 1.000E-09
+ CPHF ITER RHS    7 ITER#   4 ERROR =    6.749E-08 / 1.000E-09
+ CPHF ITER RHS    7 ITER#   5 ERROR =    5.417E-10 / 1.000E-09
+ CPHF RHS    7 completed in    5 iterations; CPU time =     0.286 s; wall time =     0.053 s
+ INITIAL CPHF ERROR RHS    8 =    3.530E-02 / 1.000E-09
+ CPHF ITER RHS    8 ITER#   1 ERROR =    6.784E-03 / 1.000E-09
+ CPHF ITER RHS    8 ITER#   2 ERROR =    2.033E-04 / 1.000E-09
+ CPHF ITER RHS    8 ITER#   3 ERROR =    2.228E-06 / 1.000E-09
+ CPHF ITER RHS    8 ITER#   4 ERROR =    6.749E-08 / 1.000E-09
+ CPHF ITER RHS    8 ITER#   5 ERROR =    5.417E-10 / 1.000E-09
+ CPHF RHS    8 completed in    5 iterations; CPU time =     0.278 s; wall time =     0.075 s
+ INITIAL CPHF ERROR RHS    9 =    3.845E-02 / 1.000E-09
+ CPHF ITER RHS    9 ITER#   1 ERROR =    8.896E-03 / 1.000E-09
+ CPHF ITER RHS    9 ITER#   2 ERROR =    1.343E-04 / 1.000E-09
+ CPHF ITER RHS    9 ITER#   3 ERROR =    3.457E-06 / 1.000E-09
+ CPHF ITER RHS    9 ITER#   4 ERROR =    4.089E-08 / 1.000E-09
+ CPHF ITER RHS    9 ITER#   5 ERROR =    3.289E-10 / 1.000E-09
+ CPHF RHS    9 completed in    5 iterations; CPU time =     0.274 s; wall time =     0.067 s
+      CPHF wall time =     0.436 s; CPU time =     2.513 s
+
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.006 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.003 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.006 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.005 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.005 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.005 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.005 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.005 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.007 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.008 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.005 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.006 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.007 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.007 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.004 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.005 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.005 s
+
+     Standard Grid 2 (SG2) of Dasgupta and Herbert
+     ----------------------------------------
+     XC functional: PBE
+     NRAD  =      75   (Mitani DE2 radial grid)
+     THRESH=    0.00E+00
+ 
+ The LibXC 7.0.0 version is used.
+ S. Lehtola, C. Steigemann, M. J.T. Oliveira, and M. A.L. Marques.,  SoftwareX 7, 1–5 (2018)
+ The libXC interfaces are described in the following article:
+ Igor S. Gerasimov, Federico Zahariev, Sarom S. Leang, Anton Tesliuk, Mark S. Gordon, Michael G. Medvedev,
+ Introducing LibXC into GAMESS (US),
+ Mendeleev Commun., 2021, 31, 302–305
+ 
+ The information about selected functionals:
+The Perdew, Burke & Ernzerhof exchange functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+The Perdew, Burke & Ernzerhof correlation functional will be used with a coefficient   1.00000000E+00.
+The functional has been described in the following articles:
+[1] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 77, 3865 (1996); DOI: 10.1103/PhysRevLett.77.3865
+[2] J. P. Perdew, K. Burke, and M. Ernzerhof.,  Phys. Rev. Lett. 78, 1396 (1997); DOI: 10.1103/PhysRevLett.78.1396
+ 
+The global hybrid part:                  0.00000000E+00
+ 
+  Tuned Hartree-Fock exchange from the input.
+          Exact HF exchange:
+           HF scale: |  0.00000E+00 -|>  0.00000E+00 |
+  Please cite the following works when using this option:
+[1] W. Park, A. Lashkaripour, K. Komarov, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., ??, ?? (2024); DOI: 10.1021/acs.jctc.4c00640
+[2] K. Komarov, W. Park, S. Lee, M. Huix-Rotllant, and C. H. Choi, J. Chem. Theory Comput., 19, 7671-7684 (2023); DOI: 10.1021/acs.jctc.3c00884
+
+    DFT XC integration time:     0.004 s
+PyOQP: Native OpenQP HF/DFT Hessian matrix stored
+
+   ==============================================
+   PyOQP: Frequencies
+   ==============================================
+   Mode       Frequency(cm-1)      IR(km/mol)        Raman(activity)
+      1              1577.29         3.389761            89.794824
+      2              4012.90         0.076556           910.200241
+      3              4161.30         1.094648           423.261631
+
+   ==============================================
+   PyOQP: Frequency Normal Mode Eigenvectors
+   ==============================================
+
+   Normal mode eigenvectors (Cartesian, mass-unweighted)
+   Frequencies -- values are in cm^-1; X/Y/Z columns are normal-mode components.
+
+                            1
+   Frequencies --   1577.2894
+     Atom AN                 X           Y           Z
+        1  8 O   0.00000000 -0.00000000  0.06815888
+        2  1 H   0.28871943 -0.28871943 -0.54086531
+        3  1 H  -0.28871943  0.28871943 -0.54086531
+
+                            2
+   Frequencies --   4012.8989
+     Atom AN                 X           Y           Z
+        1  8 O   0.00000000 -0.00000000 -0.04848994
+        2  1 H   0.40583252 -0.40583252  0.38478515
+        3  1 H  -0.40583252  0.40583252  0.38478515
+
+                            3
+   Frequencies --   4161.3043
+     Atom AN                 X           Y           Z
+        1  8 O  -0.04807730  0.04807730 -0.00000000
+        2  1 H   0.38151070 -0.38151070  0.41028411
+        3  1 H   0.38151070 -0.38151070 -0.41028411
+
+   ==============================================
+   PyOQP: Thermochemistry at 298.15     K
+   ==============================================
+
+   temperature K:                              298.15
+   pressure atm:                                 1.00
+   total mass amu:                              18.01
+   rotational constant cm-1:        28.6418      14.7089       9.7182 
+   rotational temperature K:        41.2091      21.1628      13.9823 
+
+   ====================================================
+   summary of internal energy (U)
+   ====================================================
+   U = E(el) + E(trans) + E(rot) + E(vib) + E(ZPE)
+
+   E(el) electronic energy:              -76.32090488
+   E(trans) translational energy:          0.00141628
+   E(rot) rotational energy:               0.00141628
+   E(vib) vibrational energy:              0.00000356
+   E(ZPE) zero-point energy:               0.02221553
+   ----------------------------------------------------
+   total correction to internal:           0.02505164   
+   total internal energy:                -76.29585323
+   
+   ====================================================
+   summary of enthalpy (H)
+   ====================================================
+   H = U + pV
+   
+   E(el) electronic energy:              -76.32090488
+   U - E(el) correction:                   0.02505164
+   pV enthalpy correction:                 0.00094418
+   ----------------------------------------------------
+   total correction to enthalpy:           0.02599583
+   total enthalpy:                       -76.29490905
+   
+   ====================================================
+   summary of entropy (TS)
+   ====================================================
+   TS = TS(el) + TS(trans) + TS(rot) + TS(vib)
+   
+   TS(el) electronic entropy:              0.00000000
+   TS(trans) translational entropy:        0.01644350
+   TS(rot) rotational entropy:             0.00558430
+   TS(vib) vibrational entropy:            0.00000492
+   ----------------------------------------------------
+   total entropy:                          0.02203272   
+   
+   ====================================================
+   summary of Gibbs free energy (G)
+   ====================================================
+   G = H - TS
+   
+   E(el) electronic energy:              -76.32090488
+   H - E(el) correction:                   0.02599583
+   TS total entropy:                       0.02203272
+   ----------------------------------------------------
+   total correction to Gibbs:              0.04802855
+   total Gibbs free energy:              -76.27287633
+
+
+   
+   PyOQP terminated at 2026-08-02 17:18:17 in     0 days     0 hours     0 minutes    18 seconds

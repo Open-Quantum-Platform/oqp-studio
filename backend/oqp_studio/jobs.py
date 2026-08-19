@@ -81,6 +81,27 @@ class JobManager:
     def list(self) -> list[JobInfo]:
         return sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
 
+    def files(self, job_id: str) -> list[dict]:
+        job_dir = JOBS_ROOT / job_id
+        if not job_dir.is_dir():
+            return []
+        return sorted(
+            (
+                {"name": p.name, "size": p.stat().st_size}
+                for p in job_dir.iterdir()
+                if p.is_file()
+            ),
+            key=lambda f: f["name"],
+        )
+
+    def file_path(self, job_id: str, name: str) -> Path | None:
+        """Resolve a job output file, refusing path escapes."""
+        job_dir = (JOBS_ROOT / job_id).resolve()
+        candidate = (job_dir / name).resolve()
+        if candidate.parent != job_dir or not candidate.is_file():
+            return None
+        return candidate
+
     def log_tail(self, job_id: str, max_bytes: int = 65536) -> str:
         log_file = JOBS_ROOT / job_id / "job.log"
         if not log_file.exists():

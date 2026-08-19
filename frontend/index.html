@@ -60,22 +60,39 @@
         margin-top: 0.6rem;
       }
       #status { margin-left: 0.8rem; opacity: 0.8; }
+      select {
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 0.45rem 0.6rem;
+        margin-left: 0.6rem;
+      }
+      #files { padding-left: 1.2rem; }
+      #files a { color: var(--accent); }
     </style>
   </head>
   <body>
-    <header>OQP Studio <small style="opacity:.6">Phase 0 preview</small></header>
+    <header>
+      OQP Studio <small style="opacity:.6">Phase 0 preview</small>
+      <a href="/viewer/index.html" target="_blank"
+         style="float:right;color:var(--accent);text-decoration:none">Results Viewer ↗</a>
+    </header>
     <main>
       <section>
         <h3>Input (.oqp)</h3>
         <textarea id="input" spellcheck="false"></textarea>
         <div>
           <button id="run">Run</button>
+          <select id="runner" title="Execution backend"></select>
           <span id="status"></span>
         </div>
       </section>
       <section>
         <h3>Log</h3>
         <pre id="log"></pre>
+        <h3>Output files</h3>
+        <ul id="files"></ul>
       </section>
     </main>
     <script type="module" src="/src/main.ts"></script>

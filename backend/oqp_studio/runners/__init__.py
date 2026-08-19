@@ -7,9 +7,11 @@ the exit code. The GUI never cares which adapter ran the job.
 
 from .base import Runner, RunnerUnavailable
 from .local import LocalRunner
+from .pyoqp import PyOqpRunner
 from .wsl import WslRunner
 
 _REGISTRY = {
+    "pyoqp": PyOqpRunner,
     "local": LocalRunner,
     "wsl": WslRunner,
 }
