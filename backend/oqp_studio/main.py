@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -70,6 +71,9 @@ def _frontend_dist() -> Path | None:
     Vite server proxies /api instead and this mount is absent."""
     env = os.environ.get("OQP_STUDIO_FRONTEND")
     candidates = [Path(env)] if env else []
+    bundle_dir = getattr(sys, "_MEIPASS", None)  # PyInstaller-frozen backend
+    if bundle_dir:
+        candidates.append(Path(bundle_dir) / "frontend_dist")
     candidates.append(Path(__file__).resolve().parents[2] / "frontend" / "dist")
     return next((p for p in candidates if (p / "index.html").is_file()), None)
 

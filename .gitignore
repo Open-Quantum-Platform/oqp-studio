@@ -21,3 +21,12 @@ shell/src-tauri/target/
 
 # OQP Studio runtime data
 jobs_data/
+
+# Sidecar binaries are built in CI
+shell/src-tauri/binaries/*
+!shell/src-tauri/binaries/.gitkeep
+
+# Tauri generated schemas and build target
+shell/src-tauri/gen/
+shell/src-tauri/target/
+backend/*.spec

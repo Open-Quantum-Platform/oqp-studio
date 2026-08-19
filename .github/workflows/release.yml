@@ -1,0 +1,88 @@
+name: Release installers
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  installers:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            bundles: deb,appimage
+          - os: macos-latest
+            bundles: dmg
+          - os: windows-latest
+            bundles: nsis,msi
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            librsvg2-dev patchelf libfuse2
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build backend sidecar binary
+        shell: bash
+        working-directory: backend
+        run: |
+          pip install -e . pyinstaller
+          python build_binary.py
+
+      - name: Stage sidecar with target triple
+        shell: bash
+        run: |
+          TRIPLE=$(rustc -Vv | grep '^host:' | cut -d' ' -f2)
+          mkdir -p shell/src-tauri/binaries
+          EXT=""
+          if [ "${{ runner.os }}" = "Windows" ]; then EXT=".exe"; fi
+          cp "backend/dist/oqp-studio-backend${EXT}" \
+             "shell/src-tauri/binaries/oqp-studio-backend-${TRIPLE}${EXT}"
+
+      - name: Build installers
+        shell: bash
+        working-directory: shell/src-tauri
+        run: npx --yes @tauri-apps/cli@^2 build --bundles ${{ matrix.bundles }}
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: oqp-studio-${{ matrix.os }}
+          path: |
+            shell/src-tauri/target/release/bundle/**/*.dmg
+            shell/src-tauri/target/release/bundle/**/*.AppImage
+            shell/src-tauri/target/release/bundle/**/*.deb
+            shell/src-tauri/target/release/bundle/**/*.msi
+            shell/src-tauri/target/release/bundle/**/*.exe
+          if-no-files-found: error
+
+      - name: Attach to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            shell/src-tauri/target/release/bundle/**/*.dmg
+            shell/src-tauri/target/release/bundle/**/*.AppImage
+            shell/src-tauri/target/release/bundle/**/*.deb
+            shell/src-tauri/target/release/bundle/**/*.msi
+            shell/src-tauri/target/release/bundle/**/*.exe
