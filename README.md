@@ -41,6 +41,21 @@ On Windows, OpenQP runs through the WSL adapter until the native Windows
 build of the OpenQP core is available; the GUI itself is native on all
 three platforms.
 
+## Run it as a desktop app (no browser)
+
+After building the frontend once (see below), the backend can open its own
+native window through the OS webview:
+
+```bash
+cd backend
+pip install -e ".[desktop]"
+oqp-studio
+```
+
+This is the interim native experience; the Tauri shell in `shell/` will
+replace it with signed installers. On Linux, pywebview additionally needs
+GTK (`python3-gi` + WebKit2GTK) or Qt (`pip install pywebview[qt]`).
+
 ## Development quick start
 
 Backend (requires Python ≥ 3.10; OpenQP/pyoqp optional — mock mode without it):

@@ -13,7 +13,13 @@ dependencies = [
     "pydantic>=2.6",
 ]
 
+[project.scripts]
+oqp-studio = "oqp_studio.desktop:main"
+
 [project.optional-dependencies]
+desktop = [
+    "pywebview>=5",
+]
 dev = [
     "pytest>=8",
     "httpx>=0.27",

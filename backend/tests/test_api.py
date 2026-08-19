@@ -11,6 +11,23 @@ def test_health():
     assert res.json()["status"] == "ok"
 
 
+def test_desktop_launcher_degrades_without_pywebview(capsys):
+    from oqp_studio import desktop
+
+    # In environments without pywebview the launcher must explain itself
+    # and exit cleanly instead of crashing.
+    try:
+        import webview  # noqa: F401
+
+        has_webview = True
+    except ImportError:
+        has_webview = False
+
+    if not has_webview:
+        assert desktop.main() == 1
+        assert "pywebview" in capsys.readouterr().out
+
+
 def test_runners_listed():
     res = client.get("/api/runners")
     assert res.status_code == 200
