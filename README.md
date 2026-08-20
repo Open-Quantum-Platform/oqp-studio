@@ -87,6 +87,17 @@ npm run dev
 
 The frontend dev server proxies `/api` to the backend on port 8814.
 
+## Releasing
+
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+builds every installer, attaches them and the Python wheel to a public GitHub
+release, and publishes to PyPI when `PYPI_API_TOKEN` is configured. See
+[docs/distribution.md](docs/distribution.md) for the channel-by-channel
+picture, including why the mobile and Mac app stores do not apply.
+
 ## Code signing
 
 Installers are currently unsigned, so macOS and Windows show a first-run
