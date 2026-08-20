@@ -2,8 +2,16 @@ name: Release installers
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Publish a release under this tag (e.g. v0.1.0); leave empty to only build artifacts"
+        required: false
+        default: ""
   push:
     tags: ["v*"]
+
+permissions:
+  contents: write
 
 jobs:
   installers:
@@ -143,9 +151,10 @@ jobs:
           if-no-files-found: error
 
       - name: Attach to GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: |
             shell/src-tauri/target/release/bundle/**/*.dmg
             shell/src-tauri/target/release/bundle/**/*.AppImage
@@ -201,15 +210,16 @@ jobs:
           if-no-files-found: error
 
       - name: Attach the wheel to the GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
           files: backend/dist/*
 
       # Publishes only when a PyPI token is configured; without it the job
       # still builds and attaches the wheel to the GitHub release.
       - name: Publish to PyPI
-        if: startsWith(github.ref, 'refs/tags/') && env.PYPI_API_TOKEN != ''
+        if: (startsWith(github.ref, 'refs/tags/') || inputs.release_tag != '') && env.PYPI_API_TOKEN != ''
         env:
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         working-directory: backend
