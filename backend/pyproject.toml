@@ -14,6 +14,10 @@ dependencies = [
     "uvicorn[standard]>=0.29",
     "pydantic>=2.6",
     "numpy>=1.26",
+    # Verify TLS against the OS trust store so TLS-inspecting campus proxies
+    # do not break outbound lookups.
+    "truststore>=0.9",
+    "python-multipart>=0.0.9",   # file uploads for structure import
 ]
 
 [project.scripts]

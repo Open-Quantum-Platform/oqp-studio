@@ -27,7 +27,13 @@ def main() -> int:
     shutil.copytree(dist, web)
     print(f"copied frontend into {web.relative_to(backend)}")
 
-    return subprocess.call([sys.executable, "-m", "build"], cwd=backend)
+    try:
+        return subprocess.call([sys.executable, "-m", "build"], cwd=backend)
+    finally:
+        # The copy only exists to be packaged. Leaving it behind would shadow
+        # frontend/dist for anyone running the server from a source checkout,
+        # who would then keep seeing the UI as it was at the last wheel build.
+        shutil.rmtree(web, ignore_errors=True)
 
 
 if __name__ == "__main__":

@@ -18,6 +18,12 @@
     <script>
       const DARK_BG = 0x1b1e24;
 
+      function sameOriginHref(value) {
+        if (!value) return null;
+        const url = new URL(value, window.location.href);
+        return url.origin === window.location.origin ? url.href : null;
+      }
+
       async function boot() {
         const viewer = await molstar.Viewer.create("app", {
           layoutIsExpanded: false,
@@ -56,11 +62,149 @@
           });
         }
 
+        // Keep this viewer alive across previews: reloading the page would
+        // re-download Mol* and rebuild the WebGL context on every edit, which
+        // is what made updating the structure feel slow.
+        // The default matches how the app has always looked; the other
+        // choices are additive.
+        let style = { type: "auto", color: "element-symbol", labels: "none" };
+        let last = null;   // { data, format }
+
+        async function drawStructure(data, format = "xyz") {
+          last = { data, format };
+          // "auto" hands over to Mol*'s own preset, which draws proteins and
+          // nucleic acids as cartoons with ligands in ball-and-stick.
+          if (style.type === "auto") {
+            await viewer.loadStructureFromData(data, format);
+            return;
+          }
+          const plugin = viewer.plugin;
+          const raw = await plugin.builders.data.rawData({ data });
+          const trajectory = await plugin.builders.structure.parseTrajectory(raw, format);
+          const model = await plugin.builders.structure.createModel(trajectory);
+          const structure = await plugin.builders.structure.createStructure(model);
+          const component = await plugin.builders.structure.tryCreateComponentStatic(
+            structure, "all",
+          );
+          if (!component) return;
+          await plugin.builders.structure.representation.addRepresentation(component, {
+            type: style.type,
+            color: style.color,
+            typeParams: style.type === "spacefill" ? { ignoreLight: false } : {},
+          });
+          if (style.labels !== "none") {
+            await plugin.builders.structure.representation.addRepresentation(component, {
+              type: "label",
+              typeParams: {
+                level: "element",
+                attachment: "middle-center",
+                textSize: 0.35,
+                elementLabel: style.labels,
+              },
+            });
+          }
+        }
+
+        // Orbital appearance, in the spirit of MacMolPlt and IQmol: a phase
+        // colour pair, an opacity, and solid or mesh surfaces.
+        let orbital = { positive: 0x4f8fdd, negative: 0xdd6a4f, alpha: 0.85, visuals: ["solid"] };
+
+        const isoSurfaces = (iso) => [
+          { type: "absolute", value: iso, color: orbital.positive, alpha: orbital.alpha },
+          { type: "absolute", value: -iso, color: orbital.negative, alpha: orbital.alpha },
+        ];
+
+        // loadVolumeFromUrl sets colour and opacity but not the visual kind, so
+        // the created representations are updated in place afterwards.
+        async function applyOrbitalVisuals() {
+          const plugin = viewer.plugin;
+          const update = plugin.state.data.build();
+          let touched = false;
+          plugin.state.data.cells.forEach((cell, ref) => {
+            // Skip cells the state has already dropped: a redraw can race with
+            // this update and the stale reference would throw.
+            if (!cell.obj || cell.status !== "ok") return;
+            if (!(cell.transform?.transformer?.id || "").includes("volume-representation-3d")) return;
+            touched = true;
+            update.to(ref).update((old) => ({
+              ...old,
+              type: {
+                ...old.type,
+                params: { ...old.type.params, alpha: orbital.alpha, visuals: orbital.visuals },
+              },
+            }));
+          });
+          if (!touched) return;
+          try {
+            await update.commit();
+          } catch (error) {
+            console.warn("orbital restyle skipped:", error);
+          }
+        }
+
+        function setRendering(options) {
+          const canvas3d = viewer.plugin.canvas3d;
+          if (!canvas3d) return;
+          const post = {};
+          if ("occlusion" in options) {
+            post.occlusion = options.occlusion
+              ? { name: "on", params: {
+                    samples: 32, multiScale: { name: "off", params: {} },
+                    radius: 5, bias: 0.8, blurKernelSize: 15, blurDepthBias: 0.5,
+                    resolutionScale: 1, color: 0x000000 } }
+              : { name: "off", params: {} };
+          }
+          if ("outline" in options) {
+            post.outline = options.outline
+              ? { name: "on", params: { scale: 1, threshold: 0.33, color: 0x000000,
+                                        includeTransparent: true } }
+              : { name: "off", params: {} };
+          }
+          const props = {};
+          if (Object.keys(post).length) props.postprocessing = post;
+          if ("background" in options) {
+            props.renderer = { backgroundColor: options.background };
+          }
+          canvas3d.setProps(props);
+        }
+
+        window.addEventListener("message", async (event) => {
+          if (event.origin !== window.location.origin) return;
+          const message = event.data || {};
+          if (message.type === "oqp-structure") {
+            await viewer.plugin.clear();
+            await drawStructure(message.xyz);
+          } else if (message.type === "oqp-file") {
+            await viewer.plugin.clear();
+            await drawStructure(message.text, message.format);
+          } else if (message.type === "oqp-orbital-style") {
+            orbital = { ...orbital, ...message.orbital };
+            await applyOrbitalVisuals();
+          } else if (message.type === "oqp-rendering") {
+            setRendering(message.rendering || {});
+          } else if (message.type === "oqp-style") {
+            style = { ...style, ...message.style };
+            if (last) {
+              await viewer.plugin.clear();
+              await drawStructure(last.data, last.format);
+            }
+          } else if (message.type === "oqp-cube") {
+            await viewer.plugin.clear();
+            if (message.xyz) await drawStructure(message.xyz);
+            const url = sameOriginHref(message.cube);
+            if (url) {
+              await viewer.loadVolumeFromUrl(
+                { url, format: "cube", isBinary: false },
+                isoSurfaces(Math.abs(message.iso) || 0.05),
+              );
+              await applyOrbitalVisuals();
+            }
+          }
+        });
+        window.parent.postMessage({ type: "oqp-viewer-ready" }, window.location.origin);
+
         const params = new URLSearchParams(window.location.search);
-        const sameOrigin = (value) => {
-          const url = new URL(value, window.location.href);
-          return url.origin === window.location.origin ? url.href : null;
-        };
+        const sameOrigin = sameOriginHref;
 
         const load = params.get("load");
         if (load) {
