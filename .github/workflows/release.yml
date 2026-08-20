@@ -276,11 +276,13 @@ jobs:
       release_tag: ${{ inputs.release_tag || github.ref_name }}
 
   # Windows is the platform most of our users are on, so its engine is built
-  # like every other one.  The engine's Windows support lives in OpenQP PR #359
-  # (Intel ifx/icx + MKL ILP64, DFT-D4 DLLs beside liboqp.dll) and is not in a
-  # release tag yet, so this job builds the ref named below rather than the
-  # latest release the other platforms use.  Once #359 ships in a tag, delete
-  # the `openqp_ref:` line and this job becomes identical to the others.
+  # like every other one.  Its support -- Intel ifx/icx with MKL ILP64, the
+  # DFT-D4 DLLs installed beside liboqp.dll instead of an RPATH -- is OpenQP
+  # #359, merged as d452be6 but not yet in a release tag, and the other four
+  # platforms build the latest TAG.  So this job pins that merge commit: on
+  # main's history, immutable, and what the next tag will contain.  The day
+  # OpenQP releases a tag carrying #359, delete the `openqp_ref:` line and this
+  # job is identical to the other four.
   engine-windows:
     needs: installers
     if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
@@ -289,4 +291,4 @@ jobs:
       contents: write
     with:
       release_tag: ${{ inputs.release_tag || github.ref_name }}
-      openqp_ref: ${{ inputs.openqp_windows_ref || 'refs/pull/359/head' }}
+      openqp_ref: ${{ inputs.openqp_windows_ref || 'd452be6832d48e34cc07fe3149b3ea515aec9d86' }}
