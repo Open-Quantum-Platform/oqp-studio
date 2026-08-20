@@ -98,7 +98,16 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npx --yes @tauri-apps/cli@^2 build --bundles ${{ matrix.bundles }}
+        run: |
+          # An unset secret arrives as an empty string, and Tauri treats a
+          # defined-but-empty APPLE_CERTIFICATE as "signing requested" and
+          # fails importing it. Drop the whole group unless a certificate is
+          # actually configured.
+          if [ -z "${APPLE_CERTIFICATE:-}" ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD \
+                  APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+          npx --yes @tauri-apps/cli@^2 build --bundles ${{ matrix.bundles }}
 
       # Quarantine (and therefore the Gatekeeper block on unsigned apps) is
       # applied by browsers, not by curl. A plain tarball installed from the
