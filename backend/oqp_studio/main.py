@@ -293,6 +293,21 @@ def _frontend_dist() -> Path | None:
     return next((p for p in candidates if (p / "index.html").is_file()), None)
 
 
+class _NoStoreStaticFiles(StaticFiles):
+    """Serves the UI with caching disabled.
+
+    The desktop shell always loads the same URL (http://127.0.0.1:<port>/)
+    under the same bundle identifier, so WebKit would otherwise reuse the
+    index.html it cached from a previously installed version and show a stale
+    interface after an upgrade.
+    """
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+        return response
+
+
 _dist = _frontend_dist()
 if _dist is not None:
-    app.mount("/", StaticFiles(directory=_dist, html=True), name="frontend")
+    app.mount("/", _NoStoreStaticFiles(directory=_dist, html=True), name="frontend")

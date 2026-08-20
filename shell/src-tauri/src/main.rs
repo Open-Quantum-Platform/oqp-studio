@@ -56,9 +56,15 @@ fn main() {
                 .expect("main window missing");
             std::thread::spawn(move || {
                 if wait_for_port(port, Duration::from_secs(30)) {
-                    let url = format!("http://127.0.0.1:{port}")
-                        .parse()
-                        .expect("valid backend url");
+                    // The version query makes the URL unique per release, so an
+                    // upgraded app can never be served the previous version's
+                    // cached page.
+                    let url = format!(
+                        "http://127.0.0.1:{port}/?v={}",
+                        env!("CARGO_PKG_VERSION")
+                    )
+                    .parse()
+                    .expect("valid backend url");
                     let _ = window.navigate(url);
                 } else {
                     let _ = window.eval(
