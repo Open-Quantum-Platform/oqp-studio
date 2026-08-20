@@ -271,11 +271,12 @@ jobs:
     with:
       release_tag: ${{ inputs.release_tag || github.ref_name }}
 
-  engine-windows:
-    needs: installers
-    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
-    uses: ./.github/workflows/windows-bundle.yml
-    permissions:
-      contents: write
-    with:
-      release_tag: ${{ inputs.release_tag || github.ref_name }}
+  # No engine-windows job: OpenQP does not build on Windows yet.  Its DFT-D4
+  # stack stops CMake with "The replaceable DFT-D4 shared-library stack is
+  # currently supported only on Linux and macOS" (external/CMakeLists.txt), and
+  # OpenQP's own wheel matrix ships Linux and macOS only -- there is nothing to
+  # bundle.  windows-bundle.yml is kept and can still be dispatched by hand, so
+  # this job comes back as a three-line addition the day upstream lands Windows
+  # support.  Until then Windows users run the engine through WSL, which the app
+  # supports natively: install the linux-x86_64 archive inside the WSL
+  # distribution and pick the "wsl" runner.

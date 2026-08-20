@@ -35,16 +35,31 @@ def data_dir() -> Path:
     return network.settings_path().parent / "engine"
 
 
+# What to tell a user whose platform has no engine archive, instead of leaving
+# them to guess. Windows is the case that matters: OpenQP's DFT-D4 stack stops
+# its own build there ("supported only on Linux and macOS"), so no native
+# Windows engine exists to publish -- but WSL runs the Linux one, and this app
+# already speaks to it through the "wsl" runner.
+NO_ARCHIVE_ADVICE = {
+    "nt": ("OpenQP has no native Windows build yet. Install Windows Subsystem "
+           "for Linux, unpack the linux-x86_64 engine archive inside it, and "
+           "choose the wsl runner."),
+}
+
+
 def archive_suffix() -> str | None:
-    """The release asset that matches this machine."""
+    """The release asset that matches this machine, or None if there is none."""
     machine = platform.machine().lower()
     if sys.platform == "darwin":
         return "macos-arm64.zip" if machine in ("arm64", "aarch64") else "macos-x86_64.zip"
-    if os.name == "nt":
-        return "windows-x86_64.zip"
     if sys.platform.startswith("linux"):
         return "linux-aarch64.tar.gz" if machine in ("aarch64", "arm64") else "linux-x86_64.tar.gz"
     return None
+
+
+def advice() -> str:
+    """Why there is no archive for this machine, and what to do instead."""
+    return NO_ARCHIVE_ADVICE.get(os.name, "")
 
 
 def pick_asset(assets: list[dict]) -> dict | None:
@@ -98,6 +113,7 @@ def status() -> dict:
         "install_dir": str(data_dir()),
         "archive": archive_suffix(),
         "supported": archive_suffix() is not None,
+        "advice": "" if archive_suffix() else advice(),
     }
 
 
