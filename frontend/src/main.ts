@@ -386,22 +386,51 @@ const resultFrame = $<HTMLIFrameElement>("resultFrame");
 const orbitalCard = $<HTMLDivElement>("orbitalCard");
 const orbitalSel = $<HTMLSelectElement>("orbitalSel");
 const isoRange = $<HTMLInputElement>("isoRange");
+const modeCard = $<HTMLDivElement>("modeCard");
+const modeSel = $<HTMLSelectElement>("modeSel");
+const ampRange = $<HTMLInputElement>("ampRange");
 let currentMolden: { jobId: string; name: string } | null = null;
+let currentVib: { jobId: string; name: string } | null = null;
 
 // Mol* renders geometries and cube/orbital isosurfaces; other formats
 // (logs, hessian JSON) fall back to the classic embedded viewer.
 async function viewResultFile(jobId: string, name: string, url: string): Promise<void> {
   const lower = name.toLowerCase();
   orbitalCard.style.display = "none";
+  modeCard.style.display = "none";
   currentMolden = null;
+  currentVib = null;
   if (lower.endsWith(".xyz")) {
     resultFrame.src = `/builder3d.html?load=${encodeURIComponent(url)}`;
   } else if (lower.endsWith(".cube") || lower.endsWith(".cub")) {
     resultFrame.src = `/builder3d.html?cube=${encodeURIComponent(url)}`;
   } else if (lower.endsWith(".molden")) {
     const base = `/api/jobs/${jobId}/molden/${encodeURIComponent(name)}`;
+
+    // Frequency files also carry normal modes; offer the vibration panel.
+    const modeRes = await fetch(`${base}/modes`);
+    if (modeRes.ok) {
+      const modeData = await modeRes.json();
+      if (modeData.modes.length) {
+        currentVib = { jobId, name };
+        modeSel.innerHTML = "";
+        for (const m of modeData.modes) {
+          const opt = document.createElement("option");
+          opt.value = String(m.index);
+          const ir = m.intensity != null ? `  IR ${m.intensity.toFixed(2)}` : "";
+          opt.textContent = `Mode ${m.index}  ${m.frequency.toFixed(1)} cm⁻¹${ir}`;
+          modeSel.appendChild(opt);
+        }
+        modeCard.style.display = "";
+      }
+    }
+
     const res = await fetch(`${base}/orbitals`);
     if (!res.ok) {
+      if (currentVib) {
+        showMode(); // frequency-only file: go straight to the vibration view
+        return;
+      }
       // Spherical-harmonic basis etc. — classic viewer still handles it.
       resultFrame.src = `/viewer/index.html?load=${encodeURIComponent(url)}`;
       return;
@@ -438,6 +467,22 @@ function showOrbital(): void {
 }
 orbitalSel.addEventListener("change", showOrbital);
 isoRange.addEventListener("change", showOrbital);
+
+function showMode(): void {
+  if (!currentVib) return;
+  const base = `/api/jobs/${currentVib.jobId}/molden/${encodeURIComponent(currentVib.name)}`;
+  const traj = `${base}/mode.xyz?mode=${modeSel.value}&amplitude=${ampRange.value}`;
+  resultFrame.src = `/builder3d.html?traj=${encodeURIComponent(traj)}`;
+}
+modeSel.addEventListener("change", showMode);
+ampRange.addEventListener("change", showMode);
+// Clicking into either panel switches the viewer to that view.
+modeCard.addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).tagName !== "SELECT") showMode();
+});
+orbitalCard.addEventListener("click", (e) => {
+  if ((e.target as HTMLElement).tagName !== "SELECT") showOrbital();
+});
 
 // ---------- boot ----------
 xyzArea.value = atomsToText(SAMPLES.water);

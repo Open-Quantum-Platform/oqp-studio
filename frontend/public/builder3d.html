@@ -9,7 +9,7 @@
       #app { position: absolute; inset: 0; }
       /* Hide Mol* chrome — this page is a pure render surface. */
       .msp-plugin .msp-layout-expanded { border: none; }
-      .msp-viewport-controls { display: none; }
+      .msp-viewport-controls, .msp-traj-controls { display: none; }
     </style>
   </head>
   <body>
@@ -66,6 +66,24 @@
         if (load) {
           const href = sameOrigin(load);
           if (href) await viewer.loadStructureFromUrl(href, "xyz", false);
+        }
+
+        // Multi-frame XYZ (normal-mode trajectory) played as an animation.
+        const traj = params.get("traj");
+        if (traj) {
+          const href = sameOrigin(traj);
+          if (href) {
+            // A multi-model XYZ loads as a trajectory with full representations.
+            await viewer.loadStructureFromUrl(href, "xyz", false);
+            const plugin = viewer.plugin;
+            plugin.managers.animation.play(
+              plugin.managers.animation.animations.find(
+                (a) => a.name === "built-in.animate-model-index"
+              ),
+              { mode: { name: "loop", params: { direction: "forward" } },
+                duration: { name: "fixed", params: { durationInS: 2 } } }
+            );
+          }
         }
 
         // Orbital / density isosurfaces from a Gaussian cube file.

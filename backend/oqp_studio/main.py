@@ -167,6 +167,52 @@ def molden_cube(job_id: str, name: str, mo: int) -> PlainTextResponse:
     return PlainTextResponse(molden.orbital_cube(data, mo))
 
 
+_vib_cache: OrderedDict[str, object] = OrderedDict()
+
+
+def _load_vibrations(job_id: str, name: str):
+    from . import molden
+
+    key = f"{job_id}/{name}"
+    if key not in _vib_cache:
+        path = manager.file_path(job_id, name)
+        if path is None:
+            raise HTTPException(status_code=404, detail="file not found")
+        _vib_cache[key] = molden.parse_vibrations(path.read_text(errors="replace"))
+        while len(_vib_cache) > 8:
+            _vib_cache.popitem(last=False)
+    return _vib_cache[key]
+
+
+@app.get("/api/jobs/{job_id}/molden/{name}/modes")
+def molden_modes(job_id: str, name: str) -> dict:
+    vib = _load_vibrations(job_id, name)
+    return {
+        "atoms": len(vib.atoms),
+        "modes": [
+            {
+                "index": m.index,
+                "frequency": m.frequency,
+                "intensity": vib.intensities[i] if i < len(vib.intensities) else None,
+            }
+            for i, m in enumerate(vib.modes)
+        ],
+    }
+
+
+@app.get("/api/jobs/{job_id}/molden/{name}/mode.xyz")
+def molden_mode_trajectory(job_id: str, name: str, mode: int,
+                           amplitude: float = 0.6) -> PlainTextResponse:
+    from . import molden
+
+    vib = _load_vibrations(job_id, name)
+    if not 1 <= mode <= len(vib.modes):
+        raise HTTPException(status_code=404, detail="mode index out of range")
+    return PlainTextResponse(
+        molden.mode_trajectory(vib, mode, amplitude=max(0.05, min(amplitude, 2.0)))
+    )
+
+
 class Structure3DRequest(BaseModel):
     molfile: str | None = None
     smiles: str | None = None

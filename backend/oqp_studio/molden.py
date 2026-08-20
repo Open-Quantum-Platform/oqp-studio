@@ -244,3 +244,77 @@ def atoms_to_xyz(data: MoldenData, title: str = "geometry") -> str:
     for symbol, x, y, z in data.atoms:
         lines.append(f"{symbol:2s} {x:12.6f} {y:12.6f} {z:12.6f}")
     return "\n".join(lines) + "\n"
+
+
+@dataclass
+class NormalMode:
+    index: int
+    frequency: float  # cm^-1
+    displacements: np.ndarray  # (natoms, 3) in Bohr
+
+
+@dataclass
+class VibrationData:
+    atoms: list[tuple[str, float, float, float]]  # Angstrom
+    modes: list[NormalMode] = field(default_factory=list)
+    intensities: list[float] = field(default_factory=list)
+
+
+def parse_vibrations(text: str) -> VibrationData:
+    """Frequencies and normal modes from [FREQ]/[FR-COORD]/[FR-NORM-COORD]."""
+    lines = text.splitlines()
+
+    def section(header: str) -> list[str]:
+        start = next(
+            (i for i, ln in enumerate(lines) if ln.strip().upper() == header), -1)
+        if start < 0:
+            return []
+        out = []
+        for ln in lines[start + 1 :]:
+            if re.match(r"^\s*\[", ln):
+                break
+            out.append(ln)
+        return out
+
+    frequencies = [float(ln) for ln in section("[FREQ]") if ln.strip()]
+    intensities = [float(ln) for ln in section("[INT]") if ln.strip()]
+
+    atoms: list[tuple[str, float, float, float]] = []
+    for ln in section("[FR-COORD]"):
+        parts = ln.split()
+        if len(parts) >= 4:
+            atoms.append((parts[0], *(float(v) * BOHR_TO_ANGSTROM for v in parts[1:4])))
+
+    modes: list[NormalMode] = []
+    current: list[list[float]] | None = None
+    for ln in section("[FR-NORM-COORD]"):
+        if re.match(r"^\s*vibration", ln, re.IGNORECASE):
+            if current:
+                modes.append(NormalMode(len(modes) + 1, 0.0, np.asarray(current)))
+            current = []
+            continue
+        parts = ln.split()
+        if current is not None and len(parts) >= 3:
+            current.append([float(v) for v in parts[:3]])
+    if current:
+        modes.append(NormalMode(len(modes) + 1, 0.0, np.asarray(current)))
+    for mode, freq in zip(modes, frequencies):
+        mode.frequency = freq
+    return VibrationData(atoms=atoms, modes=modes, intensities=intensities)
+
+
+def mode_trajectory(vib: VibrationData, mode_index: int,
+                    frames: int = 24, amplitude: float = 0.6) -> str:
+    """Multi-frame XYZ oscillating along one normal mode (for animation)."""
+    mode = vib.modes[mode_index - 1]
+    base = np.array([[a[1], a[2], a[3]] for a in vib.atoms])
+    disp = mode.displacements * BOHR_TO_ANGSTROM
+    out: list[str] = []
+    for k in range(frames):
+        factor = amplitude * math.sin(2 * math.pi * k / frames)
+        coords = base + factor * disp
+        out.append(str(len(vib.atoms)))
+        out.append(f"mode {mode.index}  {mode.frequency:.2f} cm-1  frame {k + 1}/{frames}")
+        for (symbol, *_), (x, y, z) in zip(vib.atoms, coords):
+            out.append(f"{symbol:2s} {x:12.6f} {y:12.6f} {z:12.6f}")
+    return "\n".join(out) + "\n"

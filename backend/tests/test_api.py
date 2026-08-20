@@ -114,3 +114,25 @@ def test_molden_parse_and_cube():
     header = cube.splitlines()
     assert int(header[2].split()[0]) == 3  # atom count
     assert "E=" in header[1]
+
+
+def test_normal_modes_and_trajectory():
+    from pathlib import Path
+
+    from oqp_studio import molden
+
+    sample = (
+        Path(__file__).resolve().parents[2]
+        / "frontend" / "public" / "viewer" / "samples" / "water-hessian-mo.freq.molden"
+    )
+    vib = molden.parse_vibrations(sample.read_text())
+    assert len(vib.atoms) == 3
+    assert len(vib.modes) == 3  # water: 3N-6
+    assert vib.modes[0].frequency > 0
+    assert vib.modes[0].displacements.shape == (3, 3)
+
+    traj = molden.mode_trajectory(vib, 1, frames=8)
+    lines = traj.splitlines()
+    assert len(lines) == 8 * (3 + 2)  # frames x (count + comment + atoms)
+    assert lines[0].strip() == "3"
+    assert "cm-1" in lines[1]
