@@ -51,7 +51,7 @@ class JobManager:
         job_id = uuid.uuid4().hex[:12]
         job_dir = JOBS_ROOT / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
-        (job_dir / "input.oqp").write_text(req.input_text)
+        (job_dir / "input.inp").write_text(req.input_text)
         info = JobInfo(
             id=job_id,
             name=req.name,

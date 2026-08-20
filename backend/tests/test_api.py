@@ -58,9 +58,9 @@ def test_submit_without_openqp_fails_gracefully(tmp_path, monkeypatch):
 
     files = client.get(f"/api/jobs/{job_id}/files").json()
     names = {f["name"] for f in files}
-    assert "input.oqp" in names
+    assert "input.inp" in names
 
-    res = client.get(f"/api/jobs/{job_id}/files/input.oqp")
+    res = client.get(f"/api/jobs/{job_id}/files/input.inp")
     assert res.status_code == 200
     assert "system=O 0 0 0" in res.text
 

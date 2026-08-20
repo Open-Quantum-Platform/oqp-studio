@@ -2,7 +2,7 @@
 
 Usage: python -m oqp_studio.pyoqp_worker <job_dir>
 
-Reads <job_dir>/input.oqp, runs it with oqp.pyoqp.Runner (log appended by the
+Reads <job_dir>/input.inp, runs it with oqp.pyoqp.Runner (log appended by the
 parent to job.log via stdout), and writes a JSON summary of runner.results()
 to <job_dir>/results.json. Exit code 0 only if the calculation completed and
 the summary was written.
@@ -31,7 +31,7 @@ def _jsonable(value):
 
 def main() -> int:
     job_dir = Path(sys.argv[1]).resolve()
-    input_file = job_dir / "input.oqp"
+    input_file = job_dir / "input.inp"
 
     from oqp.pyoqp import Runner  # deferred: only the worker needs OpenQP
 

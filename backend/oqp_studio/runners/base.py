@@ -26,7 +26,7 @@ class Runner(abc.ABC):
         """Blocking execution; the job manager calls this from a worker thread."""
         if not self.is_available():
             raise RunnerUnavailable(f"runner '{self.name}' is not available on this machine")
-        input_file = job_dir / "input.oqp"
+        input_file = job_dir / "input.inp"
         log_file = job_dir / "job.log"
         with log_file.open("ab") as log:
             proc = subprocess.Popen(

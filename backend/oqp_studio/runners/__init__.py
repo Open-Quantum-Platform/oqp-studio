@@ -1,7 +1,7 @@
 """Execution adapters that run an OpenQP input file and stream its log.
 
 Adapters share one contract (`Runner`): given a job directory containing
-`input.oqp`, launch OpenQP, append stdout/stderr to `job.log`, and report
+`input.inp`, launch OpenQP, append stdout/stderr to `job.log`, and report
 the exit code. The GUI never cares which adapter ran the job.
 """
 

@@ -1,37 +1,193 @@
-// OQP Studio frontend — Phase 0 preview.
-// Submits an .oqp input to the local backend, tails the job log, and links
-// finished output files into the vendored OpenqpView results viewer.
-// Phase 1 replaces this page with the full builder (Ketcher, Mol*, templates).
+// OQP Studio frontend — Builder → Method → Run → Results workflow.
+// Vanilla TS for now; Phase 1/2 swap the preview canvas for Mol* and add
+// the Ketcher sketcher and keyword-schema forms.
 
-const DEFAULT_INPUT = `[input]
-system=
- O   0.000   0.000   0.117
- H   0.000   0.755  -0.469
- H   0.000  -0.755  -0.469
-charge=0
-method=hf
-basis=6-31g(d)
-runtype=energy
+type Atom = [string, number, number, number];
 
-[guess]
-type=huckel
+const SAMPLES: Record<string, Atom[]> = {
+  water: [
+    ["O", 0.0, 0.0, 0.117],
+    ["H", 0.0, 0.755, -0.469],
+    ["H", 0.0, -0.755, -0.469],
+  ],
+  ethanol: [
+    ["C", -1.0, 0.0, 0.0], ["C", 0.45, 0.0, 0.0], ["O", 1.55, 0.74, 0.0],
+    ["H", -1.38, -1.0, 0.0], ["H", -1.38, 0.5, 0.88], ["H", -1.38, 0.5, -0.88],
+    ["H", 0.74, -0.55, 0.88], ["H", 0.74, -0.55, -0.88], ["H", 2.32, 0.18, 0.0],
+  ],
+  benzene: [
+    ["C", 1.4, 0.0, 0.0], ["C", 0.7, 1.21, 0.0], ["C", -0.7, 1.21, 0.0],
+    ["C", -1.4, 0.0, 0.0], ["C", -0.7, -1.21, 0.0], ["C", 0.7, -1.21, 0.0],
+    ["H", 2.48, 0.0, 0.0], ["H", 1.24, 2.15, 0.0], ["H", -1.24, 2.15, 0.0],
+    ["H", -2.48, 0.0, 0.0], ["H", -1.24, -2.15, 0.0], ["H", 1.24, -2.15, 0.0],
+  ],
+};
 
-[scf]
-type=rhf
-maxit=50
-`;
-
-// Extensions OpenqpView can open via its ?load= parameter.
 const VIEWABLE = [".log", ".txt", ".json", ".molden", ".cube", ".cub", ".xyz"];
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const input = $<HTMLTextAreaElement>("input");
-const log = $<HTMLPreElement>("log");
-const statusEl = $<HTMLSpanElement>("status");
-const runnerSelect = $<HTMLSelectElement>("runner");
-const filesList = $<HTMLUListElement>("files");
 
-input.value = DEFAULT_INPUT;
+// ---------- tabs ----------
+const nav = $<HTMLElement>("nav");
+function showTab(name: string): void {
+  document.querySelectorAll<HTMLElement>(".panel").forEach((p) => {
+    p.classList.toggle("active", p.id === `panel-${name}`);
+  });
+  nav.querySelectorAll("button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === name);
+  });
+  if (name === "results") refreshJobs();
+  if (name === "method") updateInpPreview();
+}
+nav.addEventListener("click", (e) => {
+  const btn = (e.target as HTMLElement).closest("button");
+  if (btn?.dataset.tab) showTab(btn.dataset.tab);
+});
+
+// ---------- builder ----------
+const xyzArea = $<HTMLTextAreaElement>("xyz");
+const builderStatus = $<HTMLSpanElement>("builderStatus");
+
+function atomsToText(atoms: Atom[]): string {
+  return atoms
+    .map(([el, x, y, z]) =>
+      `${el.padEnd(2)} ${x.toFixed(6).padStart(11)} ${y.toFixed(6).padStart(11)} ${z.toFixed(6).padStart(11)}`)
+    .join("\n");
+}
+
+function parseAtoms(text: string): Atom[] {
+  const atoms: Atom[] = [];
+  for (const raw of text.split("\n")) {
+    const parts = raw.trim().split(/\s+/);
+    if (parts.length < 4) continue;
+    const [el, x, y, z] = [parts[0], +parts[1], +parts[2], +parts[3]];
+    if (/^[A-Za-z]{1,2}$/.test(el) && [x, y, z].every(Number.isFinite)) {
+      atoms.push([el, x, y, z]);
+    }
+  }
+  return atoms;
+}
+
+$<HTMLSelectElement>("sample").addEventListener("change", (e) => {
+  const key = (e.target as HTMLSelectElement).value;
+  if (SAMPLES[key]) {
+    xyzArea.value = atomsToText(SAMPLES[key]);
+    updatePreview();
+  }
+});
+
+$<HTMLButtonElement>("pubchemFetch").addEventListener("click", async () => {
+  const name = $<HTMLInputElement>("pubchemName").value.trim();
+  if (!name) return;
+  builderStatus.textContent = `searching PubChem for “${name}”…`;
+  try {
+    const res = await fetch(`/api/pubchem/${encodeURIComponent(name)}`);
+    if (!res.ok) throw new Error((await res.json()).detail ?? res.statusText);
+    const data = await res.json();
+    xyzArea.value = atomsToText(data.atoms);
+    builderStatus.textContent = `${data.atoms.length} atoms loaded from PubChem`;
+    updatePreview();
+  } catch (err) {
+    builderStatus.textContent = `PubChem: ${(err as Error).message}`;
+  }
+});
+
+async function updatePreview(): Promise<void> {
+  const atoms = parseAtoms(xyzArea.value);
+  if (!atoms.length) return;
+  const xyz = `${atoms.length}\nOQP Studio preview\n${atomsToText(atoms)}\n`;
+  const res = await fetch("/api/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ xyz }),
+  });
+  if (!res.ok) return;
+  const { url } = await res.json();
+  $<HTMLIFrameElement>("previewFrame").src =
+    `/viewer/index.html?load=${encodeURIComponent(url)}`;
+}
+$<HTMLButtonElement>("previewBtn").addEventListener("click", updatePreview);
+
+// ---------- method / input generation ----------
+const theorySel = $<HTMLSelectElement>("theory");
+const functionalInp = $<HTMLInputElement>("functional");
+const basisSel = $<HTMLSelectElement>("basis");
+const basisCustom = $<HTMLInputElement>("basisCustom");
+const runtypeSel = $<HTMLSelectElement>("runtype");
+
+function currentBasis(): string {
+  return basisSel.value === "__custom__" ? basisCustom.value.trim() : basisSel.value;
+}
+
+function generateInp(): string {
+  const atoms = parseAtoms(xyzArea.value);
+  const theory = theorySel.value;
+  const runtype = runtypeSel.value;
+  const charge = +$<HTMLInputElement>("charge").value || 0;
+  const multIn = +$<HTMLInputElement>("mult").value || 1;
+  const nstate = +$<HTMLInputElement>("nstate").value || 3;
+  const target = +$<HTMLInputElement>("targetState").value || 0;
+
+  const usesTdhf = theory === "tddft" || theory === "mrsf";
+  const functional = theory === "hf" || theory === "mp2" ? "" : functionalInp.value.trim();
+  const method = theory === "mp2" ? "mp2" : usesTdhf ? "tdhf" : "hf";
+  // MRSF-TDDFT starts from a triplet ROHF reference.
+  const mult = theory === "mrsf" ? 3 : multIn;
+  const scfType = theory === "mrsf" ? "rohf" : mult === 1 ? "rhf" : "rohf";
+
+  const lines: string[] = [];
+  lines.push("[input]");
+  lines.push("system=");
+  for (const [el, x, y, z] of atoms) {
+    lines.push(` ${el.padEnd(2)} ${x.toFixed(6)} ${y.toFixed(6)} ${z.toFixed(6)}`);
+  }
+  lines.push(`charge=${charge}`);
+  lines.push(`basis=${currentBasis()}`);
+  if (functional) lines.push(`functional=${functional}`);
+  lines.push(`method=${method}`);
+  lines.push(`runtype=${runtype}`);
+  lines.push("");
+  lines.push("[guess]");
+  lines.push("type=huckel");
+  lines.push("");
+  lines.push("[scf]");
+  lines.push(`type=${scfType}`);
+  lines.push(`multiplicity=${mult}`);
+  lines.push("maxit=60");
+  if (usesTdhf) {
+    lines.push("");
+    lines.push("[tdhf]");
+    lines.push(`type=${theory === "mrsf" ? "mrsf" : "rpa"}`);
+    lines.push(`nstate=${nstate}`);
+  }
+  if (usesTdhf && (runtype === "grad" || runtype === "optimize") && target > 0) {
+    lines.push("");
+    lines.push("[properties]");
+    lines.push(`grad=${target}`);
+  }
+  return lines.join("\n") + "\n";
+}
+
+function updateInpPreview(): void {
+  $<HTMLPreElement>("inpPreview").textContent = generateInp();
+}
+for (const id of ["theory", "functional", "basis", "basisCustom", "charge", "mult", "nstate", "runtype", "targetState"]) {
+  $<HTMLElement>(id).addEventListener("input", () => {
+    functionalInp.disabled = theorySel.value === "hf" || theorySel.value === "mp2";
+    basisCustom.disabled = basisSel.value !== "__custom__";
+    updateInpPreview();
+  });
+}
+
+$<HTMLButtonElement>("generate").addEventListener("click", () => {
+  $<HTMLTextAreaElement>("input").value = generateInp();
+  showTab("run");
+});
+
+// ---------- run ----------
+const runStatus = $<HTMLSpanElement>("runStatus");
+const runLog = $<HTMLPreElement>("runLog");
+const runnerSelect = $<HTMLSelectElement>("runner");
 
 async function loadRunners(): Promise<void> {
   const runners: Record<string, boolean> = await (await fetch("/api/runners")).json();
@@ -43,55 +199,93 @@ async function loadRunners(): Promise<void> {
     opt.disabled = !available;
     runnerSelect.appendChild(opt);
   }
-  const firstAvailable = Object.entries(runners).find(([, ok]) => ok)?.[0];
-  if (firstAvailable) runnerSelect.value = firstAvailable;
+  const first = Object.entries(runners).find(([, ok]) => ok)?.[0];
+  if (first) runnerSelect.value = first;
+  $<HTMLSpanElement>("runnersInfo").textContent =
+    "runners: " + Object.entries(runners).map(([n, ok]) => `${n} ${ok ? "✓" : "✗"}`).join(" · ");
 }
 
-async function showFiles(jobId: string): Promise<void> {
-  const files: { name: string; size: number }[] = await (
-    await fetch(`/api/jobs/${jobId}/files`)
-  ).json();
-  filesList.innerHTML = "";
-  for (const f of files) {
-    const li = document.createElement("li");
-    const url = `/api/jobs/${jobId}/files/${encodeURIComponent(f.name)}`;
-    const viewable = VIEWABLE.some((ext) => f.name.toLowerCase().endsWith(ext));
-    li.innerHTML = viewable
-      ? `${f.name} (${f.size} B) — <a href="/viewer/index.html?load=${encodeURIComponent(url)}"
-           target="_blank">open in viewer</a> · <a href="${url}" download>download</a>`
-      : `${f.name} (${f.size} B) — <a href="${url}" download>download</a>`;
-    filesList.appendChild(li);
-  }
-}
-
-async function poll(jobId: string): Promise<void> {
+async function pollJob(jobId: string): Promise<void> {
   const info = await (await fetch(`/api/jobs/${jobId}`)).json();
   const tail = await (await fetch(`/api/jobs/${jobId}/log`)).json();
-  log.textContent = tail.log || "(no output yet)";
-  statusEl.textContent = info.status + (info.error ? ` — ${info.error}` : "");
+  runLog.textContent = tail.log || "(no output yet)";
+  runStatus.textContent = info.status + (info.error ? ` — ${info.error}` : "");
   if (info.status === "queued" || info.status === "running") {
-    setTimeout(() => poll(jobId), 1000);
+    setTimeout(() => pollJob(jobId), 1000);
   } else {
-    showFiles(jobId);
+    selectJob(jobId);
   }
 }
 
-$<HTMLButtonElement>("run").addEventListener("click", async () => {
-  statusEl.textContent = "submitting…";
-  filesList.innerHTML = "";
+$<HTMLButtonElement>("runBtn").addEventListener("click", async () => {
+  runStatus.textContent = "submitting…";
   const res = await fetch("/api/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ input_text: input.value, runner: runnerSelect.value || "local" }),
+    body: JSON.stringify({
+      input_text: $<HTMLTextAreaElement>("input").value,
+      runner: runnerSelect.value || "local",
+    }),
   });
   if (!res.ok) {
-    statusEl.textContent = `submit failed (${res.status})`;
+    runStatus.textContent = `submit failed (${res.status})`;
     return;
   }
-  const job = await res.json();
-  poll(job.id);
+  pollJob((await res.json()).id);
 });
 
-loadRunners().catch(() => {
-  statusEl.textContent = "backend not reachable — start it on port 8814";
-});
+// ---------- results ----------
+let selectedJob = "";
+
+async function refreshJobs(): Promise<void> {
+  const jobs: { id: string; runner: string; status: string }[] =
+    await (await fetch("/api/jobs")).json();
+  const body = $<HTMLTableSectionElement>("jobsBody");
+  body.innerHTML = "";
+  for (const job of jobs) {
+    const tr = document.createElement("tr");
+    if (job.id === selectedJob) tr.className = "sel";
+    tr.innerHTML =
+      `<td>${job.id}</td><td>${job.runner}</td>` +
+      `<td><span class="badge ${job.status}">${job.status}</span></td>`;
+    tr.addEventListener("click", () => selectJob(job.id));
+    body.appendChild(tr);
+  }
+}
+$<HTMLButtonElement>("jobsRefresh").addEventListener("click", refreshJobs);
+
+async function selectJob(jobId: string): Promise<void> {
+  selectedJob = jobId;
+  refreshJobs();
+  const files: { name: string; size: number }[] =
+    await (await fetch(`/api/jobs/${jobId}/files`)).json();
+  const list = $<HTMLUListElement>("resultFiles");
+  list.innerHTML = files.length ? "" : '<li class="hint">no files</li>';
+  for (const f of files) {
+    const url = `/api/jobs/${jobId}/files/${encodeURIComponent(f.name)}`;
+    const li = document.createElement("li");
+    const viewable = VIEWABLE.some((ext) => f.name.toLowerCase().endsWith(ext));
+    li.innerHTML =
+      `${f.name} <span class="hint">(${f.size.toLocaleString()} B)</span>` +
+      (viewable ? ` <a href="#" data-url="${url}">view</a>` : "") +
+      ` <a href="${url}" download>download</a>`;
+    list.appendChild(li);
+  }
+  list.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      $<HTMLIFrameElement>("resultFrame").src =
+        `/viewer/index.html?load=${encodeURIComponent(a.dataset.url!)}`;
+    });
+  });
+}
+
+// ---------- boot ----------
+xyzArea.value = atomsToText(SAMPLES.water);
+updateInpPreview();
+fetch("/api/health")
+  .then((r) => r.json())
+  .then((h) => { $<HTMLSpanElement>("health").textContent = `backend: v${h.version} ✓`; })
+  .catch(() => { $<HTMLSpanElement>("health").textContent = "backend: not reachable (start it on port 8814)"; });
+loadRunners().catch(() => {});
+updatePreview().catch(() => {});
