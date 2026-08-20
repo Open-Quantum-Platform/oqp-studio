@@ -6,7 +6,8 @@
 // port accepts connections, then navigate the main window to the backend
 // origin so UI, results viewer, and API all share http://127.0.0.1:<port>.
 
-use std::net::TcpStream;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
 use tauri::Manager;
@@ -20,6 +21,36 @@ fn backend_port() -> u16 {
         .ok()
         .and_then(|value| value.parse().ok())
         .unwrap_or(8814)
+}
+
+/// The version reported by a backend already listening on `port`.
+///
+/// A previous release left running keeps port 8814 open, and simply reusing
+/// whatever answers there would serve that old version's UI and API inside
+/// the new app — which looks exactly like the upgrade never happened.
+fn probe_version(port: u16) -> Option<String> {
+    let address = format!("127.0.0.1:{port}").parse().ok()?;
+    let mut stream = TcpStream::connect_timeout(&address, Duration::from_millis(700)).ok()?;
+    stream.set_read_timeout(Some(Duration::from_millis(1500))).ok()?;
+    stream
+        .write_all(
+            b"GET /api/health HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n",
+        )
+        .ok()?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response).ok()?;
+    let key = "\"version\":\"";
+    let start = response.find(key)? + key.len();
+    let rest = &response[start..];
+    let end = rest.find('"')?;
+    Some(rest[..end].to_string())
+}
+
+/// A port nothing is listening on, starting the search at `start`.
+fn free_port(start: u16) -> u16 {
+    (start..start.saturating_add(64))
+        .find(|port| TcpListener::bind(("127.0.0.1", *port)).is_ok())
+        .unwrap_or(start)
 }
 
 fn wait_for_port(port: u16, timeout: Duration) -> bool {
@@ -38,11 +69,15 @@ fn main() {
         .plugin(tauri_plugin_shell::init())
         .manage(Backend(std::sync::Mutex::new(None)))
         .setup(|app| {
-            let port = backend_port();
+            let requested = backend_port();
 
-            // Reuse an already-running backend (e.g. a dev server); otherwise
-            // spawn the bundled sidecar.
-            if TcpStream::connect(("127.0.0.1", port)).is_err() {
+            // Reuse a backend on the usual port only when it is this same
+            // version — an older copy still running would otherwise serve its
+            // own UI here. Anything else, and this app starts its own on a
+            // port that is actually free.
+            let matching = probe_version(requested).as_deref() == Some(env!("CARGO_PKG_VERSION"));
+            let port = if matching { requested } else { free_port(requested) };
+            if !matching {
                 let (_rx, child) = app
                     .shell()
                     .sidecar("oqp-studio-backend")?

@@ -20,24 +20,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
+from . import environment
+from . import network
 from .jobs import JobInfo, JobRequest, manager
 from .runners import available_runners
-
-
-def _use_system_trust_store() -> None:
-    """Verify TLS against the operating system's trust store.
-
-    A frozen build ships certifi's CA list, which does not include the private
-    roots that TLS-inspecting proxies on campus and corporate networks
-    present. Those roots are installed system-wide (otherwise browsers would
-    fail too), so deferring to the OS keychain makes outbound requests such as
-    the PubChem lookup work on those networks.
-    """
-    try:
-        import truststore
-    except ImportError:
-        return
-    truststore.inject_into_ssl()
 
 
 def _warm_up_rdkit() -> None:
@@ -57,7 +43,8 @@ def _warm_up_rdkit() -> None:
     threading.Thread(target=load, daemon=True).start()
 
 
-_use_system_trust_store()
+environment.enrich_path()
+network.activate()
 _warm_up_rdkit()
 
 app = FastAPI(title="OQP Studio backend", version=__version__)
@@ -71,6 +58,12 @@ def health() -> dict:
 @app.get("/api/runners")
 def runners() -> dict:
     return available_runners()
+
+
+@app.get("/api/runners/detail")
+def runner_detail() -> dict:
+    """Which runners work and, for the native one, the binary that was found."""
+    return {"available": available_runners(), **environment.describe()}
 
 
 @app.post("/api/jobs")
@@ -136,21 +129,25 @@ def pubchem_lookup(name: str) -> dict:
     """Fetch a 3D structure from PubChem by compound name."""
     url = PUBCHEM_URL.format(name=urllib.parse.quote(name))
     try:
-        with urllib.request.urlopen(url, timeout=15) as response:
+        with urllib.request.urlopen(url, timeout=15,
+                                    context=network.context()) as response:
             sdf = response.read().decode()
     except urllib.error.HTTPError as exc:
         detail = f"PubChem has no 3D record for '{name}'" if exc.code == 404 else str(exc)
         raise HTTPException(status_code=404, detail=detail) from exc
     except urllib.error.URLError as exc:
-        if isinstance(exc.reason, ssl.SSLCertVerificationError):
+        # Match on the message as well as the type: the certificate error can
+        # arrive wrapped differently depending on how the request failed.
+        certificate_problem = (isinstance(exc.reason, ssl.SSLCertVerificationError)
+                               or "CERTIFICATE_VERIFY" in str(exc))
+        if certificate_problem:
             raise HTTPException(
                 status_code=502,
                 detail=(
-                    "PubChem's certificate could not be verified. A network that "
-                    "inspects TLS traffic is usually the cause: install its root "
-                    "certificate in the system trust store, or point SSL_CERT_FILE "
-                    "at a bundle that contains it. Entering coordinates directly or "
-                    "using the sketcher needs no network access."
+                    "PubChem's certificate could not be verified — a network that "
+                    "inspects TLS traffic is the usual cause. Open File \u2192 "
+                    "Network settings to point OQP Studio at your network's root "
+                    "certificate. Sketching or typing coordinates needs no network."
                 ),
             ) from exc
         raise HTTPException(status_code=502, detail=f"PubChem unreachable: {exc}") from exc
@@ -348,6 +345,60 @@ def molden_charges(job_id: str, name: str) -> dict:
             return {"source": source, "charges": charges}
     return {"source": "mulliken (computed here)",
             "charges": molden.mulliken_charges(data)}
+
+
+class NetworkSettings(BaseModel):
+    ca_bundle: str = ""
+    insecure: bool = False
+
+
+@app.get("/api/network")
+def get_network() -> dict:
+    """What the app is doing about TLS, for the network settings dialog."""
+    return network.status()
+
+
+@app.post("/api/network")
+def set_network(settings: NetworkSettings) -> dict:
+    if settings.ca_bundle and not Path(settings.ca_bundle).is_file():
+        raise HTTPException(status_code=400,
+                            detail=f"no such file: {settings.ca_bundle}")
+    network.save(settings.ca_bundle, settings.insecure)
+    return network.status()
+
+
+@app.post("/api/network/certificate")
+async def upload_certificate(file: UploadFile = File(...)) -> dict:
+    """Store a root certificate the user picked in the file dialog.
+
+    A browser file picker hands over the contents, not a path, so the file is
+    copied next to the settings and the stored path points there.
+    """
+    data = (await file.read()).decode("utf-8", errors="replace")
+    if "BEGIN CERTIFICATE" not in data:
+        raise HTTPException(
+            status_code=400,
+            detail="that file is not a PEM certificate (no BEGIN CERTIFICATE block)",
+        )
+    target = network.settings_path().with_name("network-root.pem")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(data)
+    network.save(str(target), network.load()["insecure"])
+    return network.status()
+
+
+@app.get("/api/network/test")
+def test_network() -> dict:
+    """Try the PubChem host and report exactly what happened."""
+    try:
+        with urllib.request.urlopen(PUBCHEM_URL.format(name="water"), timeout=15,
+                                    context=network.context()):
+            return {"ok": True, "detail": "PubChem reachable and verified"}
+    except urllib.error.HTTPError as exc:
+        # The host answered, which is all this test needs to establish.
+        return {"ok": True, "detail": f"PubChem reachable (HTTP {exc.code})"}
+    except Exception as exc:  # noqa: BLE001 — the message is the whole point
+        return {"ok": False, "detail": str(exc)}
 
 
 RELEASES_API = "https://api.github.com/repos/Open-Quantum-Platform/oqp-studio/releases/latest"

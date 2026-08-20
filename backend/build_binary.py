@@ -47,6 +47,10 @@ def main() -> int:
         "uvicorn.logging",
         "--collect-submodules",
         "uvicorn",
+        # truststore is imported lazily and picks its backend by platform, so
+        # collect it whole rather than relying on the import graph.
+        "--collect-all",
+        "truststore",
         *rdkit_args,
         str(backend / "oqp_studio" / "server_main.py"),
     ]

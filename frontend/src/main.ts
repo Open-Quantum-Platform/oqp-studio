@@ -164,7 +164,13 @@ $<HTMLButtonElement>("pubchemFetch").addEventListener("click", async () => {
     builderStatus.textContent = `${data.atoms.length} atoms loaded from PubChem`;
     await updatePreview();
   } catch (err) {
-    builderStatus.textContent = `PubChem: ${(err as Error).message}`;
+    const message = (err as Error).message;
+    builderStatus.textContent = `PubChem: ${message}`;
+    // A certificate failure has a fix, so take the user straight to it.
+    if (/certificate/i.test(message)) {
+      hideBusy();
+      await openNetworkSettings();
+    }
   } finally {
     hideBusy();
   }
@@ -538,8 +544,20 @@ async function loadRunners(): Promise<void> {
   }
   const first = Object.entries(runners).find(([, ok]) => ok)?.[0];
   if (first) runnerSelect.value = first;
-  $<HTMLSpanElement>("runnersInfo").textContent =
+  const info = $<HTMLSpanElement>("runnersInfo");
+  info.textContent =
     "runners: " + Object.entries(runners).map(([n, ok]) => `${n} ${ok ? "✓" : "✗"}`).join(" · ");
+  // Say which openqp was found: "local ✓" is not much use without the path,
+  // and "local ✗" needs to say where the app looked.
+  try {
+    const detail = await (await fetch("/api/runners/detail")).json();
+    info.title = detail.openqp
+      ? `native openqp: ${detail.openqp}`
+      : `no openqp on PATH — searched:\n${(detail.path_entries ?? []).join("\n")}`;
+    if (detail.openqp) info.textContent += `  (${detail.openqp})`;
+  } catch {
+    // The footer is decoration; a missing detail endpoint is not worth a fuss.
+  }
 }
 
 async function pollJob(jobId: string): Promise<void> {
@@ -1263,6 +1281,7 @@ const COMMANDS: Record<string, () => void> = {
   "toggle-nav": () => setNavVisible(document.body.classList.contains("nav-hidden")),
   "reset-layout": resetLayout,
   docs: () => openExternally("https://docs.openqp.org"),
+  network: () => { void openNetworkSettings(); },
   "tab-builder": () => showTab("builder"),
   "tab-method": () => showTab("method"),
   "tab-run": () => showTab("run"),
@@ -1310,6 +1329,91 @@ $<HTMLButtonElement>("updateBtn").addEventListener("click", async () => {
     }
   } catch {
     menuNote.textContent = "could not check for updates";
+  }
+});
+
+// ---------- network settings ----------
+// A TLS-inspecting proxy is the usual reason a PubChem lookup fails, and the
+// user needs a way to hand the app their network's root certificate.
+const networkOverlay = $<HTMLDivElement>("networkOverlay");
+const caBundle = $<HTMLInputElement>("caBundle");
+const insecureSsl = $<HTMLInputElement>("insecureSsl");
+const networkNote = $<HTMLSpanElement>("networkNote");
+
+type NetworkStatus = {
+  system_trust_store: boolean; ca_bundle: string; ca_bundle_found: boolean;
+  insecure: boolean; settings_path: string;
+};
+
+function renderNetworkStatus(status: NetworkStatus): void {
+  const lines: [string, string][] = [
+    ["System trust store",
+     status.system_trust_store ? "in use" : "unavailable — falling back to the bundled CA list"],
+    ["Root certificate file",
+     status.ca_bundle ? (status.ca_bundle_found ? status.ca_bundle : `${status.ca_bundle} (missing)`) : "none"],
+    ["Certificate checks", status.insecure ? "skipped (you switched this on)" : "on"],
+  ];
+  $<HTMLDivElement>("networkStatus").innerHTML = rows(lines);
+  caBundle.value = status.ca_bundle;
+  insecureSsl.checked = status.insecure;
+}
+
+async function openNetworkSettings(): Promise<void> {
+  networkNote.textContent = "";
+  networkOverlay.style.display = "block";
+  try {
+    renderNetworkStatus(await (await fetch("/api/network")).json());
+  } catch {
+    networkNote.textContent = "could not read the current settings";
+  }
+}
+
+$<HTMLButtonElement>("networkClose").addEventListener("click", () => {
+  networkOverlay.style.display = "none";
+});
+
+// The file picker only yields a name, not a path, so the file is read and
+// written next to the settings; typing a path stays available.
+$<HTMLButtonElement>("caBrowse").addEventListener("click", () =>
+  $<HTMLInputElement>("caFile").click());
+
+$<HTMLInputElement>("caFile").addEventListener("change", async (event) => {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  const body = new FormData();
+  body.append("file", file);
+  const response = await fetch("/api/network/certificate", { method: "POST", body });
+  if (response.ok) {
+    const status = await response.json();
+    renderNetworkStatus(status);
+    networkNote.textContent = "certificate stored";
+  } else {
+    networkNote.textContent = "could not read that certificate";
+  }
+});
+
+$<HTMLButtonElement>("networkSave").addEventListener("click", async () => {
+  networkNote.textContent = "saving…";
+  const response = await fetch("/api/network", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ca_bundle: caBundle.value.trim(), insecure: insecureSsl.checked }),
+  });
+  if (response.ok) {
+    renderNetworkStatus(await response.json());
+    networkNote.textContent = "saved";
+  } else {
+    networkNote.textContent = (await response.json()).detail ?? "could not save";
+  }
+});
+
+$<HTMLButtonElement>("networkTest").addEventListener("click", async () => {
+  networkNote.textContent = "testing…";
+  try {
+    const result = await (await fetch("/api/network/test")).json();
+    networkNote.textContent = result.detail;
+  } catch {
+    networkNote.textContent = "the test could not run";
   }
 });
 
