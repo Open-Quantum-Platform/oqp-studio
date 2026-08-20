@@ -4,8 +4,12 @@
 # runner's glibc would produce an archive that refuses to start on the RHEL and
 # Rocky 8 machines a lot of clusters still run.
 #
-# Produces /src/dist/openqp-<version>.tar.gz containing a directory that runs
-# with nothing installed:  ./openqp job.inp
+# Produces /out/openqp-<version>.tar.gz containing a directory that runs with
+# nothing installed:  ./openqp job.inp
+#
+# /src is the engine checkout, mounted read-write only because the build needs
+# it; the archive goes to /out, a directory of the caller's choosing, so the
+# workflow knows where to collect it without reaching into the checkout.
 set -euo pipefail
 
 # NOT one of the /opt/python/* interpreters this image is famous for: those are
@@ -148,6 +152,6 @@ grep "TOTAL energy" hf.log
 grep -q -- "-76\.01074651" hf.log || { echo "energy does not match the reference"; exit 1; }
 echo "::endgroup::"
 
-mkdir -p /src/dist
-tar -czf "/src/dist/openqp-${VER}.tar.gz" -C /tmp/oqpdist openqp
-ls -lh "/src/dist/openqp-${VER}.tar.gz"
+mkdir -p /out
+tar -czf "/out/openqp-${VER}.tar.gz" -C /tmp/oqpdist openqp
+ls -lh "/out/openqp-${VER}.tar.gz"

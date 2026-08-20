@@ -106,6 +106,7 @@ jobs:
           # inside the engine tree (it is not there — this repository owns it).
           docker run --rm \
             -v "$PWD/openqp:/src" -v "$PWD/.cache:/host-cache" \
+            -v "$PWD/dist:/out" \
             -v "$PWD/.github/scripts:/scripts:ro" \
             -e ARCH='${{ matrix.arch }}' \
             -e ENGINE_TAG='${{ steps.engine.outputs.tag }}' -e ENGINE_SHA \
