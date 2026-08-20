@@ -14,9 +14,9 @@ jobs:
           - os: ubuntu-latest
             bundles: deb,appimage
           - os: macos-latest
-            bundles: dmg
+            bundles: app,dmg
           - os: macos-15-intel
-            bundles: dmg
+            bundles: app,dmg
           - os: windows-latest
             bundles: nsis,msi
     runs-on: ${{ matrix.os }}
@@ -116,7 +116,13 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         working-directory: shell/src-tauri/target/release/bundle/macos
-        run: tar czf "OQP-Studio-${{ matrix.os }}.app.tar.gz" "OQP Studio.app"
+        run: |
+          if [ ! -d "OQP Studio.app" ]; then
+            echo "no .app bundle here; contents:" && ls -la
+            exit 1
+          fi
+          tar czf "OQP-Studio-${{ matrix.os }}.app.tar.gz" "OQP Studio.app"
+          ls -la *.app.tar.gz
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
