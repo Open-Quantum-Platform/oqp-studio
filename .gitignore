@@ -30,3 +30,6 @@ shell/src-tauri/binaries/*
 shell/src-tauri/gen/
 shell/src-tauri/target/
 backend/*.spec
+
+# Mol* viewer copied from node_modules at build time
+frontend/public/molstar/

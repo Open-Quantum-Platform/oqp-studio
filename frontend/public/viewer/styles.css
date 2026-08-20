@@ -736,3 +736,20 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+/* ---- OQP Studio embedded theme override (appended by oqp-studio) ---- */
+:root {
+  --bg: #131519;
+  --panel: #1b1e24;
+  --panel-strong: #22262e;
+  --ink: #dde1e8;
+  --muted: #8b93a1;
+  --line: #2d323c;
+  --accent: #5aa9e6;
+  --accent-2: #7ac0f0;
+  --danger: #e66a6a;
+  --shadow: none;
+}
+body {
+  background: var(--bg);
+}

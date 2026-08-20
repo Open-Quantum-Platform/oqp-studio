@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>OQP Studio 3D</title>
+    <link rel="stylesheet" href="/molstar/molstar.css" />
+    <style>
+      html, body { margin: 0; height: 100%; background: #1b1e24; overflow: hidden; }
+      #app { position: absolute; inset: 0; }
+      /* Hide Mol* chrome — this page is a pure render surface. */
+      .msp-plugin .msp-layout-expanded { border: none; }
+      .msp-viewport-controls { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="/molstar/molstar.js"></script>
+    <script>
+      const DARK_BG = 0x1b1e24;
+
+      async function boot() {
+        const viewer = await molstar.Viewer.create("app", {
+          layoutIsExpanded: false,
+          layoutShowControls: false,
+          layoutShowRemoteState: false,
+          layoutShowSequence: false,
+          layoutShowLog: false,
+          layoutShowLeftPanel: false,
+          viewportShowExpand: false,
+          viewportShowSelectionMode: false,
+          viewportShowAnimation: false,
+          pdbProvider: "rcsb",
+        });
+
+        // Studio look: dark ground, soft ambient occlusion, thin outline.
+        const canvas3d = viewer.plugin.canvas3d;
+        if (canvas3d) {
+          canvas3d.setProps({
+            renderer: { backgroundColor: DARK_BG },
+            postprocessing: {
+              occlusion: {
+                name: "on",
+                params: {
+                  samples: 32, multiScale: { name: "off", params: {} },
+                  radius: 5, bias: 0.8, blurKernelSize: 15, blurDepthBias: 0.5,
+                  resolutionScale: 1, color: 0x000000,
+                },
+              },
+              outline: {
+                name: "on",
+                params: { scale: 1, threshold: 0.33, color: 0x000000,
+                          includeTransparent: true },
+              },
+              shadow: { name: "off", params: {} },
+            },
+          });
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const load = params.get("load");
+        if (load) {
+          const url = new URL(load, window.location.href);
+          if (url.origin === window.location.origin) {
+            await viewer.loadStructureFromUrl(url.href, "xyz", false);
+          }
+        }
+      }
+      boot();
+    </script>
+  </body>
+</html>

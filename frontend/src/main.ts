@@ -104,7 +104,7 @@ async function updatePreview(): Promise<void> {
   if (!res.ok) return;
   const { url } = await res.json();
   $<HTMLIFrameElement>("previewFrame").src =
-    `/viewer/index.html?load=${encodeURIComponent(url)}`;
+    `/builder3d.html?load=${encodeURIComponent(url)}`;
 }
 $<HTMLButtonElement>("previewBtn").addEventListener("click", updatePreview);
 
