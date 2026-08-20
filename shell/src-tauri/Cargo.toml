@@ -1,6 +1,6 @@
 [package]
 name = "oqp-studio"
-version = "0.1.0"
+version = "0.1.1"
 description = "OQP Studio desktop shell"
 edition = "2021"
 
