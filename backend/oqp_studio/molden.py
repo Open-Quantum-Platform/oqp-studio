@@ -211,19 +211,39 @@ def parse_molden(text: str) -> MoldenData:
     return data
 
 
-def _grid(data: MoldenData, max_points: int, margin: float = 4.5):
+# Grid spacing in Bohr. The isosurface is built by marching cubes over these
+# samples, so the spacing is what decides whether a lobe looks smooth or
+# faceted; 0.12 is fine enough that the facets fall below a pixel at normal
+# zoom. Large molecules relax towards MAX_SPACING to stay interactive.
+TARGET_SPACING = 0.12
+MAX_SPACING = 0.30
+
+
+def _grid(data: MoldenData, max_points: int, margin: float = 3.4,
+          target: float = TARGET_SPACING):
     """Regular grid (in Bohr) that encloses the molecule with a margin."""
     coords = np.array([[a[1], a[2], a[3]] for a in data.atoms]) / BOHR_TO_ANGSTROM
     lo = coords.min(axis=0) - margin
     hi = coords.max(axis=0) + margin
     span = hi - lo
-    # Uniform spacing that keeps the total grid under max_points.
-    spacing = max(0.25, float((span.prod() / max_points) ** (1 / 3)))
+    # As fine as TARGET_SPACING, unless that would blow the point budget.
+    budget = float((span.prod() / max_points) ** (1 / 3))
+    spacing = min(max(target, budget), MAX_SPACING)
     counts = np.maximum((span / spacing).astype(int) + 1, 2)
-    axes = [np.linspace(lo[d], lo[d] + spacing * (counts[d] - 1), counts[d])
-            for d in range(3)]
-    gx, gy, gz = np.meshgrid(*axes, indexing="ij")
-    return coords, lo, spacing, counts, (gx, gy, gz)
+    axes = tuple(np.linspace(lo[d], lo[d] + spacing * (counts[d] - 1), counts[d])
+                 for d in range(3))
+    return coords, lo, spacing, counts, axes
+
+
+def _point_budget(data: MoldenData, max_points: int) -> int:
+    """Trade grid points against basis size to keep a redraw interactive.
+
+    Evaluation cost is points x basis functions, so a large molecule gets a
+    coarser grid — which is also when a coarser grid is least visible, since
+    the whole molecule is drawn smaller.
+    """
+    WORK = 8e7
+    return int(max(120_000, min(max_points, WORK / max(1, len(data.basis)))))
 
 
 def _ao_norms(data: MoldenData) -> np.ndarray:
@@ -249,21 +269,54 @@ def _ao_norms(data: MoldenData) -> np.ndarray:
     return norms
 
 
-def _ao_values(data: MoldenData, coords: np.ndarray, mesh) -> list[np.ndarray]:
-    """Every basis function evaluated on the grid, cached per call."""
-    gx, gy, gz = mesh
-    norms = _ao_norms(data)
-    values = []
-    for bf in data.basis:
+def _ao_slab(data: MoldenData, coords: np.ndarray, norms: np.ndarray,
+             xs: np.ndarray, ys: np.ndarray, zs: np.ndarray) -> np.ndarray:
+    """Every basis function on one slab, shaped (n_basis, n_points).
+
+    A Cartesian Gaussian is separable — exp(-a r^2) is the product of three
+    one-dimensional factors — so the exponentials are evaluated along each
+    axis once and combined by outer products. That replaces one exp() per
+    grid point per primitive with three cheap multiplies, which is what
+    makes a grid fine enough to look smooth affordable.
+    """
+    out = np.empty((len(data.basis), xs.size * ys.size * zs.size), dtype=np.float32)
+    for index, bf in enumerate(data.basis):
         ax, ay, az = coords[bf.atom_index]
-        dx, dy, dz = gx - ax, gy - ay, gz - az
-        r2 = dx * dx + dy * dy + dz * dz
-        radial = np.zeros(gx.shape)
-        for exp_a, c in zip(bf.exponents, bf.coefficients):
-            radial += c * np.exp(-exp_a * r2)
+        dx, dy, dz = xs - ax, ys - ay, zs - az
         px, py, pz = bf.powers
-        values.append(bf.scale * (dx**px) * (dy**py) * (dz**pz) * radial)
-    return [v * n for v, n in zip(values, norms)]
+        block = np.zeros((xs.size, ys.size, zs.size))
+        for exp_a, c in zip(bf.exponents, bf.coefficients):
+            fx = (dx**px) * np.exp(-exp_a * dx * dx)
+            fy = (dy**py) * np.exp(-exp_a * dy * dy)
+            fz = (dz**pz) * np.exp(-exp_a * dz * dz)
+            block += c * (fx[:, None, None] * fy[None, :, None] * fz[None, None, :])
+        out[index] = (bf.scale * norms[index] * block).ravel()
+    return out
+
+
+def _slabs(count: int, basis_size: int, points_per_plane: int):
+    """Split the slow axis so one slab of AO values stays a sane size."""
+    per_slab = max(1, int(3e7 / max(1, basis_size * max(1, points_per_plane))))
+    for start in range(0, count, per_slab):
+        yield start, min(start + per_slab, count)
+
+
+def _evaluate(data: MoldenData, coords, axes, weights: np.ndarray) -> np.ndarray:
+    """Evaluate sum_mu w[k, mu] phi_mu(r) on the grid, for every row k.
+
+    One matrix product per slab keeps this in BLAS rather than in Python,
+    which matters once a molecule has a few hundred basis functions.
+    """
+    xs, ys, zs = axes
+    norms = _ao_norms(data)
+    result = np.zeros((weights.shape[0], xs.size, ys.size, zs.size), dtype=np.float32)
+    single = weights.astype(np.float32)
+    plane = ys.size * zs.size
+    for start, stop in _slabs(xs.size, len(data.basis), plane):
+        aos = _ao_slab(data, coords, norms, xs[start:stop], ys, zs)
+        result[:, start:stop] = (single @ aos).reshape(
+            weights.shape[0], stop - start, ys.size, zs.size)
+    return result
 
 
 def _cube_text(data: MoldenData, title: str, subtitle: str, coords, lo,
@@ -290,15 +343,9 @@ def _cube_text(data: MoldenData, title: str, subtitle: str, coords, lo,
 def orbital_cube(data: MoldenData, mo_index: int, max_points: int = 1_100_000) -> str:
     """Gaussian cube text of one MO evaluated on a regular grid (Bohr)."""
     orbital = data.orbitals[mo_index - 1]
-    coords, lo, spacing, counts, mesh = _grid(data, max_points)
-
-    values = np.zeros(mesh[0].shape)
-    for bf, coeff, ao in zip(data.basis, orbital.coefficients,
-                             _ao_values(data, coords, mesh)):
-        if abs(coeff) < 1e-10:
-            continue
-        values += coeff * ao
-
+    coords, lo, spacing, counts, axes = _grid(data, _point_budget(data, max_points))
+    values = _evaluate(data, coords, axes,
+                       np.asarray(orbital.coefficients, dtype=float)[None, :])[0]
     return _cube_text(
         data,
         f"OQP Studio molecular orbital {orbital.index}",
@@ -315,15 +362,14 @@ def _occupancies(data: MoldenData) -> list[float]:
             for o in data.orbitals]
 
 
-def density_grid(data: MoldenData, coords, mesh, spin: str = "total") -> np.ndarray:
+def density_grid(data: MoldenData, coords, axes, spin: str = "total") -> np.ndarray:
     """Electron density (or alpha-beta spin density) on the grid.
 
     rho(r) = sum_i n_i |psi_i(r)|^2 over the occupied orbitals, which is exact
     for a single-determinant reference and is what a Molden file describes.
     """
-    aos = _ao_values(data, coords, mesh)
     unrestricted = len({o.spin.lower() for o in data.orbitals}) > 1
-    density = np.zeros(mesh[0].shape)
+    rows, weights = [], []
     for orbital, occupancy in zip(data.orbitals, _occupancies(data)):
         if occupancy <= 1e-8:
             continue
@@ -345,19 +391,21 @@ def density_grid(data: MoldenData, coords, mesh, spin: str = "total") -> np.ndar
                 max(occupancy - 1.0, 0.0) if not unrestricted else 0.0)
         if abs(weight) < 1e-10:
             continue
-        psi = np.zeros(mesh[0].shape)
-        for coeff, ao in zip(orbital.coefficients, aos):
-            if abs(coeff) < 1e-10:
-                continue
-            psi += coeff * ao
+        rows.append(np.asarray(orbital.coefficients, dtype=float))
+        weights.append(weight)
+    if not rows:
+        return np.zeros((axes[0].size, axes[1].size, axes[2].size))
+    orbitals = _evaluate(data, coords, axes, np.vstack(rows))
+    density = np.zeros(orbitals.shape[1:])
+    for psi, weight in zip(orbitals, weights):
         density += weight * psi * psi
     return density
 
 
 def density_cube(data: MoldenData, spin: str = "total",
                  max_points: int = 700_000) -> str:
-    coords, lo, spacing, counts, mesh = _grid(data, max_points)
-    values = density_grid(data, coords, mesh, spin)
+    coords, lo, spacing, counts, axes = _grid(data, _point_budget(data, max_points))
+    values = density_grid(data, coords, axes, spin)
     label = {"total": "electron density", "spin": "spin density",
              "alpha": "alpha density", "beta": "beta density"}[spin]
     return _cube_text(data, f"OQP Studio {label}",
@@ -447,10 +495,15 @@ def esp_cube(data: MoldenData, charges: list[float] | None = None,
     This is the charge-model MEP that most viewers draw; it is not the exact
     density integral, and the cube header says so.
     """
-    coords, lo, spacing, counts, mesh = _grid(data, max_points)
+    # The potential falls off as 1/r, so its isosurfaces reach much further
+    # from the nuclei than an orbital's do; a tight box would cut them and
+    # leave a ring where the surface meets the box face. It is also a cheap
+    # field to evaluate, so the larger box costs almost nothing.
+    coords, lo, spacing, counts, axes = _grid(data, max_points, margin=7.0,
+                                              target=0.18)
     if charges is None or len(charges) != len(data.atoms):
         charges = mulliken_charges(data)
-    gx, gy, gz = mesh
+    gx, gy, gz = np.meshgrid(*axes, indexing="ij")
     values = np.zeros(gx.shape)
     for (x, y, z), q in zip(coords, charges):
         r = np.sqrt((gx - x) ** 2 + (gy - y) ** 2 + (gz - z) ** 2)

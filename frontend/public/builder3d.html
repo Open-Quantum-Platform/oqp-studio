@@ -116,6 +116,11 @@
 
         // loadVolumeFromUrl sets colour and opacity but not the visual kind, so
         // the created representations are updated in place afterwards.
+        //
+        // tryUseGpu:false is what keeps the surface smooth. Mol*'s GPU
+        // marching cubes uploads the volume as a byte texture, and quantizing
+        // the field to 256 levels puts a visible orange-peel ripple on every
+        // lobe; the CPU path reads the full-precision grid.
         async function applyOrbitalVisuals() {
           const plugin = viewer.plugin;
           const update = plugin.state.data.build();
@@ -130,7 +135,12 @@
               ...old,
               type: {
                 ...old.type,
-                params: { ...old.type.params, alpha: orbital.alpha, visuals: orbital.visuals },
+                params: {
+                  ...old.type.params,
+                  alpha: orbital.alpha,
+                  visuals: orbital.visuals,
+                  tryUseGpu: false,
+                },
               },
             }));
           });
@@ -228,6 +238,7 @@
         }
 
         window.oqpPlugin = viewer.plugin;   // handy for diagnostics
+        window.oqpViewer = viewer;
 
         // Mol*'s stock click behaviours re-frame the camera on every pick,
         // which would throw the view around while atoms are being measured.
@@ -247,9 +258,6 @@
           if (touched) await update.commit().catch(() => {});
         })();
         viewer.plugin.behaviors.interaction.click.subscribe(({ current, button }) => {
-          if (window.oqpDebugClicks) {
-            console.log("CLICK kind=", current?.loci?.kind, "button=", button);
-          }
           const loci = current?.loci;
           // Clicking empty space clears the current measurement.
           if (!loci || loci.kind !== "element-loci") {
@@ -350,11 +358,9 @@
           if (href) {
             await viewer.loadVolumeFromUrl(
               { url: href, format: "cube", isBinary: false },
-              [
-                { type: "absolute", value: iso, color: 0x4f8fdd, alpha: 0.85 },
-                { type: "absolute", value: -iso, color: 0xdd6a4f, alpha: 0.85 },
-              ]
+              isoSurfaces(iso),
             );
+            await applyOrbitalVisuals();
           }
         }
       }
