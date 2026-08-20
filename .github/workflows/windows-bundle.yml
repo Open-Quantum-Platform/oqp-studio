@@ -99,6 +99,12 @@ jobs:
           CMAKE_BUILD_PARALLEL_LEVEL: 4
           OQP_EXTERNALS_ROOT: C:\oqpx
         run: |
+          # PowerShell reports only the LAST native command's exit code as the
+          # step's status, so a failing build here used to be reported green and
+          # the error only surfaced later, as a missing DLL.  These two make any
+          # non-zero exit stop the step where it happened.
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           New-Item -ItemType Directory -Force -Path C:\oqpx, C:\oqpb | Out-Null
           python -m pip install --upgrade pip
           python -m pip install cmake ninja numpy cffi scikit-build-core pyinstaller
@@ -112,8 +118,18 @@ jobs:
             --config-settings=cmake.define.BUILD_TESTING=OFF
           python -m pip install scipy "numpy<2.2" basis_set_exchange geometric
 
+          # Fail here, where the build log is, rather than three steps later
+          # with an unhelpful "missing DLL".
+          python -c "import oqp, os; print('oqp at', os.path.dirname(oqp.__file__))"
+
       - name: Freeze into a standalone directory
         run: |
+          # PowerShell reports only the LAST native command's exit code as the
+          # step's status, so a failing build here used to be reported green and
+          # the error only surfaced later, as a missing DLL.  These two make any
+          # non-zero exit stop the step where it happened.
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           # `import oqp` prints "Failed to import mpi4py" to stdout on a non-MPI
           # build, so take only the last line -- the path.
           $pkg = (python -c "import os, oqp; print(os.path.dirname(oqp.__file__))") | Select-Object -Last 1
@@ -184,6 +200,12 @@ jobs:
 
       - name: Add the data tree and a README
         run: |
+          # PowerShell reports only the LAST native command's exit code as the
+          # step's status, so a failing build here used to be reported green and
+          # the error only surfaced later, as a missing DLL.  These two make any
+          # non-zero exit stop the step where it happened.
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
           $ver = python -c "import tomllib,pathlib; print(tomllib.loads(pathlib.Path('openqp/pyproject.toml').read_text())['project']['version'])"
           $engineSha = git -C openqp rev-parse HEAD
           "OQP_VERSION=$ver" >> $env:GITHUB_ENV
