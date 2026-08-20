@@ -48,7 +48,7 @@ jobs:
         shell: bash
         working-directory: backend
         run: |
-          pip install -e . pyinstaller
+          pip install -e . rdkit pyinstaller
           python build_binary.py
 
       - name: Stage sidecar with target triple

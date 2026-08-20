@@ -25,6 +25,13 @@ def main() -> int:
         return 1
 
     sep = ";" if os.name == "nt" else ":"
+    try:
+        import rdkit  # noqa: F401
+
+        rdkit_args = ["--collect-all", "rdkit"]
+    except ImportError:
+        rdkit_args = []
+        print("note: rdkit not installed — sketch-to-3D disabled in this binary")
     cmd = [
         sys.executable,
         "-m",
@@ -40,6 +47,7 @@ def main() -> int:
         "uvicorn.logging",
         "--collect-submodules",
         "uvicorn",
+        *rdkit_args,
         str(backend / "oqp_studio" / "server_main.py"),
     ]
     print(" ".join(cmd))

@@ -92,6 +92,36 @@ $<HTMLButtonElement>("pubchemFetch").addEventListener("click", async () => {
   }
 });
 
+// --- 2D sketcher (Ketcher in a modal; RDKit turns the sketch into 3D) ---
+const sketchOverlay = $<HTMLDivElement>("sketchOverlay");
+$<HTMLButtonElement>("sketchBtn").addEventListener("click", () => {
+  const frame = $<HTMLIFrameElement>("sketchFrame");
+  if (!frame.src) frame.src = "/sketcher.html";
+  sketchOverlay.style.display = "";
+});
+$<HTMLButtonElement>("sketchClose").addEventListener("click", () => {
+  sketchOverlay.style.display = "none";
+});
+window.addEventListener("message", async (event) => {
+  if (event.origin !== window.location.origin) return;
+  if (event.data?.type !== "oqp-sketch") return;
+  sketchOverlay.style.display = "none";
+  builderStatus.textContent = "building 3D coordinates…";
+  const res = await fetch("/api/structure3d", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ molfile: event.data.molfile }),
+  });
+  if (!res.ok) {
+    builderStatus.textContent = `3D build failed: ${(await res.json()).detail ?? res.status}`;
+    return;
+  }
+  const data = await res.json();
+  xyzArea.value = atomsToText(data.atoms);
+  builderStatus.textContent = `${data.atoms.length} atoms from sketch (RDKit ETKDG + MMFF)`;
+  updatePreview();
+});
+
 async function updatePreview(): Promise<void> {
   const atoms = parseAtoms(xyzArea.value);
   if (!atoms.length) return;

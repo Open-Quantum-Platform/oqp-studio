@@ -167,6 +167,47 @@ def molden_cube(job_id: str, name: str, mo: int) -> PlainTextResponse:
     return PlainTextResponse(molden.orbital_cube(data, mo))
 
 
+class Structure3DRequest(BaseModel):
+    molfile: str | None = None
+    smiles: str | None = None
+
+
+@app.post("/api/structure3d")
+def structure_3d(req: Structure3DRequest) -> dict:
+    """2D sketch (molfile) or SMILES -> 3D coordinates via RDKit ETKDG+MMFF."""
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import AllChem
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=501,
+            detail="RDKit is not installed on the backend (pip install rdkit)",
+        ) from exc
+
+    if req.molfile:
+        mol = Chem.MolFromMolBlock(req.molfile)
+    elif req.smiles:
+        mol = Chem.MolFromSmiles(req.smiles)
+    else:
+        raise HTTPException(status_code=422, detail="molfile or smiles required")
+    if mol is None:
+        raise HTTPException(status_code=422, detail="could not parse the structure")
+
+    mol = Chem.AddHs(mol)
+    if AllChem.EmbedMolecule(mol, AllChem.ETKDGv3()) != 0:
+        raise HTTPException(status_code=422, detail="3D embedding failed for this structure")
+    try:
+        AllChem.MMFFOptimizeMolecule(mol)
+    except Exception:  # noqa: BLE001, S110 — unoptimized coordinates are still usable
+        pass
+    conf = mol.GetConformer()
+    atoms = [
+        [atom.GetSymbol(), *(round(v, 6) for v in conf.GetAtomPosition(i))]
+        for i, atom in enumerate(mol.GetAtoms())
+    ]
+    return {"atoms": atoms}
+
+
 # In-memory store of geometry previews served back to the 3D viewer.
 _previews: OrderedDict[str, str] = OrderedDict()
 

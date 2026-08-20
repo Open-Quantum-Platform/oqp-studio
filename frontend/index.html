@@ -227,6 +227,7 @@
               <h3>Coordinates (Å) — element&nbsp;x&nbsp;y&nbsp;z</h3>
               <textarea id="xyz" rows="14" spellcheck="false"></textarea>
               <div class="actions">
+                <button class="ghost" id="sketchBtn">✏️ Sketch 2D…</button>
                 <button class="ghost" id="previewBtn">Update 3D preview</button>
                 <span class="hint" id="builderStatus"></span>
               </div>
@@ -359,6 +360,16 @@
         </div>
       </section>
     </main>
+
+    <div id="sketchOverlay" style="display:none;position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55)">
+      <div style="position:absolute;inset:4% 6%;background:var(--panel);border:1px solid var(--border);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:.5rem 1rem;border-bottom:1px solid var(--border)">
+          <strong>2D Sketcher</strong>
+          <button class="ghost" id="sketchClose" style="padding:.2rem .8rem">✕ Close</button>
+        </div>
+        <iframe id="sketchFrame" style="flex:1;border:0;background:#fff"></iframe>
+      </div>
+    </div>
 
     <footer>
       <span id="health">backend: connecting…</span>

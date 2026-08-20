@@ -82,6 +82,19 @@ def test_oqp_style_input_saved_as_oqp(tmp_path, monkeypatch):
     assert "input.oqp" in names
 
 
+def test_structure3d():
+    res = client.post("/api/structure3d", json={"smiles": "O"})
+    try:
+        import rdkit  # noqa: F401
+    except ImportError:
+        assert res.status_code == 501
+        return
+    assert res.status_code == 200
+    atoms = res.json()["atoms"]
+    assert len(atoms) == 3  # water with added hydrogens
+    assert sorted(a[0] for a in atoms) == ["H", "H", "O"]
+
+
 def test_molden_parse_and_cube():
     from pathlib import Path
 
