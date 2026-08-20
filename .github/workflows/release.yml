@@ -241,3 +241,41 @@ jobs:
           pip install twine
           twine upload --non-interactive \
             -u __token__ -p "$PYPI_API_TOKEN" dist/*
+
+  # The compute engine, attached to the same release as the app.
+  #
+  # These take hours where the installers take minutes, so they run as their
+  # own jobs: the installers appear on the release page first and the engine
+  # archives follow. They are called rather than left to their own
+  # `release: published` trigger, because a release created by this workflow's
+  # GITHUB_TOKEN does not raise events — that trigger only fires for a release
+  # a person publishes by hand.
+  #
+  # Each archive is also a standalone download: unzip and run ./openqp, no GUI
+  # and no Python involved.
+  engine-linux:
+    needs: installers
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+    uses: ./.github/workflows/linux-bundle.yml
+    permissions:
+      contents: write
+    with:
+      release_tag: ${{ inputs.release_tag || github.ref_name }}
+
+  engine-macos:
+    needs: installers
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+    uses: ./.github/workflows/macos-bundle.yml
+    permissions:
+      contents: write
+    with:
+      release_tag: ${{ inputs.release_tag || github.ref_name }}
+
+  engine-windows:
+    needs: installers
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+    uses: ./.github/workflows/windows-bundle.yml
+    permissions:
+      contents: write
+    with:
+      release_tag: ${{ inputs.release_tag || github.ref_name }}

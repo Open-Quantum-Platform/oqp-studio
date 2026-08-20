@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__
+from . import engine
 from . import environment
 from . import network
 from .jobs import JobInfo, JobRequest, manager
@@ -395,6 +396,63 @@ EXTERNAL_HOSTS = frozenset({
     "www.rcsb.org",
     "pubchem.ncbi.nlm.nih.gov",
 })
+
+
+# Progress of an engine download, polled by the UI.
+_engine_state: dict = {"status": "idle", "detail": "", "percent": 0}
+
+
+def _install_engine(assets: list[dict]) -> None:
+    try:
+        asset = engine.pick_asset(assets)
+        if asset is None:
+            _engine_state.update(
+                status="failed",
+                detail=f"no engine archive published for {engine.archive_suffix()}")
+            return
+
+        def progress(done: int, total: int) -> None:
+            _engine_state.update(
+                status="downloading",
+                percent=int(done * 100 / total) if total else 0,
+                detail=f"{done // 1_000_000} MB of {total // 1_000_000} MB")
+
+        _engine_state.update(status="downloading", percent=0, detail=asset["name"])
+        path = engine.install(asset["url"], progress)
+        _engine_state.update(status="ready", percent=100, detail=path)
+    except Exception as exc:  # noqa: BLE001 — the UI shows whatever went wrong
+        _engine_state.update(status="failed", detail=str(exc))
+
+
+@app.get("/api/engine")
+def engine_status() -> dict:
+    """Whether a compute engine is available, and where it came from."""
+    return engine.status()
+
+
+@app.post("/api/engine/install")
+def engine_install() -> dict:
+    """Download the standalone engine archive that matches this machine."""
+    if _engine_state["status"] == "downloading":
+        return _engine_state
+    if not engine.archive_suffix():
+        raise HTTPException(status_code=400,
+                            detail="no engine archive is published for this platform")
+    info = update_check()
+    assets = info.get("assets") or []
+    if not engine.pick_asset(assets):
+        raise HTTPException(
+            status_code=404,
+            detail=("this release carries no engine archive yet — the engine builds "
+                    "run after the installers and can take a couple of hours"))
+    _engine_state.update(status="downloading", percent=0, detail="starting…")
+    threading.Thread(target=_install_engine, args=(assets,), daemon=True).start()
+    return _engine_state
+
+
+@app.get("/api/engine/status")
+def engine_progress() -> dict:
+    return _engine_state
 
 
 class ExternalLink(BaseModel):

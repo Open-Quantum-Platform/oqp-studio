@@ -1332,6 +1332,7 @@ const COMMANDS: Record<string, () => void> = {
   "reset-layout": resetLayout,
   docs: () => openExternally("https://docs.openqp.org"),
   network: () => { void openNetworkSettings(); },
+  engine: () => { void installEngine(); },
   "tab-builder": () => showTab("builder"),
   "tab-method": () => showTab("method"),
   "tab-run": () => showTab("run"),
@@ -1512,6 +1513,50 @@ async function installUpdate(): Promise<void> {
       return;
     } else if (state.status === "failed") {
       menuNote.textContent = `update failed: ${state.detail}`;
+      return;
+    }
+  }
+}
+
+// The compute engine ships as its own release archive — unzip and run, no
+// Python or BLAS needed — so the app can fetch the one that matches and run
+// jobs without the user assembling a toolchain. The same archive works from a
+// terminal for anyone who would rather not use the GUI.
+async function installEngine(): Promise<void> {
+  menuNote.textContent = "checking…";
+  try {
+    const current = await (await fetch("/api/engine")).json();
+    if (current.installed) {
+      menuNote.textContent = `the engine is already available: ${current.path}`;
+      return;
+    }
+    const started = await fetch("/api/engine/install", { method: "POST" });
+    if (!started.ok) {
+      menuNote.textContent = (await started.json()).detail ?? "could not start the download";
+      return;
+    }
+  } catch {
+    menuNote.textContent = "could not reach the backend";
+    return;
+  }
+
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    let state: { status: string; percent: number; detail: string };
+    try {
+      state = await (await fetch("/api/engine/status")).json();
+    } catch {
+      menuNote.textContent = "lost contact with the backend";
+      return;
+    }
+    if (state.status === "downloading") {
+      menuNote.textContent = `downloading the engine… ${state.percent}% (${state.detail})`;
+    } else if (state.status === "ready") {
+      menuNote.textContent = "the engine is installed — the local runner is ready";
+      await loadRunners();
+      return;
+    } else if (state.status === "failed") {
+      menuNote.textContent = `engine install failed: ${state.detail}`;
       return;
     }
   }

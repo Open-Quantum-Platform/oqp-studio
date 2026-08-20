@@ -27,6 +27,16 @@ on:
         type: string
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      release_tag:
+        description: "Attach the archive to this already-published release"
+        required: false
+        type: string
+      openqp_ref:
+        description: "OpenQP tag to build (default: its latest release)"
+        required: false
+        type: string
 
 # `gh release upload` needs write access to contents, and the default workflow
 # token is read-only.  This is the only write these workflows do -- the archive
@@ -43,6 +53,12 @@ jobs:
       run:
         shell: pwsh
     steps:
+      # This repository carries the build script and the composite action the
+      # steps below use, so it has to be on disk; the engine is checked out
+      # separately, into openqp/.
+      - name: Check out this repository
+        uses: actions/checkout@v4
+
       - name: Resolve OpenQP's latest release
         id: engine
         env:
@@ -233,6 +249,9 @@ jobs:
           # Always a released engine, so the version alone names it; the
           # README inside records the tag, the engine commit and the run.
           $zip = "openqp-$ver-windows-x86_64.zip"
+          # Zip the CONTENTS of the frozen directory, so unzipping gives
+          # openqp.exe at the top rather than one more folder to descend into.
+          Compress-Archive -Path C:\oqpdist\openqp\* -DestinationPath $zip -CompressionLevel Optimal
           "BUNDLE_ZIP=$zip" >> $env:GITHUB_ENV
           Get-Item $zip | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
 
@@ -243,7 +262,7 @@ jobs:
           if-no-files-found: error
 
       - name: Attach to the release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.release_tag != ''
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload ${{ github.event.release.tag_name }} $env:BUNDLE_ZIP --clobber
+        run: gh release upload "${{ github.event.release.tag_name || inputs.release_tag }}" $env:BUNDLE_ZIP --clobber
