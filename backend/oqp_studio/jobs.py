@@ -46,6 +46,28 @@ class JobManager:
     def __init__(self) -> None:
         self._jobs: dict[str, JobInfo] = {}
         self._lock = threading.Lock()
+        self._recover()
+
+    def _recover(self) -> None:
+        """Adopt job directories left by earlier runs.
+
+        Outputs outlive the process, so a restart should not empty the job
+        list and leave the analysis tab with nothing to open.
+        """
+        if not JOBS_ROOT.is_dir():
+            return
+        for job_dir in sorted(JOBS_ROOT.iterdir()):
+            if not job_dir.is_dir() or not any(job_dir.iterdir()):
+                continue
+            created = datetime.fromtimestamp(
+                job_dir.stat().st_mtime, timezone.utc).isoformat()
+            self._jobs[job_dir.name] = JobInfo(
+                id=job_dir.name,
+                name=job_dir.name,
+                status=JobStatus.done,
+                runner="recovered",
+                created_at=created,
+            )
 
     def submit(self, req: JobRequest) -> JobInfo:
         job_id = uuid.uuid4().hex[:12]

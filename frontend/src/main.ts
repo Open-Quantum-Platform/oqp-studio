@@ -594,6 +594,7 @@ $<HTMLButtonElement>("jobsRefresh").addEventListener("click", refreshJobs);
 async function selectJob(jobId: string): Promise<void> {
   selectedJob = jobId;
   refreshJobs();
+  loadSummary(jobId).catch(() => {});
   const files: { name: string; size: number }[] =
     await (await fetch(`/api/jobs/${jobId}/files`)).json();
   const list = $<HTMLUListElement>("resultFiles");
@@ -614,6 +615,19 @@ async function selectJob(jobId: string): Promise<void> {
       viewResultFile(jobId, a.dataset.name!, a.dataset.url!);
     });
   });
+}
+
+// Energies, states, frequencies and properties, read back from whatever the
+// job wrote — the JSON export when there is one, the log otherwise.
+async function loadSummary(jobId: string): Promise<void> {
+  $<HTMLDivElement>("summaryCard").style.display = "none";
+  $<HTMLDivElement>("spectrumCard").style.display = "none";
+  const response = await fetch(`/api/jobs/${jobId}/summary?refresh=true`);
+  if (!response.ok) return;
+  summary = await response.json();
+  renderSummary(summary!);
+  buildSpectrumList(summary!);
+  if ($<HTMLDivElement>("spectrumCard").style.display === "") await loadSpectrum();
 }
 
 const resultFrame = $<HTMLIFrameElement>("resultFrame");
@@ -661,6 +675,7 @@ $<HTMLInputElement>("resultFrameRange").addEventListener("input", (event) => {
 
 function hideResultPanels(): void {
   orbitalCard.style.display = "none";
+  $<HTMLDivElement>("levelCard").style.display = "none";
   modeCard.style.display = "none";
   $<HTMLDivElement>("resultFrameCard").style.display = "none";
   currentMolden = null;
@@ -695,6 +710,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
         .find((o: { occupancy: number | null }) => (o.occupancy ?? 0) > 1e-6);
       if (homo) orbitalSel.value = String(homo.index);
       orbitalCard.style.display = "";
+      drawLevels(orbitals.orbitals);
       showOrbital();
     }
     if (modes?.modes?.length) {
@@ -740,29 +756,44 @@ async function openAsStructure(name: string, url: string): Promise<void> {
   }
 }
 
+// Isovalues that suit each field: orbitals peak near 0.05, the density is
+// conventionally drawn at 0.002, and the MEP is a potential in Hartree/e.
+const MAP_ISO: Record<string, number> = {
+  mo: 0.05, density: 0.002, spin: 0.004, esp: 0.03,
+};
+
+const mapKind = $<HTMLSelectElement>("mapKind");
+
+function mapUrl(base: string): string {
+  return mapKind.value === "mo"
+    ? `${base}/cube?mo=${orbitalSel.value}`
+    : `${base}/map?kind=${mapKind.value}`;
+}
+
 function showOrbital(): void {
   if (!currentMolden) return;
   pushOrbitalStyle();
+  $<HTMLDivElement>("orbitalPick").style.display = mapKind.value === "mo" ? "" : "none";
   const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
-  pushToResultViewer({
-    type: "oqp-cube",
-    cube: `${base}/cube?mo=${orbitalSel.value}`,
-    iso: +isoRange.value,
-    geom: `${base}/geom.xyz`,
-  });
+  const iso = +isoRange.value;
   fetch(`${base}/geom.xyz`)
     .then((r) => r.text())
     .then((xyz) =>
       pushToResultViewer({
         type: "oqp-cube",
         xyz,
-        cube: `${base}/cube?mo=${orbitalSel.value}`,
-        iso: +isoRange.value,
+        cube: mapUrl(base),
+        iso,
       }),
     );
 }
 orbitalSel.addEventListener("change", showOrbital);
 isoRange.addEventListener("change", showOrbital);
+mapKind.addEventListener("change", () => {
+  // Each field has its own natural contour, so move the slider with it.
+  isoRange.value = String(MAP_ISO[mapKind.value] ?? 0.05);
+  showOrbital();
+});
 
 function showMode(): void {
   if (!currentMolden) return;
@@ -773,6 +804,405 @@ function showMode(): void {
 }
 modeSel.addEventListener("change", showMode);
 amplitudeRange.addEventListener("change", showMode);
+
+// ---------- results summary ----------
+type Summary = {
+  energy: { total?: number; components?: Record<string, number>;
+            final_states?: Record<string, number> };
+  scf: { method?: string; energy?: number; iterations?: number; converged?: boolean };
+  states: { index: number; total: number; excitation_ev: number;
+            excitation_nm: number | null; oscillator: number | null }[];
+  frequencies: { index: number; frequency: number; ir: number | null; raman: number | null }[];
+  thermochemistry: Record<string, number>;
+  charges: Record<string, number[]>;
+  dipole: { x: number; y: number; z: number; total_au: number; total_debye: number } | null;
+  symmetry: { point_group: string; detected: string | null; enabled: boolean } | null;
+  units: { ir: string; raman: string };
+  has_frequencies: boolean;
+  has_states: boolean;
+  has_oscillators: boolean;
+};
+
+let summary: Summary | null = null;
+
+const ENERGY_LABELS: Record<string, string> = {
+  total: "Total energy",
+  one_electron: "One-electron energy",
+  two_electron: "Two-electron energy",
+  nuclear_repulsion: "Nuclear repulsion",
+  potential: "Potential energy",
+  kinetic: "Kinetic energy",
+  virial_ratio: "Virial ratio (V/T)",
+};
+
+const THERMO_LABELS: Record<string, string> = {
+  temperature: "Temperature (K)",
+  pressure: "Pressure (atm)",
+  zpe: "Zero-point energy",
+  internal_energy: "Internal energy U",
+  enthalpy: "Enthalpy H",
+  gibbs_free_energy: "Gibbs free energy G",
+};
+
+function rows(pairs: [string, string][]): string {
+  return pairs.length
+    ? `<table class="sum">${pairs
+        .map(([k, v]) => `<tr><td class="k">${k}</td><td class="v">${v}</td></tr>`)
+        .join("")}</table>`
+    : "";
+}
+
+function fixed(value: number, digits = 6): string {
+  return Number.isFinite(value) ? value.toFixed(digits) : "—";
+}
+
+function renderSummary(data: Summary): void {
+  const parts: string[] = [];
+
+  const energy: [string, string][] = [];
+  if (data.scf.energy !== undefined) {
+    energy.push([`${data.scf.method ?? "SCF"} energy (Ha)`, fixed(data.scf.energy, 8)]);
+  }
+  if (data.scf.iterations !== undefined) {
+    energy.push(["SCF iterations", String(data.scf.iterations)]);
+  }
+  if (data.scf.converged !== undefined) {
+    energy.push(["Converged", data.scf.converged ? "yes" : "no"]);
+  }
+  for (const [key, label] of Object.entries(ENERGY_LABELS)) {
+    const value = data.energy.components?.[key];
+    if (value === undefined) continue;
+    // The virial ratio is dimensionless; everything else here is in Hartree.
+    energy.push([key === "virial_ratio" ? label : `${label} (Ha)`, fixed(value)]);
+  }
+  if (energy.length) parts.push(`<div class="sum-title">Energy</div>${rows(energy)}`);
+
+  if (data.symmetry?.point_group) {
+    const upper = (text: string) =>
+      text.charAt(0).toUpperCase() + text.slice(1);
+    parts.push('<div class="sum-title">Symmetry</div>' + rows([
+      ["Point group", upper(data.symmetry.point_group)],
+      ["Detected", upper(data.symmetry.detected ?? data.symmetry.point_group)],
+      ["Used in the run", data.symmetry.enabled ? "yes" : "no"],
+    ]));
+  }
+
+  if (data.dipole) {
+    parts.push('<div class="sum-title">Dipole moment</div>' + rows([
+      ["x, y, z (a.u.)",
+       `${fixed(data.dipole.x, 4)}, ${fixed(data.dipole.y, 4)}, ${fixed(data.dipole.z, 4)}`],
+      ["Magnitude (Debye)", fixed(data.dipole.total_debye, 4)],
+    ]));
+  }
+
+  if (data.states.length > 1) {
+    const head = "<tr><th>State</th><th>ΔE (eV)</th><th>λ (nm)</th><th>f</th></tr>";
+    const body = data.states.slice(1).map((state) =>
+      `<tr><td class="k">S${state.index}</td>` +
+      `<td class="v">${state.excitation_ev.toFixed(3)}</td>` +
+      `<td class="v">${state.excitation_nm ? state.excitation_nm.toFixed(1) : "—"}</td>` +
+      `<td class="v">${state.oscillator != null ? state.oscillator.toFixed(4) : "—"}</td></tr>`,
+    ).join("");
+    parts.push(`<div class="sum-title">Excited states</div>` +
+      `<table class="sum">${head}${body}</table>` +
+      (data.has_oscillators ? "" :
+        '<div class="hint">the output carries no oscillator strengths</div>'));
+  }
+
+  if (data.frequencies.length) {
+    const head = `<tr><th>Mode</th><th>cm⁻¹</th><th>IR (${data.units.ir})</th>` +
+      `<th>Raman (${data.units.raman})</th></tr>`;
+    const body = data.frequencies.map((mode) =>
+      `<tr><td class="k">${mode.index}</td><td class="v">${mode.frequency.toFixed(1)}</td>` +
+      `<td class="v">${mode.ir != null ? mode.ir.toFixed(3) : "—"}</td>` +
+      `<td class="v">${mode.raman != null ? mode.raman.toFixed(2) : "—"}</td></tr>`,
+    ).join("");
+    const imaginary = data.frequencies.filter((m) => m.frequency < 0).length;
+    parts.push(`<div class="sum-title">Vibrations</div>` +
+      `<table class="sum">${head}${body}</table>` +
+      (imaginary
+        ? `<div class="hint">${imaginary} imaginary mode(s): this is a saddle point</div>`
+        : ""));
+  }
+
+  const thermo = Object.entries(THERMO_LABELS)
+    .filter(([key]) => data.thermochemistry[key] !== undefined)
+    .map(([key, label]) => [label, fixed(data.thermochemistry[key])] as [string, string]);
+  if (thermo.length) {
+    parts.push(`<div class="sum-title">Thermochemistry</div>${rows(thermo)}`);
+  }
+
+  const charge = Object.entries(data.charges)[0];
+  if (charge) {
+    const [source, values] = charge;
+    parts.push(`<div class="sum-title">Partial charges (${source})</div>` +
+      rows(values.map((q, i) => [`Atom ${i + 1}`, fixed(q, 4)] as [string, string])));
+  }
+
+  const body = $<HTMLDivElement>("summaryBody");
+  body.innerHTML = parts.length
+    ? parts.join("")
+    : '<div class="hint">nothing summarisable in this job\u2019s output yet</div>';
+  $<HTMLDivElement>("summaryCard").style.display = parts.length ? "" : "none";
+}
+
+// ---------- spectra ----------
+const SPECTRA: { value: string; label: string; needs: "freq" | "states" }[] = [
+  { value: "ir", label: "IR absorption", needs: "freq" },
+  { value: "raman", label: "Raman", needs: "freq" },
+  { value: "absorption", label: "UV/Vis absorption", needs: "states" },
+  { value: "emission", label: "Emission (Kasha)", needs: "states" },
+  { value: "esa", label: "Excited-state absorption", needs: "states" },
+];
+
+const specKind = $<HTMLSelectElement>("specKind");
+const specShape = $<HTMLSelectElement>("specShape");
+const specWidth = $<HTMLInputElement>("specWidth");
+const specState = $<HTMLInputElement>("specState");
+
+function buildSpectrumList(data: Summary): void {
+  const usable = SPECTRA.filter((entry) =>
+    entry.needs === "freq" ? data.has_frequencies : data.has_states);
+  specKind.innerHTML = "";
+  for (const entry of usable) {
+    const option = document.createElement("option");
+    option.value = entry.value;
+    option.textContent = entry.label;
+    specKind.appendChild(option);
+  }
+  $<HTMLDivElement>("spectrumCard").style.display = usable.length ? "" : "none";
+  if (usable.length) syncSpectrumControls();
+}
+
+// Vibrational widths are in cm-1, electronic ones in eV, so the slider has to
+// change meaning with the spectrum.
+function vibrationalKind(): boolean {
+  return specKind.value === "ir" || specKind.value === "raman";
+}
+
+function syncSpectrumControls(): void {
+  const vibrational = vibrationalKind();
+  specWidth.min = vibrational ? "1" : "1";
+  specWidth.max = vibrational ? "100" : "100";
+  const width = widthValue();
+  $<HTMLSpanElement>("specWidthLabel").textContent =
+    vibrational ? `${width.toFixed(0)} cm⁻¹` : `${width.toFixed(2)} eV`;
+  $<HTMLDivElement>("specStateWrap").style.display =
+    specKind.value === "emission" || specKind.value === "esa" ? "" : "none";
+}
+
+function widthValue(): number {
+  const raw = +specWidth.value;
+  return vibrationalKind() ? raw : raw / 100;   // slider steps of 0.01 eV
+}
+
+async function loadSpectrum(): Promise<void> {
+  if (!selectedJob) return;
+  syncSpectrumControls();
+  const query = new URLSearchParams({
+    kind: specKind.value,
+    shape: specShape.value,
+    fwhm: String(widthValue()),
+    state: specState.value,
+  });
+  const data = await (await fetch(`/api/jobs/${selectedJob}/spectrum?${query}`)).json();
+  drawSpectrum(data);
+}
+
+type SpectrumData = {
+  available: boolean; reason?: string;
+  x: number[]; y: number[]; x_nm?: number[];
+  sticks: { position: number; intensity: number; position_nm?: number }[];
+  x_label: string; y_label: string; reverse_x: boolean;
+  estimated_intensities?: boolean; title?: string;
+};
+
+function drawSpectrum(data: SpectrumData): void {
+  lastSpectrum = data;
+  const plot = $<HTMLDivElement>("specPlot");
+  const note = $<HTMLDivElement>("specNote");
+  if (!data.available || !data.x.length) {
+    plot.innerHTML = "";
+    note.textContent = data.reason ?? "no spectrum for this job";
+    return;
+  }
+
+  const w = 520, h = 240, pad = { l: 52, r: 12, t: 10, b: 34 };
+  const xs = data.x, ys = data.y;
+  const xMin = Math.min(...xs), xMax = Math.max(...xs);
+  const yMax = Math.max(...ys, 1e-12);
+  const flip = data.reverse_x;
+  const sx = (x: number) => {
+    const t = (x - xMin) / (xMax - xMin || 1);
+    return pad.l + (flip ? 1 - t : t) * (w - pad.l - pad.r);
+  };
+  const sy = (y: number) => h - pad.b - (y / yMax) * (h - pad.t - pad.b);
+
+  const path = xs.map((x, i) => `${i ? "L" : "M"}${sx(x).toFixed(1)},${sy(ys[i]).toFixed(1)}`)
+    .join("");
+  const stickMax = Math.max(...data.sticks.map((s) => s.intensity), 1e-12);
+  const sticks = data.sticks.map((stick) => {
+    const x = sx(stick.position).toFixed(1);
+    const top = sy((stick.intensity / stickMax) * yMax * 0.92).toFixed(1);
+    return `<line x1="${x}" y1="${h - pad.b}" x2="${x}" y2="${top}" ` +
+      `stroke="var(--text-dim)" stroke-width="1" opacity="0.75"><title>` +
+      `${stick.position.toFixed(2)}  I=${stick.intensity.toPrecision(3)}</title></line>`;
+  }).join("");
+
+  // Four ticks per axis is enough to read a spectrum without clutter.
+  const ticks = [0, 1, 2, 3, 4].map((i) => {
+    const value = xMin + ((xMax - xMin) * i) / 4;
+    return `<text x="${sx(value).toFixed(1)}" y="${h - pad.b + 14}" fill="var(--text-dim)" ` +
+      `font-size="10" text-anchor="middle">${value >= 100 ? value.toFixed(0) : value.toFixed(2)}</text>`;
+  }).join("");
+  const yTicks = [0, 0.5, 1].map((f) =>
+    `<text x="${pad.l - 6}" y="${(sy(f * yMax) + 3).toFixed(1)}" fill="var(--text-dim)" ` +
+    `font-size="10" text-anchor="end">${(f * yMax).toPrecision(2)}</text>`).join("");
+
+  plot.innerHTML =
+    `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${data.x_label}">` +
+    `<rect x="${pad.l}" y="${pad.t}" width="${w - pad.l - pad.r}" height="${h - pad.t - pad.b}" ` +
+    `fill="none" stroke="var(--border)"/>` +
+    sticks +
+    `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.6"/>` +
+    ticks + yTicks +
+    `<text x="${(pad.l + w - pad.r) / 2}" y="${h - 4}" fill="var(--text-dim)" font-size="11" ` +
+    `text-anchor="middle">${data.x_label}</text>` +
+    `<text x="12" y="${(h - pad.b + pad.t) / 2}" fill="var(--text-dim)" font-size="11" ` +
+    `text-anchor="middle" transform="rotate(-90 12 ${(h - pad.b + pad.t) / 2})">${data.y_label}</text>` +
+    `</svg>`;
+
+  const shape = specShape.value === "lorentzian" ? "Lorentzian"
+    : specShape.value === "gaussian" ? "Gaussian" : "pseudo-Voigt";
+  note.textContent = `${data.title ?? ""} ${shape} broadening, ` +
+    `${data.sticks.length} transition${data.sticks.length === 1 ? "" : "s"}` +
+    (data.estimated_intensities
+      ? " — no oscillator strengths in the output, so every line is drawn at equal intensity"
+      : "");
+}
+
+for (const control of [specKind, specShape, specState]) {
+  control.addEventListener("change", () => { void loadSpectrum(); });
+}
+specWidth.addEventListener("input", syncSpectrumControls);
+specWidth.addEventListener("change", () => { void loadSpectrum(); });
+
+// ---------- image and data export ----------
+document.querySelectorAll<HTMLButtonElement>(".snapshot").forEach((button) => {
+  button.addEventListener("click", () => {
+    const frame = document.getElementById(button.dataset.frame!) as HTMLIFrameElement | null;
+    frame?.contentWindow?.postMessage({ type: "oqp-snapshot" }, window.location.origin);
+  });
+});
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== window.location.origin) return;
+  if (event.data?.type !== "oqp-snapshot-data") return;
+  const image = event.data.image as string | null;
+  if (!image) return;
+  const link = document.createElement("a");
+  link.href = image;
+  link.download = "oqp-studio-view.png";
+  link.click();
+});
+
+let lastSpectrum: SpectrumData | null = null;
+
+$<HTMLButtonElement>("specCsv").addEventListener("click", () => {
+  if (!lastSpectrum?.available) return;
+  const header = `# ${lastSpectrum.x_label}, ${lastSpectrum.y_label}\n`;
+  const curve = lastSpectrum.x
+    .map((x, i) => `${x.toPrecision(8)},${lastSpectrum!.y[i].toPrecision(8)}`)
+    .join("\n");
+  const sticks = lastSpectrum.sticks
+    .map((stick) => `# stick,${stick.position.toPrecision(8)},${stick.intensity.toPrecision(6)}`)
+    .join("\n");
+  download(`${specKind.value}-spectrum.csv`, `${header}${sticks}\n${curve}\n`);
+});
+
+// ---------- orbital energy level diagram ----------
+// The picture GaussView and IQmol show beside the orbitals: occupied levels
+// below the gap, virtuals above, the HOMA-LUMO gap read at a glance.
+type LevelOrbital = { index: number; energy: number; occupancy: number | null; spin: string };
+
+function drawLevels(orbitals: LevelOrbital[]): void {
+  const card = $<HTMLDivElement>("levelCard");
+  const plot = $<HTMLDivElement>("levelPlot");
+  if (orbitals.length < 2) {
+    card.style.display = "none";
+    return;
+  }
+  // Only the frontier region is legible: a core level at -20 Ha would squash
+  // the valence levels and the gap into a single line.
+  const homoAt = orbitals.reduce(
+    (best, o, i) => ((o.occupancy ?? 0) > 1e-6 ? i : best), 0);
+  const homoEnergy = orbitals[homoAt].energy;
+  const window = orbitals.slice(Math.max(0, homoAt - 9), homoAt + 10);
+  const shown = window.filter((o) => Math.abs(o.energy - homoEnergy) <= 1.5);
+  const hidden = orbitals.length - shown.length;
+  const w = 300, h = 260, pad = 26;
+  const energies = shown.map((o) => o.energy);
+  const lo = Math.min(...energies), hi = Math.max(...energies);
+  const sy = (e: number) => h - pad - ((e - lo) / (hi - lo || 1)) * (h - 2 * pad);
+
+  const lines = shown.map((orbital) => {
+    const y = sy(orbital.energy).toFixed(1);
+    const occupied = (orbital.occupancy ?? 0) > 1e-6;
+    const x1 = occupied ? 60 : 160, x2 = occupied ? 140 : 240;
+    return `<line class="level-line" data-mo="${orbital.index}" x1="${x1}" y1="${y}" ` +
+      `x2="${x2}" y2="${y}" stroke="${occupied ? "var(--accent)" : "var(--text-dim)"}" ` +
+      `stroke-width="2.5"><title>MO ${orbital.index}  ${orbital.energy.toFixed(4)} Ha` +
+      `${occupied ? `  occ=${orbital.occupancy}` : ""}</title></line>`;
+  }).join("");
+
+  plot.innerHTML =
+    `<svg viewBox="0 0 ${w} ${h}" width="100%">` +
+    `<text x="100" y="14" fill="var(--text-dim)" font-size="11" text-anchor="middle">occupied</text>` +
+    `<text x="200" y="14" fill="var(--text-dim)" font-size="11" text-anchor="middle">virtual</text>` +
+    lines +
+    `<text x="52" y="${(sy(hi) + 4).toFixed(1)}" fill="var(--text-dim)" font-size="10" ` +
+    `text-anchor="end">${hi.toFixed(2)}</text>` +
+    `<text x="52" y="${(sy(lo) + 4).toFixed(1)}" fill="var(--text-dim)" font-size="10" ` +
+    `text-anchor="end">${lo.toFixed(2)} Ha</text>` +
+    `</svg>` +
+    (hidden
+      ? `<div class="hint">${hidden} level(s) outside ±1.5 Ha of the HOMO not shown</div>`
+      : "");
+  const lumo = orbitals[homoAt + 1];
+  if (lumo) {
+    const gap = (lumo.energy - homoEnergy) * 27.211386;
+    plot.insertAdjacentHTML("beforeend",
+      `<div class="hint">HOMO–LUMO gap ${gap.toFixed(2)} eV</div>`);
+  }
+  plot.querySelectorAll<SVGLineElement>(".level-line").forEach((line) => {
+    line.addEventListener("click", () => {
+      mapKind.value = "mo";
+      orbitalSel.value = line.dataset.mo!;
+      showOrbital();
+    });
+  });
+  card.style.display = "";
+}
+
+// ---------- measurements ----------
+// The viewer reports what the user clicked; both tabs show the read-out.
+window.addEventListener("message", (event) => {
+  if (event.origin !== window.location.origin) return;
+  if (event.data?.type !== "oqp-measure") return;
+  const { labels, kind, value, unit } = event.data as
+    { labels: string[]; kind: string | null; value: number | null; unit: string | null };
+  const text = labels.length
+    ? `<span class="picked">${labels.join(" – ")}</span>` +
+      (kind ? `<span class="value">${kind}: ${value!.toFixed(3)} ${unit}</span>` : "") +
+      (labels.length < 2 ? '<span class="picked">pick another atom</span>' : "")
+    : "";
+  for (const id of ["measurePreview", "measureResult"]) {
+    const box = document.getElementById(id);
+    if (!box) continue;
+    box.innerHTML = text;
+    box.classList.toggle("on", Boolean(text));
+  }
+});
 
 // ---------- menu bar ----------
 // A classic pull-down bar: click a title to open it, hover to walk across the

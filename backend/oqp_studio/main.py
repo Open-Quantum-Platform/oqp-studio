@@ -268,6 +268,88 @@ def molden_mode_trajectory(job_id: str, name: str, mode: int,
     )
 
 
+_summary_cache: OrderedDict[str, dict] = OrderedDict()
+
+
+def _job_summary(job_id: str) -> dict:
+    from . import analysis
+
+    if manager.get(job_id) is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    cached = _summary_cache.get(job_id)
+    if cached is None:
+        paths = [
+            path for entry in manager.files(job_id)
+            if (path := manager.file_path(job_id, entry["name"])) is not None
+        ]
+        cached = analysis.summarize(paths)
+        _summary_cache[job_id] = cached
+        while len(_summary_cache) > 8:
+            _summary_cache.popitem(last=False)
+    return cached
+
+
+@app.get("/api/jobs/{job_id}/summary")
+def job_summary(job_id: str, refresh: bool = False) -> dict:
+    """Energies, states, frequencies, thermochemistry and properties."""
+    if refresh:
+        _summary_cache.pop(job_id, None)
+    return _job_summary(job_id)
+
+
+@app.get("/api/jobs/{job_id}/spectrum")
+def job_spectrum(job_id: str, kind: str = "ir", shape: str = "lorentzian",
+                 fwhm: float | None = None, state: int = 1) -> dict:
+    """One broadened spectrum. Lorentzian is the default line shape."""
+    from . import analysis, spectra
+
+    if shape not in spectra.SHAPES:
+        raise HTTPException(status_code=400, detail=f"unknown line shape: {shape}")
+    return analysis.spectrum(_job_summary(job_id), kind, shape=shape,
+                             fwhm=fwhm, state=max(1, state))
+
+
+MAP_KINDS = ("density", "spin", "alpha", "beta", "esp")
+
+
+@app.get("/api/jobs/{job_id}/molden/{name}/map")
+def molden_map(job_id: str, name: str, kind: str = "density") -> PlainTextResponse:
+    """A scalar-field cube: electron density, spin density, or the MEP."""
+    from . import molden
+
+    if kind not in MAP_KINDS:
+        raise HTTPException(status_code=400, detail=f"unknown map kind: {kind}")
+    data = _load_molden(job_id, name)
+    if not data.supported:
+        raise HTTPException(status_code=422, detail="spherical shells not yet supported")
+    if kind == "esp":
+        # Prefer charges the run itself exported over ones derived here.
+        summary = _job_summary(job_id)
+        charges = (summary["charges"].get("resp")
+                   or summary["charges"].get("lowdin")
+                   or summary["charges"].get("mulliken"))
+        return PlainTextResponse(molden.esp_cube(data, charges))
+    return PlainTextResponse(
+        molden.density_cube(data, "total" if kind == "density" else kind))
+
+
+@app.get("/api/jobs/{job_id}/molden/{name}/charges")
+def molden_charges(job_id: str, name: str) -> dict:
+    """Atomic partial charges, from the run when present, else Mulliken."""
+    from . import molden
+
+    data = _load_molden(job_id, name)
+    if not data.supported:
+        raise HTTPException(status_code=422, detail="spherical shells not yet supported")
+    summary = _job_summary(job_id)
+    for source in ("resp", "lowdin", "mulliken"):
+        charges = summary["charges"].get(source)
+        if charges and len(charges) == len(data.atoms):
+            return {"source": source, "charges": charges}
+    return {"source": "mulliken (computed here)",
+            "charges": molden.mulliken_charges(data)}
+
+
 RELEASES_API = "https://api.github.com/repos/Open-Quantum-Platform/oqp-studio/releases/latest"
 RELEASES_PAGE = "https://github.com/Open-Quantum-Platform/oqp-studio/releases/latest"
 

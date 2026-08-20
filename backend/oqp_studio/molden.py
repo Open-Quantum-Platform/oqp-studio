@@ -38,6 +38,21 @@ CART_POWERS: dict[str, list[tuple[int, int, int]]] = {
 }
 
 
+def _double_factorial(n: int) -> float:
+    result = 1.0
+    while n > 1:
+        result *= n
+        n -= 2
+    return result
+
+
+def _primitive_norm(alpha: float, ang: int) -> float:
+    """Normalization of one primitive Cartesian Gaussian of type (l, 0, 0)."""
+    return ((2.0 * alpha / math.pi) ** 0.75
+            * (4.0 * alpha) ** (ang / 2.0)
+            / math.sqrt(_double_factorial(2 * ang - 1)))
+
+
 def _component_scale(powers: tuple[int, int, int]) -> float:
     """Cartesian component normalization relative to the pure (l,0,0) form."""
     total = sum(powers)
@@ -134,6 +149,11 @@ def parse_molden(text: str) -> MoldenData:
                 if shell in spherical or shell not in CART_POWERS:
                     data.unsupported.append(shell.upper())
                 else:
+                    # Molden contraction coefficients refer to normalized
+                    # primitives, so fold that normalization in here once.
+                    ang = sum(CART_POWERS[shell][0])
+                    coefs = [c * _primitive_norm(a, ang)
+                             for a, c in zip(exps, coefs)]
                     for powers in CART_POWERS[shell]:
                         data.basis.append(BasisFunction(
                             atom_index=current_atom,
@@ -191,26 +211,50 @@ def parse_molden(text: str) -> MoldenData:
     return data
 
 
-def orbital_cube(data: MoldenData, mo_index: int, max_points: int = 1_100_000) -> str:
-    """Gaussian cube text of one MO evaluated on a regular grid (Bohr)."""
-    orbital = data.orbitals[mo_index - 1]
+def _grid(data: MoldenData, max_points: int, margin: float = 4.5):
+    """Regular grid (in Bohr) that encloses the molecule with a margin."""
     coords = np.array([[a[1], a[2], a[3]] for a in data.atoms]) / BOHR_TO_ANGSTROM
-
-    margin = 4.5  # Bohr
     lo = coords.min(axis=0) - margin
     hi = coords.max(axis=0) + margin
     span = hi - lo
     # Uniform spacing that keeps the total grid under max_points.
     spacing = max(0.25, float((span.prod() / max_points) ** (1 / 3)))
     counts = np.maximum((span / spacing).astype(int) + 1, 2)
-
-    axes = [np.linspace(lo[d], lo[d] + spacing * (counts[d] - 1), counts[d]) for d in range(3)]
+    axes = [np.linspace(lo[d], lo[d] + spacing * (counts[d] - 1), counts[d])
+            for d in range(3)]
     gx, gy, gz = np.meshgrid(*axes, indexing="ij")
+    return coords, lo, spacing, counts, (gx, gy, gz)
 
-    values = np.zeros(gx.shape)
-    for bf, coeff in zip(data.basis, orbital.coefficients):
-        if abs(coeff) < 1e-10:
-            continue
+
+def _ao_norms(data: MoldenData) -> np.ndarray:
+    """1/sqrt(<mu|mu>) per basis function.
+
+    Molden files do not agree on whether the contraction itself is
+    normalized, so every AO is scaled to unit norm here. That is the
+    convention the MO coefficients follow, which is what makes the density
+    integrate to the electron count.
+    """
+    norms = np.ones(len(data.basis))
+    for index, bf in enumerate(data.basis):
+        total = 0.0
+        for ei, ci in zip(bf.exponents, bf.coefficients):
+            for ej, cj in zip(bf.exponents, bf.coefficients):
+                gamma = ei + ej
+                term = 1.0
+                for d in range(3):
+                    term *= _overlap_1d(bf.powers[d], bf.powers[d], 0.0, 0.0, gamma)
+                total += ci * cj * term
+        total *= bf.scale * bf.scale
+        norms[index] = 1.0 / math.sqrt(total) if total > 1e-30 else 1.0
+    return norms
+
+
+def _ao_values(data: MoldenData, coords: np.ndarray, mesh) -> list[np.ndarray]:
+    """Every basis function evaluated on the grid, cached per call."""
+    gx, gy, gz = mesh
+    norms = _ao_norms(data)
+    values = []
+    for bf in data.basis:
         ax, ay, az = coords[bf.atom_index]
         dx, dy, dz = gx - ax, gy - ay, gz - az
         r2 = dx * dx + dy * dy + dz * dz
@@ -218,12 +262,15 @@ def orbital_cube(data: MoldenData, mo_index: int, max_points: int = 1_100_000) -
         for exp_a, c in zip(bf.exponents, bf.coefficients):
             radial += c * np.exp(-exp_a * r2)
         px, py, pz = bf.powers
-        values += coeff * bf.scale * (dx**px) * (dy**py) * (dz**pz) * radial
+        values.append(bf.scale * (dx**px) * (dy**py) * (dz**pz) * radial)
+    return [v * n for v, n in zip(values, norms)]
 
-    # Gaussian cube format: z runs fastest.
+
+def _cube_text(data: MoldenData, title: str, subtitle: str, coords, lo,
+               spacing, counts, values: np.ndarray) -> str:
     out = [
-        f"OQP Studio molecular orbital {orbital.index}",
-        f"MO {orbital.index}  E={orbital.energy:.6f}  occ={orbital.occupancy}",
+        title,
+        subtitle,
         f"{len(data.atoms):5d} {lo[0]:12.6f} {lo[1]:12.6f} {lo[2]:12.6f}",
         f"{counts[0]:5d} {spacing:12.6f} {0.0:12.6f} {0.0:12.6f}",
         f"{counts[1]:5d} {0.0:12.6f} {spacing:12.6f} {0.0:12.6f}",
@@ -232,11 +279,186 @@ def orbital_cube(data: MoldenData, mo_index: int, max_points: int = 1_100_000) -
     for (symbol, *_), (x, y, z) in zip(data.atoms, coords):
         z_num = ATOMIC_NUMBER.get(symbol, 0)
         out.append(f"{z_num:5d} {float(z_num):12.6f} {x:12.6f} {y:12.6f} {z:12.6f}")
+    # Gaussian cube format: z runs fastest.
     flat = values.reshape(counts[0] * counts[1], counts[2])
     for row in flat:
         for i in range(0, len(row), 6):
             out.append(" ".join(f"{v:13.5E}" for v in row[i : i + 6]))
     return "\n".join(out) + "\n"
+
+
+def orbital_cube(data: MoldenData, mo_index: int, max_points: int = 1_100_000) -> str:
+    """Gaussian cube text of one MO evaluated on a regular grid (Bohr)."""
+    orbital = data.orbitals[mo_index - 1]
+    coords, lo, spacing, counts, mesh = _grid(data, max_points)
+
+    values = np.zeros(mesh[0].shape)
+    for bf, coeff, ao in zip(data.basis, orbital.coefficients,
+                             _ao_values(data, coords, mesh)):
+        if abs(coeff) < 1e-10:
+            continue
+        values += coeff * ao
+
+    return _cube_text(
+        data,
+        f"OQP Studio molecular orbital {orbital.index}",
+        f"MO {orbital.index}  E={orbital.energy:.6f}  occ={orbital.occupancy}",
+        coords, lo, spacing, counts, values,
+    )
+
+
+def _occupancies(data: MoldenData) -> list[float]:
+    """Occupation numbers, defaulted for files that omit them."""
+    spins = {o.spin for o in data.orbitals}
+    default = 1.0 if len(spins) > 1 else 2.0
+    return [default if o.occupancy is None else float(o.occupancy)
+            for o in data.orbitals]
+
+
+def density_grid(data: MoldenData, coords, mesh, spin: str = "total") -> np.ndarray:
+    """Electron density (or alpha-beta spin density) on the grid.
+
+    rho(r) = sum_i n_i |psi_i(r)|^2 over the occupied orbitals, which is exact
+    for a single-determinant reference and is what a Molden file describes.
+    """
+    aos = _ao_values(data, coords, mesh)
+    unrestricted = len({o.spin.lower() for o in data.orbitals}) > 1
+    density = np.zeros(mesh[0].shape)
+    for orbital, occupancy in zip(data.orbitals, _occupancies(data)):
+        if occupancy <= 1e-8:
+            continue
+        alpha_orbital = orbital.spin.lower().startswith("a")
+        weight = occupancy
+        if spin == "spin":
+            if unrestricted:
+                weight = occupancy if alpha_orbital else -occupancy
+            else:
+                # A restricted file carries one orbital per spatial function,
+                # so its spin density is n_alpha - n_beta = min(n,1)-max(n-1,0):
+                # zero for a doubly occupied orbital, one for a singly one.
+                weight = min(occupancy, 1.0) - max(occupancy - 1.0, 0.0)
+        elif spin == "alpha":
+            weight = occupancy if (unrestricted and alpha_orbital) else (
+                min(occupancy, 1.0) if not unrestricted else 0.0)
+        elif spin == "beta":
+            weight = occupancy if (unrestricted and not alpha_orbital) else (
+                max(occupancy - 1.0, 0.0) if not unrestricted else 0.0)
+        if abs(weight) < 1e-10:
+            continue
+        psi = np.zeros(mesh[0].shape)
+        for coeff, ao in zip(orbital.coefficients, aos):
+            if abs(coeff) < 1e-10:
+                continue
+            psi += coeff * ao
+        density += weight * psi * psi
+    return density
+
+
+def density_cube(data: MoldenData, spin: str = "total",
+                 max_points: int = 700_000) -> str:
+    coords, lo, spacing, counts, mesh = _grid(data, max_points)
+    values = density_grid(data, coords, mesh, spin)
+    label = {"total": "electron density", "spin": "spin density",
+             "alpha": "alpha density", "beta": "beta density"}[spin]
+    return _cube_text(data, f"OQP Studio {label}",
+                      f"{label} (e/bohr^3)", coords, lo, spacing, counts, values)
+
+
+def mulliken_charges(data: MoldenData) -> list[float]:
+    """Mulliken atomic charges from the Molden orbitals.
+
+    The AO overlap is built analytically from the Gaussian basis, so this
+    works from a Molden file alone, without the run's density matrix.
+    """
+    overlap = ao_overlap(data)
+    natoms = len(data.atoms)
+    populations = np.zeros(natoms)
+    for orbital, occupancy in zip(data.orbitals, _occupancies(data)):
+        if occupancy <= 1e-8:
+            continue
+        c = np.asarray(orbital.coefficients, dtype=float)
+        # Mulliken partition: gross population of AO mu is n * c_mu (S c)_mu.
+        gross = occupancy * c * (overlap @ c)
+        for index, bf in enumerate(data.basis):
+            populations[bf.atom_index] += gross[index]
+    charges = []
+    for index, (symbol, *_) in enumerate(data.atoms):
+        charges.append(float(ATOMIC_NUMBER.get(symbol, 0) - populations[index]))
+    return charges
+
+
+def _binomial_prefactor(s: int, l1: int, l2: int, pa: float, pb: float) -> float:
+    total = 0.0
+    for t in range(s + 1):
+        u = s - t
+        if t > l1 or u > l2:
+            continue
+        total += (math.comb(l1, t) * math.comb(l2, u)
+                  * (pa ** (l1 - t)) * (pb ** (l2 - u)))
+    return total
+
+
+def _overlap_1d(l1: int, l2: int, pa: float, pb: float, gamma: float) -> float:
+    total = 0.0
+    for i in range(1 + (l1 + l2) // 2):
+        total += (_binomial_prefactor(2 * i, l1, l2, pa, pb)
+                  * _double_factorial(2 * i - 1) / (2 * gamma) ** i)
+    return total * math.sqrt(math.pi / gamma)
+
+
+def ao_overlap(data: MoldenData) -> np.ndarray:
+    """Analytic overlap matrix of the Cartesian Gaussian basis.
+
+    Molden files disagree about whether contractions are normalized, so the
+    matrix is scaled to a unit diagonal — the convention Mulliken analysis
+    assumes anyway.
+    """
+    coords = np.array([[a[1], a[2], a[3]] for a in data.atoms]) / BOHR_TO_ANGSTROM
+    n = len(data.basis)
+    matrix = np.zeros((n, n))
+    for i, bi in enumerate(data.basis):
+        ai = coords[bi.atom_index]
+        for j in range(i, n):
+            bj = data.basis[j]
+            aj = coords[bj.atom_index]
+            ab2 = float(np.sum((ai - aj) ** 2))
+            total = 0.0
+            for ei, ci in zip(bi.exponents, bi.coefficients):
+                for ej, cj in zip(bj.exponents, bj.coefficients):
+                    gamma = ei + ej
+                    p = (ei * ai + ej * aj) / gamma
+                    pre = math.exp(-ei * ej * ab2 / gamma)
+                    term = pre
+                    for d in range(3):
+                        term *= _overlap_1d(bi.powers[d], bj.powers[d],
+                                            p[d] - ai[d], p[d] - aj[d], gamma)
+                    total += ci * cj * term
+            matrix[i, j] = matrix[j, i] = total * bi.scale * bj.scale
+    norms = _ao_norms(data)
+    return matrix * np.outer(norms, norms)
+
+
+def esp_cube(data: MoldenData, charges: list[float] | None = None,
+             max_points: int = 700_000) -> str:
+    """Molecular electrostatic potential from atomic point charges.
+
+    V(r) = sum_A q_A / |r - R_A|, with q_A taken from the run's own charges
+    when the job exported them and computed by Mulliken analysis otherwise.
+    This is the charge-model MEP that most viewers draw; it is not the exact
+    density integral, and the cube header says so.
+    """
+    coords, lo, spacing, counts, mesh = _grid(data, max_points)
+    if charges is None or len(charges) != len(data.atoms):
+        charges = mulliken_charges(data)
+    gx, gy, gz = mesh
+    values = np.zeros(gx.shape)
+    for (x, y, z), q in zip(coords, charges):
+        r = np.sqrt((gx - x) ** 2 + (gy - y) ** 2 + (gz - z) ** 2)
+        np.clip(r, 0.3, None, out=r)     # keep the nuclear cusp finite
+        values += q / r
+    return _cube_text(data, "OQP Studio electrostatic potential",
+                      "MEP from atomic point charges (Hartree/e)",
+                      coords, lo, spacing, counts, values)
 
 
 def atoms_to_xyz(data: MoldenData, title: str = "geometry") -> str:

@@ -168,10 +168,108 @@
           canvas3d.setProps(props);
         }
 
+        // ---- measurements -------------------------------------------------
+        // Clicking atoms measures them, the way MacMolPlt and Avogadro do:
+        // two atoms give a bond length, three an angle, four a dihedral.
+        // A fifth click starts a new measurement.
+        const S = molstar.lib.structure;
+        const picked = [];
+
+        function report(value) {
+          window.parent.postMessage({
+            type: "oqp-measure",
+            labels: picked.map((p) => p.label),
+            kind: value?.kind ?? null,
+            value: value?.value ?? null,
+            unit: value?.unit ?? null,
+          }, window.location.origin);
+        }
+
+        function atomFromLoci(loci) {
+          const location = S.StructureElement.Loci.getFirstLocation(loci);
+          if (!location) return null;
+          const atom = S.StructureProperties.atom;
+          const symbol = atom.type_symbol(location) || atom.label_atom_id(location) || "?";
+          return {
+            label: `${symbol}${atom.id(location)}`,
+            position: [atom.x(location), atom.y(location), atom.z(location)],
+          };
+        }
+
+        const sub = (p, q) => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+        const dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+        const cross = (p, q) => [p[1] * q[2] - p[2] * q[1],
+                                 p[2] * q[0] - p[0] * q[2],
+                                 p[0] * q[1] - p[1] * q[0]];
+        const norm = (p) => Math.sqrt(dot(p, p));
+
+        function measure() {
+          const [a, b, c, d] = picked.map((p) => p.position);
+          if (picked.length === 2) {
+            return { kind: "Bond length", value: norm(sub(a, b)), unit: "Å" };
+          }
+          if (picked.length === 3) {
+            const u = sub(a, b), v = sub(c, b);
+            const cosine = dot(u, v) / (norm(u) * norm(v));
+            return { kind: "Angle",
+                     value: Math.acos(Math.max(-1, Math.min(1, cosine))) * 180 / Math.PI,
+                     unit: "°" };
+          }
+          if (picked.length === 4) {
+            const b1 = sub(b, a), b2 = sub(c, b), b3 = sub(d, c);
+            const n1 = cross(b1, b2), n2 = cross(b2, b3);
+            const unit2 = b2.map((v) => v / norm(b2));
+            const m = cross(n1, unit2);
+            return { kind: "Dihedral",
+                     value: Math.atan2(dot(m, n2), dot(n1, n2)) * 180 / Math.PI,
+                     unit: "°" };
+          }
+          return null;
+        }
+
+        window.oqpPlugin = viewer.plugin;   // handy for diagnostics
+
+        // Mol*'s stock click behaviours re-frame the camera on every pick,
+        // which would throw the view around while atoms are being measured.
+        // Measuring is what clicking means in this app, so they are removed.
+        (async () => {
+          const CAMERA_ON_CLICK = ["ms-plugin.camera-focus-loci",
+                                   "ms-plugin.representation-focus-loci"];
+          const state = viewer.plugin.state.behaviors;
+          const update = state.build();
+          let touched = false;
+          state.cells.forEach((cell, ref) => {
+            if (CAMERA_ON_CLICK.includes(cell.transform?.transformer?.id)) {
+              touched = true;
+              update.delete(ref);
+            }
+          });
+          if (touched) await update.commit().catch(() => {});
+        })();
+        viewer.plugin.behaviors.interaction.click.subscribe(({ current, button }) => {
+          if (window.oqpDebugClicks) {
+            console.log("CLICK kind=", current?.loci?.kind, "button=", button);
+          }
+          const loci = current?.loci;
+          // Clicking empty space clears the current measurement.
+          if (!loci || loci.kind !== "element-loci") {
+            picked.length = 0;
+            report();
+            return;
+          }
+          const atom = atomFromLoci(loci);
+          if (!atom) return;
+          if (picked.length >= 4) picked.length = 0;
+          picked.push(atom);
+          report(measure());
+        });
+
         window.addEventListener("message", async (event) => {
           if (event.origin !== window.location.origin) return;
           const message = event.data || {};
           if (message.type === "oqp-structure") {
+            picked.length = 0;
+            report();
             await viewer.plugin.clear();
             await drawStructure(message.xyz);
           } else if (message.type === "oqp-file") {
@@ -188,6 +286,20 @@
               await viewer.plugin.clear();
               await drawStructure(last.data, last.format);
             }
+          } else if (message.type === "oqp-snapshot") {
+            // Mol* draws into its own WebGL canvas, so the image has to come
+            // from the plugin rather than from a screenshot of the DOM.
+            let image = null;
+            try {
+              image = await viewer.plugin.helpers.viewportScreenshot.getImageDataUri();
+            } catch (error) {
+              console.warn("snapshot failed:", error);
+            }
+            window.parent.postMessage({ type: "oqp-snapshot-data", image },
+                                      window.location.origin);
+          } else if (message.type === "oqp-measure-clear") {
+            picked.length = 0;
+            report();
           } else if (message.type === "oqp-cube") {
             await viewer.plugin.clear();
             if (message.xyz) await drawStructure(message.xyz);
