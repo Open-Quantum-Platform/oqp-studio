@@ -290,7 +290,7 @@
             </div>
           </div>
           <div class="card">
-            <h3>Input preview (.inp)</h3>
+            <h3>Input preview (.oqp)</h3>
             <pre class="log" id="inpPreview" style="min-height:20rem"></pre>
           </div>
         </div>
@@ -300,7 +300,7 @@
       <section class="panel" id="panel-run">
         <div class="cols">
           <div class="card">
-            <h3>OpenQP input — legacy .inp format</h3>
+            <h3>OpenQP input (.oqp — legacy .inp also accepted)</h3>
             <textarea id="input" rows="20" spellcheck="false"></textarea>
             <div class="actions">
               <button class="primary" id="runBtn">▶ Run</button>
@@ -329,6 +329,13 @@
             <div class="card">
               <h3>Output files</h3>
               <ul class="files" id="resultFiles"><li class="hint">select a job</li></ul>
+            </div>
+            <div class="card" id="orbitalCard" style="display:none">
+              <h3>Molecular orbitals</h3>
+              <label>Orbital</label>
+              <select id="orbitalSel"></select>
+              <label>Isovalue</label>
+              <input type="range" id="isoRange" min="0.01" max="0.15" step="0.01" value="0.05" />
             </div>
           </div>
           <iframe class="viewer" id="resultFrame" title="results viewer" src="/viewer/index.html"></iframe>

@@ -51,7 +51,9 @@ class JobManager:
         job_id = uuid.uuid4().hex[:12]
         job_dir = JOBS_ROOT / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
-        (job_dir / "input.inp").write_text(req.input_text)
+        # Sectioned legacy input starts with a [section]; otherwise .oqp route style.
+        input_name = "input.inp" if req.input_text.lstrip().startswith("[") else "input.oqp"
+        (job_dir / input_name).write_text(req.input_text)
         info = JobInfo(
             id=job_id,
             name=req.name,

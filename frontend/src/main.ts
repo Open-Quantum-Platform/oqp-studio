@@ -119,52 +119,42 @@ function currentBasis(): string {
   return basisSel.value === "__custom__" ? basisCustom.value.trim() : basisSel.value;
 }
 
+// Generates concise .oqp input: ROUTE, one primary driver, globals, geometry.
 function generateInp(): string {
   const atoms = parseAtoms(xyzArea.value);
   const theory = theorySel.value;
-  const runtype = runtypeSel.value;
   const charge = +$<HTMLInputElement>("charge").value || 0;
-  const multIn = +$<HTMLInputElement>("mult").value || 1;
+  const mult = +$<HTMLInputElement>("mult").value || 1;
   const nstate = +$<HTMLInputElement>("nstate").value || 3;
   const target = +$<HTMLInputElement>("targetState").value || 0;
+  const basis = currentBasis();
+  const functional = functionalInp.value.trim() || "bhhlyp";
 
-  const usesTdhf = theory === "tddft" || theory === "mrsf";
-  const functional = theory === "hf" || theory === "mp2" ? "" : functionalInp.value.trim();
-  const method = theory === "mp2" ? "mp2" : usesTdhf ? "tdhf" : "hf";
-  // MRSF-TDDFT starts from a triplet ROHF reference.
-  const mult = theory === "mrsf" ? 3 : multIn;
-  const scfType = theory === "mrsf" ? "rohf" : mult === 1 ? "rhf" : "rohf";
+  const routes: Record<string, string> = {
+    hf: `hf/${basis}`,
+    dft: `dft/${functional}/${basis}`,
+    mp2: `mp2/${basis}`,
+    tddft: `tddft(nstate=${nstate})/${functional}/${basis}`,
+    mrsf: `mrsf(nstate=${nstate})/${functional}/${basis}`,
+  };
+  const drivers: Record<string, string> = {
+    energy: "energy", grad: "grad", optimize: "opt", hess: "hess",
+  };
+  const usesStates = theory === "tddft" || theory === "mrsf";
+  let driver = drivers[runtypeSel.value];
+  if (usesStates && (driver !== "energy" || target > 0)) {
+    driver += `(S${target})`;
+  }
 
-  const lines: string[] = [];
-  lines.push("[input]");
-  lines.push("system=");
+  const lines: string[] = [routes[theory], driver];
+  if (charge !== 0) lines.push(`charge=${charge}`);
+  // MRSF selects its high-spin working reference automatically — no mult.
+  if (mult !== 1 && theory !== "mrsf") lines.push(`mult=${mult}`);
+  lines.push('geom="""');
   for (const [el, x, y, z] of atoms) {
-    lines.push(` ${el.padEnd(2)} ${x.toFixed(6)} ${y.toFixed(6)} ${z.toFixed(6)}`);
+    lines.push(`${el.padEnd(2)} ${x.toFixed(6).padStart(11)} ${y.toFixed(6).padStart(11)} ${z.toFixed(6).padStart(11)}`);
   }
-  lines.push(`charge=${charge}`);
-  lines.push(`basis=${currentBasis()}`);
-  if (functional) lines.push(`functional=${functional}`);
-  lines.push(`method=${method}`);
-  lines.push(`runtype=${runtype}`);
-  lines.push("");
-  lines.push("[guess]");
-  lines.push("type=huckel");
-  lines.push("");
-  lines.push("[scf]");
-  lines.push(`type=${scfType}`);
-  lines.push(`multiplicity=${mult}`);
-  lines.push("maxit=60");
-  if (usesTdhf) {
-    lines.push("");
-    lines.push("[tdhf]");
-    lines.push(`type=${theory === "mrsf" ? "mrsf" : "rpa"}`);
-    lines.push(`nstate=${nstate}`);
-  }
-  if (usesTdhf && (runtype === "grad" || runtype === "optimize") && target > 0) {
-    lines.push("");
-    lines.push("[properties]");
-    lines.push(`grad=${target}`);
-  }
+  lines.push('"""');
   return lines.join("\n") + "\n";
 }
 
@@ -267,18 +257,74 @@ async function selectJob(jobId: string): Promise<void> {
     const viewable = VIEWABLE.some((ext) => f.name.toLowerCase().endsWith(ext));
     li.innerHTML =
       `${f.name} <span class="hint">(${f.size.toLocaleString()} B)</span>` +
-      (viewable ? ` <a href="#" data-url="${url}">view</a>` : "") +
+      (viewable ? ` <a href="#" data-url="${url}" data-name="${f.name}">view</a>` : "") +
       ` <a href="${url}" download>download</a>`;
     list.appendChild(li);
   }
   list.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach((a) => {
     a.addEventListener("click", (e) => {
       e.preventDefault();
-      $<HTMLIFrameElement>("resultFrame").src =
-        `/viewer/index.html?load=${encodeURIComponent(a.dataset.url!)}`;
+      viewResultFile(jobId, a.dataset.name!, a.dataset.url!);
     });
   });
 }
+
+const resultFrame = $<HTMLIFrameElement>("resultFrame");
+const orbitalCard = $<HTMLDivElement>("orbitalCard");
+const orbitalSel = $<HTMLSelectElement>("orbitalSel");
+const isoRange = $<HTMLInputElement>("isoRange");
+let currentMolden: { jobId: string; name: string } | null = null;
+
+// Mol* renders geometries and cube/orbital isosurfaces; other formats
+// (logs, hessian JSON) fall back to the classic embedded viewer.
+async function viewResultFile(jobId: string, name: string, url: string): Promise<void> {
+  const lower = name.toLowerCase();
+  orbitalCard.style.display = "none";
+  currentMolden = null;
+  if (lower.endsWith(".xyz")) {
+    resultFrame.src = `/builder3d.html?load=${encodeURIComponent(url)}`;
+  } else if (lower.endsWith(".cube") || lower.endsWith(".cub")) {
+    resultFrame.src = `/builder3d.html?cube=${encodeURIComponent(url)}`;
+  } else if (lower.endsWith(".molden")) {
+    const base = `/api/jobs/${jobId}/molden/${encodeURIComponent(name)}`;
+    const res = await fetch(`${base}/orbitals`);
+    if (!res.ok) {
+      // Spherical-harmonic basis etc. — classic viewer still handles it.
+      resultFrame.src = `/viewer/index.html?load=${encodeURIComponent(url)}`;
+      return;
+    }
+    const data = await res.json();
+    currentMolden = { jobId, name };
+    orbitalSel.innerHTML = "";
+    for (const o of data.orbitals) {
+      const opt = document.createElement("option");
+      opt.value = String(o.index);
+      const occ = o.occupancy != null ? ` occ=${o.occupancy}` : "";
+      opt.textContent = `MO ${o.index}  E=${o.energy.toFixed(4)} Ha${occ} ${o.spin}`;
+      orbitalSel.appendChild(opt);
+    }
+    // Start at the highest (partially) occupied orbital when known.
+    const homo = [...data.orbitals].reverse().find((o: { occupancy: number | null }) =>
+      (o.occupancy ?? 0) > 1e-6);
+    if (homo) orbitalSel.value = String(homo.index);
+    orbitalCard.style.display = "";
+    showOrbital();
+  } else {
+    resultFrame.src = `/viewer/index.html?load=${encodeURIComponent(url)}`;
+  }
+}
+
+function showOrbital(): void {
+  if (!currentMolden) return;
+  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
+  const geom = `${base}/geom.xyz`;
+  const cube = `${base}/cube?mo=${orbitalSel.value}`;
+  resultFrame.src =
+    `/builder3d.html?load=${encodeURIComponent(geom)}` +
+    `&cube=${encodeURIComponent(cube)}&iso=${isoRange.value}`;
+}
+orbitalSel.addEventListener("change", showOrbital);
+isoRange.addEventListener("change", showOrbital);
 
 // ---------- boot ----------
 xyzArea.value = atomsToText(SAMPLES.water);

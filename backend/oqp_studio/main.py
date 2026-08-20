@@ -108,6 +108,65 @@ def pubchem_lookup(name: str) -> dict:
     return {"name": name, "atoms": atoms}
 
 
+_molden_cache: OrderedDict[str, object] = OrderedDict()
+
+
+def _load_molden(job_id: str, name: str):
+    from . import molden
+
+    key = f"{job_id}/{name}"
+    if key not in _molden_cache:
+        path = manager.file_path(job_id, name)
+        if path is None:
+            raise HTTPException(status_code=404, detail="file not found")
+        _molden_cache[key] = molden.parse_molden(path.read_text(errors="replace"))
+        while len(_molden_cache) > 8:
+            _molden_cache.popitem(last=False)
+    return _molden_cache[key]
+
+
+@app.get("/api/jobs/{job_id}/molden/{name}/orbitals")
+def molden_orbitals(job_id: str, name: str) -> dict:
+    data = _load_molden(job_id, name)
+    if not data.supported:
+        raise HTTPException(
+            status_code=422,
+            detail=f"spherical shells not yet supported: {', '.join(data.unsupported)}",
+        )
+    return {
+        "atoms": len(data.atoms),
+        "orbitals": [
+            {
+                "index": o.index,
+                "energy": o.energy,
+                "spin": o.spin,
+                "occupancy": o.occupancy,
+                "symmetry": o.symmetry,
+            }
+            for o in data.orbitals
+        ],
+    }
+
+
+@app.get("/api/jobs/{job_id}/molden/{name}/geom.xyz")
+def molden_geometry(job_id: str, name: str) -> PlainTextResponse:
+    from . import molden
+
+    return PlainTextResponse(molden.atoms_to_xyz(_load_molden(job_id, name), name))
+
+
+@app.get("/api/jobs/{job_id}/molden/{name}/cube")
+def molden_cube(job_id: str, name: str, mo: int) -> PlainTextResponse:
+    from . import molden
+
+    data = _load_molden(job_id, name)
+    if not data.supported:
+        raise HTTPException(status_code=422, detail="spherical shells not yet supported")
+    if not 1 <= mo <= len(data.orbitals):
+        raise HTTPException(status_code=404, detail="orbital index out of range")
+    return PlainTextResponse(molden.orbital_cube(data, mo))
+
+
 # In-memory store of geometry previews served back to the 3D viewer.
 _previews: OrderedDict[str, str] = OrderedDict()
 

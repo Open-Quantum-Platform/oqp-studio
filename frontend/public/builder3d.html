@@ -57,11 +57,30 @@
         }
 
         const params = new URLSearchParams(window.location.search);
+        const sameOrigin = (value) => {
+          const url = new URL(value, window.location.href);
+          return url.origin === window.location.origin ? url.href : null;
+        };
+
         const load = params.get("load");
         if (load) {
-          const url = new URL(load, window.location.href);
-          if (url.origin === window.location.origin) {
-            await viewer.loadStructureFromUrl(url.href, "xyz", false);
+          const href = sameOrigin(load);
+          if (href) await viewer.loadStructureFromUrl(href, "xyz", false);
+        }
+
+        // Orbital / density isosurfaces from a Gaussian cube file.
+        const cube = params.get("cube");
+        if (cube) {
+          const href = sameOrigin(cube);
+          const iso = Math.abs(parseFloat(params.get("iso") || "0.05")) || 0.05;
+          if (href) {
+            await viewer.loadVolumeFromUrl(
+              { url: href, format: "cube", isBinary: false },
+              [
+                { type: "absolute", value: iso, color: 0x4f8fdd, alpha: 0.85 },
+                { type: "absolute", value: -iso, color: 0xdd6a4f, alpha: 0.85 },
+              ]
+            );
           }
         }
       }

@@ -67,3 +67,37 @@ def test_submit_without_openqp_fails_gracefully(tmp_path, monkeypatch):
     # Path escapes must 404, not leak files outside the job directory.
     res = client.get(f"/api/jobs/{job_id}/files/..%2F..%2Fpyproject.toml")
     assert res.status_code == 404
+
+
+def test_oqp_style_input_saved_as_oqp(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    res = client.post(
+        "/api/jobs",
+        json={"input_text": 'hf/sto-3g\nenergy\ngeom="""\nO 0 0 0\n"""\n', "runner": "local"},
+    )
+    job_id = res.json()["id"]
+    names = {f["name"] for f in client.get(f"/api/jobs/{job_id}/files").json()}
+    assert "input.oqp" in names
+
+
+def test_molden_parse_and_cube():
+    from pathlib import Path
+
+    from oqp_studio import molden
+
+    sample = (
+        Path(__file__).resolve().parents[2]
+        / "frontend" / "public" / "viewer" / "samples" / "water-hessian-mo.molden"
+    )
+    data = molden.parse_molden(sample.read_text())
+    assert data.supported
+    assert len(data.atoms) == 3
+    assert data.orbitals, "no MOs parsed"
+    assert len(data.basis) == len(data.orbitals[0].coefficients)
+
+    cube = molden.orbital_cube(data, mo_index=1, max_points=40_000)
+    header = cube.splitlines()
+    assert int(header[2].split()[0]) == 3  # atom count
+    assert "E=" in header[1]

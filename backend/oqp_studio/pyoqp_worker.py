@@ -31,7 +31,10 @@ def _jsonable(value):
 
 def main() -> int:
     job_dir = Path(sys.argv[1]).resolve()
-    input_file = job_dir / "input.inp"
+    input_file = next(
+        (f for name in ("input.oqp", "input.inp") if (f := job_dir / name).exists()),
+        job_dir / "input.oqp",
+    )
 
     from oqp.pyoqp import Runner  # deferred: only the worker needs OpenQP
 
