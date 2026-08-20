@@ -100,6 +100,15 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx --yes @tauri-apps/cli@^2 build --bundles ${{ matrix.bundles }}
 
+      # Quarantine (and therefore the Gatekeeper block on unsigned apps) is
+      # applied by browsers, not by curl. A plain tarball installed from the
+      # terminal opens with no warning and no certificate.
+      - name: Package .app as a curl-installable tarball
+        if: runner.os == 'macOS'
+        shell: bash
+        working-directory: shell/src-tauri/target/release/bundle/macos
+        run: tar czf "OQP-Studio-${{ matrix.os }}.app.tar.gz" "OQP Studio.app"
+
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
@@ -110,6 +119,7 @@ jobs:
             shell/src-tauri/target/release/bundle/**/*.deb
             shell/src-tauri/target/release/bundle/**/*.msi
             shell/src-tauri/target/release/bundle/**/*.exe
+            shell/src-tauri/target/release/bundle/macos/*.app.tar.gz
           if-no-files-found: error
 
       - name: Attach to GitHub release
@@ -122,3 +132,4 @@ jobs:
             shell/src-tauri/target/release/bundle/**/*.deb
             shell/src-tauri/target/release/bundle/**/*.msi
             shell/src-tauri/target/release/bundle/**/*.exe
+            shell/src-tauri/target/release/bundle/macos/*.app.tar.gz

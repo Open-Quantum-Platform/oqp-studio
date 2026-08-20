@@ -15,10 +15,48 @@ repository secrets: with none configured the build produces unsigned
 installers exactly as it does today, and adding them switches signing on with
 no further code change.
 
+## Does it have to be a paid certificate?
+
+**macOS: yes for signing — but the fee can be waived.** Gatekeeper only trusts
+Developer ID certificates issued through the Apple Developer Program; a
+self-signed or ad-hoc signature is not trusted and does not remove the
+warning. However, Apple waives the USD 99 fee for
+[accredited educational institutions](https://developer.apple.com/help/account/membership/fee-waivers/),
+nonprofits, and government entities, and South Korea is an eligible region.
+A university enrolls as an organization (D-U-N-S number required) and selects
+the fee-waiver option during enrollment, so signing and notarization end up
+costing nothing. The waiver excludes entities selling paid apps or digital
+goods, which does not apply here.
+
+**Windows: yes, with no waiver.** Authenticode trust requires a certificate
+from a commercial CA; self-signed certificates are not trusted.
+
+**Neither is required to avoid the warning entirely** — see the tarball route
+below.
+
+## Installing without any certificate
+
+macOS applies the quarantine flag that triggers Gatekeeper only when a file
+arrives through an app that opts into it — browsers, mail clients, Messages.
+Files fetched with `curl` are not quarantined, so an unsigned app installed
+from the terminal opens normally:
+
+```bash
+curl -L -o oqp-studio.tar.gz <tarball URL>
+tar xzf oqp-studio.tar.gz -C /Applications
+open "/Applications/OQP Studio.app"
+```
+
+The release workflow publishes `OQP-Studio-*.app.tar.gz` alongside the DMG for
+exactly this. The same idea applies on Windows: files downloaded by PowerShell
+or a package manager (Scoop, winget) carry no mark-of-the-web, so SmartScreen
+stays quiet.
+
 ## macOS — Developer ID + notarization
 
-Requires an **Apple Developer Program** membership (USD 99/year, individual or
-organization). Notarization is not available on a free Apple ID.
+Requires an **Apple Developer Program** membership (USD 99/year, or free with
+the educational fee waiver above). Notarization is not available on a free
+Apple ID.
 
 1. In the Apple Developer portal create a **Developer ID Application**
    certificate, install it in Keychain Access, then export it as a `.p12`

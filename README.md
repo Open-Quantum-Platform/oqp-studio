@@ -86,8 +86,18 @@ warning. On macOS, clear the quarantine flag once after installing:
 xattr -cr "/Applications/OQP Studio.app"
 ```
 
-The release workflow signs and notarizes automatically once the certificates
-are added as repository secrets — see [docs/code-signing.md](docs/code-signing.md).
+To skip the warning without any certificate, install the `.app.tar.gz` build
+from the terminal instead — `curl` does not set the quarantine flag:
+
+```bash
+curl -L -o oqp-studio.tar.gz <tarball URL>
+tar xzf oqp-studio.tar.gz -C /Applications
+```
+
+The release workflow signs and notarizes automatically once certificates are
+added as repository secrets. Accredited educational institutions can obtain
+the Apple Developer Program at no cost through Apple's fee waiver — see
+[docs/code-signing.md](docs/code-signing.md).
 
 ## Status
 
