@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import ClassVar
+
 from fastapi.testclient import TestClient
 
 from oqp_studio.main import app
@@ -136,3 +139,32 @@ def test_normal_modes_and_trajectory():
     assert len(lines) == 8 * (3 + 2)  # frames x (count + comment + atoms)
     assert lines[0].strip() == "3"
     assert "cm-1" in lines[1]
+
+
+def test_runner_hands_the_engine_an_absolute_input_path(tmp_path):
+    """The engine runs with cwd=job_dir, so a relative path would not resolve.
+
+    It also decides where results land: an engine writes its .log and .json
+    next to the input it was given.
+    """
+    from oqp_studio.runners.base import Runner
+
+    class Recording(Runner):
+        name = "recording"
+        seen: ClassVar[list[str]] = []
+
+        def is_available(self) -> bool:
+            return True
+
+        def build_command(self, input_file):
+            Recording.seen.append(str(input_file))
+            return ["true"]
+
+    job_dir = tmp_path / "jobs_data" / "abc123"
+    job_dir.mkdir(parents=True)
+    (job_dir / "input.oqp").write_text("system=water\n")
+
+    assert Recording().run(job_dir) == 0
+    passed = Path(Recording.seen[-1])
+    assert passed.is_absolute()
+    assert passed == (job_dir / "input.oqp").resolve()

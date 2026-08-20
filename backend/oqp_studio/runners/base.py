@@ -26,6 +26,10 @@ class Runner(abc.ABC):
         """Blocking execution; the job manager calls this from a worker thread."""
         if not self.is_available():
             raise RunnerUnavailable(f"runner '{self.name}' is not available on this machine")
+        # Absolute: the child runs with cwd=job_dir, so a path relative to the
+        # server's own directory would not resolve for it — and an engine that
+        # writes its results next to the input would put them somewhere else.
+        job_dir = job_dir.resolve()
         input_file = next(
             (f for name in ("input.oqp", "input.inp") if (f := job_dir / name).exists()),
             job_dir / "input.oqp",

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -10,7 +11,9 @@ from pydantic import BaseModel
 
 from .runners import get_runner
 
-JOBS_ROOT = Path("jobs_data")
+# Absolute, and overridable, so a job directory means the same thing however
+# the server was launched — the desktop app starts it from an arbitrary cwd.
+JOBS_ROOT = Path(os.environ.get("OQP_STUDIO_JOBS", "jobs_data")).resolve()
 
 
 class JobStatus(str, Enum):
