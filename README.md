@@ -77,8 +77,25 @@ npm run dev
 
 The frontend dev server proxies `/api` to the backend on port 8814.
 
+## Code signing
+
+Installers are currently unsigned, so macOS and Windows show a first-run
+warning. On macOS, clear the quarantine flag once after installing:
+
+```bash
+xattr -cr "/Applications/OQP Studio.app"
+```
+
+The release workflow signs and notarizes automatically once the certificates
+are added as repository secrets — see [docs/code-signing.md](docs/code-signing.md).
+
 ## Status
 
-Phase 0 (MVP loop) — project skeleton, backend job API with local and WSL
-execution adapters, frontend placeholder. See the design proposal for the
-full roadmap.
+Working end to end: build a molecule (2D sketcher, PubChem, samples, or raw
+coordinates), pick a workflow, generate the `.oqp` input, run it through a
+local OpenQP (native, WSL, or the pyoqp API), and inspect the results —
+orbitals, normal modes, geometries — rendered with Mol*. Installers are built
+for Windows, macOS (Apple Silicon and Intel), and Linux.
+
+Remaining: SSH/SLURM submission, style presets and high-resolution export,
+code signing (see above). See the design proposal for the full roadmap.
