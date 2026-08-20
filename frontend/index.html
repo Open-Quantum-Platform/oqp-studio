@@ -398,10 +398,17 @@
                   </select>
                 </div>
                 <div>
-                  <label>PubChem (by name)</label>
+                  <label>PubChem (molecule name)</label>
                   <div class="row" style="gap:0.4rem">
                     <input type="text" id="pubchemName" placeholder="e.g. caffeine" />
                     <button class="ghost" id="pubchemFetch" style="flex:none">Fetch</button>
+                  </div>
+                </div>
+                <div>
+                  <label>Protein Data Bank (4-character ID)</label>
+                  <div class="row" style="gap:0.4rem">
+                    <input type="text" id="pdbCode" placeholder="e.g. 1CRN" maxlength="4" />
+                    <button class="ghost" id="pdbFetch" style="flex:none">Fetch</button>
                   </div>
                 </div>
               </div>
@@ -818,6 +825,7 @@
     <footer>
       <span id="health">backend: connecting…</span>
       <span id="runnersInfo"></span>
+      <span id="copyright" style="margin-left:auto"></span>
     </footer>
 
     <script type="module" src="/src/main.ts"></script>

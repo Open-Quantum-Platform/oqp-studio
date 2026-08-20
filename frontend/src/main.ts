@@ -152,6 +152,46 @@ $<HTMLInputElement>("fileInput").addEventListener("change", async (event) => {
   }
 });
 
+// Proteins and nucleic acids come from the RCSB Protein Data Bank, not from
+// PubChem; the file is handed to the viewer whole so chains and residues
+// survive for the cartoon representation.
+$<HTMLButtonElement>("pdbFetch").addEventListener("click", async () => {
+  const code = $<HTMLInputElement>("pdbCode").value.trim();
+  if (!code) return;
+  showBusy("Fetching from the PDB", `entry ${code.toUpperCase()}…`);
+  try {
+    const response = await fetch(`/api/pdb/${encodeURIComponent(code)}`);
+    if (!response.ok) throw new Error((await response.json()).detail ?? response.statusText);
+    const data = await response.json();
+    const frame = document.getElementById("previewFrame") as HTMLIFrameElement;
+    frame.src ||= "/builder3d.html";
+    const send = () => frame.contentWindow?.postMessage(
+      { type: "oqp-file", text: data.pdb, format: "pdb" }, window.location.origin);
+    setTimeout(send, viewerReady ? 0 : 800);
+
+    // The coordinate box gets the same structure, so it can be run as input.
+    const body = new FormData();
+    body.append("file", new File([data.pdb], `${data.code}.pdb`));
+    const parsed = await fetch("/api/structure/open", { method: "POST", body });
+    if (parsed.ok) {
+      const structure = await parsed.json();
+      loadedFrames = structure.frames;
+      xyzArea.value = atomsToText(loadedFrames[0].atoms);
+      builderStatus.textContent =
+        `${data.code} · ${loadedFrames[0].atoms.length} atoms from the PDB`;
+    }
+  } catch (err) {
+    const message = (err as Error).message;
+    builderStatus.textContent = `PDB: ${message}`;
+    if (/certificate/i.test(message)) {
+      hideBusy();
+      await openNetworkSettings();
+    }
+  } finally {
+    hideBusy();
+  }
+});
+
 $<HTMLButtonElement>("pubchemFetch").addEventListener("click", async () => {
   const name = $<HTMLInputElement>("pubchemName").value.trim();
   if (!name) return;
@@ -1251,8 +1291,18 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeMenus();
 });
 
+// The Tauri webview blocks window.open, so the backend hands the URL to the
+// system browser; the direct call stays as the fallback for a plain browser.
 function openExternally(url: string): void {
-  window.open(url, "_blank", "noopener");
+  fetch("/api/open-external", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  })
+    .then((response) => {
+      if (!response.ok) window.open(url, "_blank", "noopener");
+    })
+    .catch(() => { window.open(url, "_blank", "noopener"); });
 }
 
 function download(name: string, text: string): void {
@@ -1304,10 +1354,14 @@ for (const id of ["updateBtn", "releasesBtn", "aboutBtn"]) {
 $<HTMLButtonElement>("releasesBtn").addEventListener("click", () =>
   openExternally("https://github.com/Open-Quantum-Platform/oqp-studio/releases/latest"));
 
+const COPYRIGHT = "© 2026 Open Quantum, Inc. All rights reserved.";
+
 $<HTMLButtonElement>("aboutBtn").addEventListener("click", async () => {
   const health = await (await fetch("/api/health")).json();
-  menuNote.textContent =
-    `OQP Studio ${health.version} — a GUI for the Open Quantum Platform.`;
+  menuNote.innerHTML =
+    `<div><strong>OQP Studio ${health.version}</strong></div>` +
+    `<div>A graphical interface for the Open Quantum Platform.</div>` +
+    `<div style="margin-top:.4rem">${COPYRIGHT}</div>`;
 });
 
 $<HTMLButtonElement>("updateBtn").addEventListener("click", async () => {
@@ -1316,11 +1370,16 @@ $<HTMLButtonElement>("updateBtn").addEventListener("click", async () => {
     const info = await (await fetch("/api/update-check")).json();
     if (info.available) {
       menuNote.innerHTML =
-        `Version ${info.latest} is available (you have ${info.current}). ` +
-        `<a href="#" id="getUpdate" style="color:var(--accent)">Download it →</a>`;
-      $<HTMLAnchorElement>("getUpdate").addEventListener("click", (event) => {
+        `Version ${info.latest} is available (you have ${info.current}).<br />` +
+        `<button class="ghost" id="getUpdate" style="margin-top:.4rem;padding:.3rem .8rem">` +
+        `Download and install</button> ` +
+        `<a href="#" id="openReleases" style="color:var(--accent)">open the release page</a>`;
+      $<HTMLAnchorElement>("openReleases").addEventListener("click", (event) => {
         event.preventDefault();
         openExternally(info.url);
+      });
+      $<HTMLButtonElement>("getUpdate").addEventListener("click", () => {
+        void installUpdate();
       });
     } else if (info.latest) {
       menuNote.textContent = `${info.current} is the latest version.`;
@@ -1417,6 +1476,47 @@ $<HTMLButtonElement>("networkTest").addEventListener("click", async () => {
   }
 });
 
+// One click installs: the backend downloads this platform's installer and,
+// on macOS, stages a swap that runs as soon as the app quits.
+async function installUpdate(): Promise<void> {
+  menuNote.textContent = "starting…";
+  try {
+    const started = await fetch("/api/update/install", { method: "POST" });
+    if (!started.ok) {
+      menuNote.textContent = (await started.json()).detail ?? "could not start the update";
+      return;
+    }
+  } catch {
+    menuNote.textContent = "could not start the update";
+    return;
+  }
+
+  // Poll until it finishes; the menu stays open so the progress is visible.
+  for (;;) {
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    let state: { status: string; percent: number; detail: string };
+    try {
+      state = await (await fetch("/api/update/status")).json();
+    } catch {
+      menuNote.textContent = "lost contact with the backend";
+      return;
+    }
+    if (state.status === "downloading") {
+      menuNote.textContent = `downloading… ${state.percent}%  (${state.detail})`;
+    } else if (state.status === "installing") {
+      menuNote.textContent = `installing… ${state.detail}`;
+    } else if (state.status === "ready") {
+      menuNote.innerHTML =
+        "The new version is staged. Quit OQP Studio and it will replace itself " +
+        "and reopen automatically.";
+      return;
+    } else if (state.status === "failed") {
+      menuNote.textContent = `update failed: ${state.detail}`;
+      return;
+    }
+  }
+}
+
 // ---------- layout: hideable sidebar and draggable splitters ----------
 const NAV_DEFAULT = 210;
 const SPLIT_DEFAULT = "44%";
@@ -1505,6 +1605,7 @@ xyzArea.value = atomsToText(SAMPLES.water.atoms);
 buildSampleList();
 buildWorkflowGrid();
 selectWorkflow(WORKFLOWS[0]);
+$<HTMLSpanElement>("copyright").textContent = COPYRIGHT;
 fetch("/api/health")
   .then((r) => r.json())
   .then((h) => { $<HTMLSpanElement>("health").textContent = `backend: v${h.version} ✓`; })

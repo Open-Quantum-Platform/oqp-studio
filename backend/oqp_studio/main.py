@@ -160,6 +160,42 @@ def pubchem_lookup(name: str) -> dict:
     return {"name": name, "atoms": atoms}
 
 
+RCSB_URL = "https://files.rcsb.org/download/{code}.pdb"
+
+
+@app.get("/api/pdb/{code}")
+def rcsb_lookup(code: str) -> dict:
+    """Fetch an experimental structure from the RCSB Protein Data Bank.
+
+    PubChem holds small molecules; proteins, nucleic acids and complexes come
+    from the PDB, addressed by their four-character entry ID.
+    """
+    entry = code.strip().upper()
+    if not re.fullmatch(r"[0-9A-Z]{4}", entry):
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{code}' is not a PDB ID — those are four characters, such as 1CRN",
+        )
+    try:
+        with urllib.request.urlopen(RCSB_URL.format(code=entry), timeout=30,
+                                    context=network.context()) as response:
+            text = response.read().decode(errors="replace")
+    except urllib.error.HTTPError as exc:
+        detail = (f"the PDB has no entry {entry}" if exc.code == 404 else str(exc))
+        raise HTTPException(status_code=404, detail=detail) from exc
+    except urllib.error.URLError as exc:
+        if isinstance(exc.reason, ssl.SSLCertVerificationError) or "CERTIFICATE_VERIFY" in str(exc):
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "The PDB's certificate could not be verified — open File \u2192 "
+                    "Network settings to trust your network's root certificate."
+                ),
+            ) from exc
+        raise HTTPException(status_code=502, detail=f"RCSB unreachable: {exc}") from exc
+    return {"code": entry, "pdb": text}
+
+
 _molden_cache: OrderedDict[str, object] = OrderedDict()
 
 
@@ -347,6 +383,53 @@ def molden_charges(job_id: str, name: str) -> dict:
             "charges": molden.mulliken_charges(data)}
 
 
+# Hosts the app is allowed to hand to the system browser. The Tauri webview
+# blocks window.open, so links are opened by the OS instead — and that is only
+# safe for destinations the app itself chose.
+EXTERNAL_HOSTS = frozenset({
+    "github.com",
+    "www.github.com",
+    "docs.openqp.org",
+    "app.openqp.org",
+    "openqp.org",
+    "www.rcsb.org",
+    "pubchem.ncbi.nlm.nih.gov",
+})
+
+
+class ExternalLink(BaseModel):
+    url: str
+
+
+@app.post("/api/open-external")
+def open_external(link: ExternalLink) -> dict:
+    """Open a link in the user's normal browser."""
+    import webbrowser
+
+    parsed = urllib.parse.urlparse(link.url)
+    if parsed.scheme != "https" or parsed.hostname not in EXTERNAL_HOSTS:
+        raise HTTPException(status_code=400, detail=f"refusing to open {link.url}")
+    # The platform opener is more dependable inside a frozen app than the
+    # webbrowser module, which looks for a browser on PATH.
+    import subprocess
+
+    if sys.platform == "darwin":
+        command = ["open", link.url]
+    elif os.name == "nt":
+        command = ["cmd", "/c", "start", "", link.url]
+    else:
+        command = ["xdg-open", link.url]
+    try:
+        subprocess.Popen(command, start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return {"opened": link.url}
+    except OSError:
+        pass
+    if not webbrowser.open(link.url):
+        raise HTTPException(status_code=500, detail="no browser could be launched")
+    return {"opened": link.url}
+
+
 class NetworkSettings(BaseModel):
     ca_bundle: str = ""
     insecure: bool = False
@@ -439,6 +522,62 @@ def update_check() -> dict:
         "notes": (release.get("body") or "")[:400],
         "assets": assets,
     }
+
+
+# Progress of a running update, polled by the UI.
+_update_state: dict = {"status": "idle", "detail": "", "percent": 0}
+
+
+def _run_update(assets: list[dict]) -> None:
+    from . import update
+
+    try:
+        asset = update.pick_asset(assets)
+        if asset is None:
+            _update_state.update(status="failed",
+                                 detail="no installer published for this platform")
+            return
+        target = Path(tempfile.gettempdir()) / asset["name"]
+
+        def progress(done: int, total: int) -> None:
+            _update_state.update(
+                status="downloading",
+                percent=int(done * 100 / total) if total else 0,
+                detail=f"{done // 1_000_000} MB of {total // 1_000_000} MB",
+            )
+
+        _update_state.update(status="downloading", percent=0, detail=asset["name"])
+        update.download(asset["url"], target, progress)
+
+        if sys.platform == "darwin":
+            _update_state.update(status="installing", percent=100, detail="unpacking…")
+            detail = update.install_macos(
+                target, lambda text: _update_state.update(detail=text))
+            _update_state.update(status="ready", detail=detail)
+        else:
+            detail = update.install_elsewhere(target)
+            _update_state.update(status="ready", detail=detail)
+    except Exception as exc:  # noqa: BLE001 — the UI shows whatever went wrong
+        _update_state.update(status="failed", detail=str(exc))
+
+
+@app.post("/api/update/install")
+def update_install() -> dict:
+    """Download this platform's installer and stage it for installation."""
+    if _update_state["status"] in ("downloading", "installing"):
+        return _update_state
+    info = update_check()
+    if not info.get("available"):
+        raise HTTPException(status_code=400, detail="already up to date")
+    _update_state.update(status="downloading", percent=0, detail="starting…")
+    threading.Thread(target=_run_update, args=(info.get("assets") or [],),
+                     daemon=True).start()
+    return _update_state
+
+
+@app.get("/api/update/status")
+def update_status() -> dict:
+    return _update_state
 
 
 _UPLOAD = File(...)
