@@ -137,17 +137,37 @@ jobs:
           tar czf "OQP-Studio-${{ matrix.os }}.app.tar.gz" "OQP Studio.app"
           ls -la *.app.tar.gz
 
+      # Tauri names its output after the architecture only ("_x64-setup.exe"),
+      # which does not say which OS it is for. Republish every installer under
+      # OQP-Studio-<version>-<platform>.<ext>.
+      - name: Collect installers under platform-named files
+        shell: bash
+        run: |
+          case "${{ matrix.os }}" in
+            ubuntu-latest)   PLATFORM=linux-x86_64 ;;
+            macos-latest)    PLATFORM=macos-apple-silicon ;;
+            macos-15-intel)  PLATFORM=macos-intel ;;
+            windows-latest)  PLATFORM=windows-x64 ;;
+            *)               PLATFORM="${{ matrix.os }}" ;;
+          esac
+          VERSION=$(python -c "import json;print(json.load(open('shell/src-tauri/tauri.conf.json'))['version'])")
+          STEM="OQP-Studio-${VERSION}-${PLATFORM}"
+          mkdir -p release
+          cd shell/src-tauri/target/release/bundle
+          shopt -s nullglob
+          for f in */*.dmg;          do cp "$f" "$GITHUB_WORKSPACE/release/${STEM}.dmg"; done
+          for f in macos/*.app.tar.gz; do cp "$f" "$GITHUB_WORKSPACE/release/${STEM}.app.tar.gz"; done
+          for f in */*.AppImage;     do cp "$f" "$GITHUB_WORKSPACE/release/${STEM}.AppImage"; done
+          for f in */*.deb;          do cp "$f" "$GITHUB_WORKSPACE/release/${STEM}.deb"; done
+          for f in */*.msi;          do cp "$f" "$GITHUB_WORKSPACE/release/${STEM}.msi"; done
+          for f in */*-setup.exe;    do cp "$f" "$GITHUB_WORKSPACE/release/${STEM}-setup.exe"; done
+          ls -la "$GITHUB_WORKSPACE/release"
+
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
           name: oqp-studio-${{ matrix.os }}
-          path: |
-            shell/src-tauri/target/release/bundle/**/*.dmg
-            shell/src-tauri/target/release/bundle/**/*.AppImage
-            shell/src-tauri/target/release/bundle/**/*.deb
-            shell/src-tauri/target/release/bundle/**/*.msi
-            shell/src-tauri/target/release/bundle/**/*.exe
-            shell/src-tauri/target/release/bundle/macos/*.app.tar.gz
+          path: release/*
           if-no-files-found: error
 
       - name: Attach to GitHub release
@@ -155,13 +175,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag || github.ref_name }}
-          files: |
-            shell/src-tauri/target/release/bundle/**/*.dmg
-            shell/src-tauri/target/release/bundle/**/*.AppImage
-            shell/src-tauri/target/release/bundle/**/*.deb
-            shell/src-tauri/target/release/bundle/**/*.msi
-            shell/src-tauri/target/release/bundle/**/*.exe
-            shell/src-tauri/target/release/bundle/macos/*.app.tar.gz
+          files: release/*
 
   # `pip install oqp-studio` — the distribution channel that matches this
   # audience, since OpenQP itself is installed with pip/conda.
