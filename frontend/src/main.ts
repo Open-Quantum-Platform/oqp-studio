@@ -108,12 +108,70 @@ async function updatePreview(): Promise<void> {
 }
 $<HTMLButtonElement>("previewBtn").addEventListener("click", updatePreview);
 
-// ---------- method / input generation ----------
+// ---------- method: workflow catalog ----------
+// First pick a workflow (like app.openqp.org); details open on demand.
+interface Workflow {
+  key: string;
+  title: string;
+  desc: string;
+  mrsfOnly?: boolean;   // enforces the MRSF-TDDFT route
+  defaultTheory?: string;
+}
+
+const WORKFLOWS: Workflow[] = [
+  { key: "energy", title: "Single-point energy", desc: "HF / DFT / MP2 / MRSF energy at the given geometry", defaultTheory: "dft" },
+  { key: "opt", title: "Geometry optimization", desc: "Minimize the ground- or excited-state structure", defaultTheory: "dft" },
+  { key: "hess", title: "Frequencies (Hessian)", desc: "Vibrational frequencies, IR; thermochemistry", defaultTheory: "dft" },
+  { key: "abs", title: "Absorption spectrum", desc: "MRSF-TDDFT vertical excitation energies", mrsfOnly: true },
+  { key: "exgrad", title: "Excited-state gradient", desc: "MRSF-TDDFT gradient of a chosen state", mrsfOnly: true },
+  { key: "exopt", title: "Excited-state optimization", desc: "Optimize S1 or another MRSF state", mrsfOnly: true },
+  { key: "meci", title: "MECI search", desc: "Minimum-energy conical intersection between two states", mrsfOnly: true },
+  { key: "soc", title: "Spin–orbit coupling", desc: "MRSF-TDDFT SOC between singlets and triplets", mrsfOnly: true },
+  { key: "ekt", title: "Ionization / EA (EKT)", desc: "MRSF extended-Koopmans IP and EA with Dyson orbitals", mrsfOnly: true },
+];
+
+let currentWf: Workflow = WORKFLOWS[0];
+
 const theorySel = $<HTMLSelectElement>("theory");
 const functionalInp = $<HTMLInputElement>("functional");
 const basisSel = $<HTMLSelectElement>("basis");
 const basisCustom = $<HTMLInputElement>("basisCustom");
-const runtypeSel = $<HTMLSelectElement>("runtype");
+const optionsCard = $<HTMLDivElement>("optionsCard");
+
+function selectWorkflow(wf: Workflow): void {
+  currentWf = wf;
+  document.querySelectorAll<HTMLElement>(".wf-card").forEach((c) => {
+    c.classList.toggle("sel", c.dataset.key === wf.key);
+  });
+  document.querySelectorAll<HTMLElement>(".wf-opt").forEach((row) => {
+    row.classList.toggle("on", (row.dataset.for ?? "").split(" ").includes(wf.key));
+  });
+  if (wf.mrsfOnly) {
+    theorySel.value = "mrsf";
+    theorySel.disabled = true;
+  } else {
+    theorySel.disabled = false;
+    if (theorySel.value === "mrsf" || !theorySel.value) {
+      theorySel.value = wf.defaultTheory ?? "dft";
+    }
+  }
+  $<HTMLSpanElement>("wfLabel").textContent = `— ${wf.title}`;
+  optionsCard.style.display = "";
+  syncFieldStates();
+  updateInpPreview();
+}
+
+function buildWorkflowGrid(): void {
+  const grid = $<HTMLDivElement>("wfGrid");
+  for (const wf of WORKFLOWS) {
+    const card = document.createElement("div");
+    card.className = "wf-card";
+    card.dataset.key = wf.key;
+    card.innerHTML = `<div class="wf-title">${wf.title}</div><div class="wf-desc">${wf.desc}</div>`;
+    card.addEventListener("click", () => selectWorkflow(wf));
+    grid.appendChild(card);
+  }
+}
 
 function currentBasis(): string {
   return basisSel.value === "__custom__" ? basisCustom.value.trim() : basisSel.value;
@@ -122,7 +180,7 @@ function currentBasis(): string {
 // Generates concise .oqp input: ROUTE, one primary driver, globals, geometry.
 function generateInp(): string {
   const atoms = parseAtoms(xyzArea.value);
-  const theory = theorySel.value;
+  const theory = currentWf.mrsfOnly ? "mrsf" : theorySel.value;
   const charge = +$<HTMLInputElement>("charge").value || 0;
   const mult = +$<HTMLInputElement>("mult").value || 1;
   const nstate = +$<HTMLInputElement>("nstate").value || 3;
@@ -137,13 +195,32 @@ function generateInp(): string {
     tddft: `tddft(nstate=${nstate})/${functional}/${basis}`,
     mrsf: `mrsf(nstate=${nstate})/${functional}/${basis}`,
   };
-  const drivers: Record<string, string> = {
-    energy: "energy", grad: "grad", optimize: "opt", hess: "hess",
-  };
+
   const usesStates = theory === "tddft" || theory === "mrsf";
-  let driver = drivers[runtypeSel.value];
-  if (usesStates && (driver !== "energy" || target > 0)) {
-    driver += `(S${target})`;
+  const stateArg = usesStates && target > 0 ? `(S${target})` : "";
+  let driver: string;
+  switch (currentWf.key) {
+    case "energy": driver = `energy${stateArg}`; break;
+    case "opt": driver = `opt${stateArg}`; break;
+    case "hess": driver = `hess${stateArg}`; break;
+    case "abs": driver = "energy"; break;
+    case "exgrad": driver = `grad(S${target || 1})`; break;
+    case "exopt": driver = `opt(S${target || 1})`; break;
+    case "meci": {
+      const a = +$<HTMLInputElement>("meciA").value || 0;
+      const b = +$<HTMLInputElement>("meciB").value || 1;
+      driver = `meci(S${Math.min(a, b)},S${Math.max(a, b)})`;
+      break;
+    }
+    case "soc": driver = "soc"; break;
+    case "ekt": {
+      const opts = [];
+      if ($<HTMLInputElement>("ektIp").checked) opts.push("ip=true");
+      if ($<HTMLInputElement>("ektEa").checked) opts.push("ea=true");
+      driver = `ekt(${opts.join(",") || "ip=true"})`;
+      break;
+    }
+    default: driver = "energy";
   }
 
   const lines: string[] = [routes[theory], driver];
@@ -161,10 +238,16 @@ function generateInp(): string {
 function updateInpPreview(): void {
   $<HTMLPreElement>("inpPreview").textContent = generateInp();
 }
-for (const id of ["theory", "functional", "basis", "basisCustom", "charge", "mult", "nstate", "runtype", "targetState"]) {
+function syncFieldStates(): void {
+  functionalInp.disabled =
+    !theorySel.disabled && (theorySel.value === "hf" || theorySel.value === "mp2");
+  basisCustom.disabled = basisSel.value !== "__custom__";
+}
+
+for (const id of ["theory", "functional", "basis", "basisCustom", "charge", "mult",
+                  "nstate", "targetState", "meciA", "meciB", "ektIp", "ektEa"]) {
   $<HTMLElement>(id).addEventListener("input", () => {
-    functionalInp.disabled = theorySel.value === "hf" || theorySel.value === "mp2";
-    basisCustom.disabled = basisSel.value !== "__custom__";
+    syncFieldStates();
     updateInpPreview();
   });
 }
@@ -328,7 +411,8 @@ isoRange.addEventListener("change", showOrbital);
 
 // ---------- boot ----------
 xyzArea.value = atomsToText(SAMPLES.water);
-updateInpPreview();
+buildWorkflowGrid();
+selectWorkflow(WORKFLOWS[0]);
 fetch("/api/health")
   .then((r) => r.json())
   .then((h) => { $<HTMLSpanElement>("health").textContent = `backend: v${h.version} ✓`; })

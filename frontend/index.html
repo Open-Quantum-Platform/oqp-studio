@@ -154,6 +154,22 @@
       ul.files li { padding: 0.3rem 0; border-bottom: 1px solid var(--border); font-size: 13px; }
       ul.files a { color: var(--accent); text-decoration: none; margin-left: 0.5rem; }
 
+      .wf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+      .wf-card {
+        background: var(--panel-2);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        padding: 0.7rem 0.85rem;
+        cursor: pointer;
+        transition: border-color .12s, background .12s;
+      }
+      .wf-card:hover { border-color: var(--accent); }
+      .wf-card.sel { border-color: var(--accent); background: var(--accent-soft); }
+      .wf-card .wf-title { font-weight: 600; font-size: 13.5px; }
+      .wf-card .wf-desc { color: var(--text-dim); font-size: 12px; margin-top: 2px; }
+      .wf-opt { display: none; }
+      .wf-opt.on { display: flex; }
+
       footer {
         grid-area: footer;
         display: flex; align-items: center; gap: 1.2rem;
@@ -225,7 +241,11 @@
         <div class="cols">
           <div>
             <div class="card">
-              <h3>Theory</h3>
+              <h3>Workflow</h3>
+              <div class="wf-grid" id="wfGrid"></div>
+            </div>
+            <div class="card" id="optionsCard" style="display:none">
+              <h3>Options <span class="hint" id="wfLabel" style="text-transform:none;letter-spacing:0"></span></h3>
               <div class="row">
                 <div>
                   <label>Method</label>
@@ -265,27 +285,24 @@
                 <div><label>Multiplicity</label><input type="number" id="mult" value="1" min="1" /></div>
                 <div><label># excited states</label><input type="number" id="nstate" value="3" min="1" /></div>
               </div>
-            </div>
-            <div class="card">
-              <h3>Calculation</h3>
-              <div class="row">
+              <div class="row wf-opt" data-for="exgrad exopt">
                 <div>
-                  <label>Run type</label>
-                  <select id="runtype">
-                    <option value="energy">Single-point energy</option>
-                    <option value="grad">Gradient</option>
-                    <option value="optimize">Geometry optimization</option>
-                    <option value="hess">Hessian / frequencies</option>
-                  </select>
-                </div>
-                <div>
-                  <label>Target state (0 = ground)</label>
+                  <label>Target state</label>
                   <input type="number" id="targetState" value="1" min="0" />
                 </div>
+                <div></div>
+              </div>
+              <div class="row wf-opt" data-for="meci">
+                <div><label>MECI state A</label><input type="number" id="meciA" value="0" min="0" /></div>
+                <div><label>MECI state B</label><input type="number" id="meciB" value="1" min="0" /></div>
+              </div>
+              <div class="row wf-opt" data-for="ekt">
+                <div><label><input type="checkbox" id="ektIp" checked style="width:auto;margin-right:.4rem" />Ionization (IP)</label></div>
+                <div><label><input type="checkbox" id="ektEa" style="width:auto;margin-right:.4rem" />Electron affinity (EA)</label></div>
               </div>
               <div class="actions">
                 <button class="primary" id="generate">Generate input →</button>
-                <span class="hint">writes the .inp and opens the Run tab</span>
+                <span class="hint">writes the .oqp and opens the Run tab</span>
               </div>
             </div>
           </div>
