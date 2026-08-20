@@ -127,7 +127,7 @@ def install_macos(tarball: Path, progress=None) -> str:
 def install_elsewhere(installer: Path) -> str:
     """Hand the downloaded installer to the system."""
     if os.name == "nt":
-        os.startfile(str(installer))  # noqa: S606 — the user asked to install
+        os.startfile(str(installer))
         return f"the installer {installer.name} was started"
     installer.chmod(installer.stat().st_mode | stat.S_IEXEC)
     opener = shutil.which("xdg-open")

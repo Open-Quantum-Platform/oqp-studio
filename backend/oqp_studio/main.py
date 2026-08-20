@@ -19,10 +19,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import __version__
-from . import engine
-from . import environment
-from . import network
+from . import __version__, engine, environment, network
 from .jobs import JobInfo, JobRequest, manager
 from .runners import available_runners
 
@@ -49,6 +46,11 @@ network.activate()
 _warm_up_rdkit()
 
 app = FastAPI(title="OQP Studio backend", version=__version__)
+
+
+# FastAPI reads this as the file field; kept module level so it is not a
+# function call in a default argument.
+_UPLOAD = File(...)
 
 
 @app.get("/api/health")
@@ -509,7 +511,7 @@ def set_network(settings: NetworkSettings) -> dict:
 
 
 @app.post("/api/network/certificate")
-async def upload_certificate(file: UploadFile = File(...)) -> dict:
+async def upload_certificate(file: UploadFile = _UPLOAD) -> dict:
     """Store a root certificate the user picked in the file dialog.
 
     A browser file picker hands over the contents, not a path, so the file is
@@ -636,9 +638,6 @@ def update_install() -> dict:
 @app.get("/api/update/status")
 def update_status() -> dict:
     return _update_state
-
-
-_UPLOAD = File(...)
 
 
 @app.post("/api/structure/open")

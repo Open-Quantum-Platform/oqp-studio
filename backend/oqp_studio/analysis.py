@@ -158,7 +158,7 @@ def _from_log(text: str, summary: dict) -> None:
                 summary["scf"]["iterations"] = int(match.group(3))
         if "SCF converged" in stripped:
             summary["scf"]["converged"] = True
-        elif re.search(r"SCF (did not converge|not converged)", stripped, re.I):
+        elif re.search(r"SCF (did not converge|not converged)", stripped, re.IGNORECASE):
             summary["scf"]["converged"] = False
 
         if stripped.startswith("PyOQP state"):
@@ -208,8 +208,8 @@ _STATE_ROW = re.compile(
 def _log_states(lines: list[str], summary: dict) -> None:
     header = next(
         (i for i, ln in enumerate(lines)
-         if re.search(r"(excitation energ|excited state)", ln, re.I)
-         and re.search(r"(eV|osc)", ln, re.I)),
+         if re.search(r"(excitation energ|excited state)", ln, re.IGNORECASE)
+         and re.search(r"(eV|osc)", ln, re.IGNORECASE)),
         -1,
     )
     if header < 0:
@@ -249,7 +249,7 @@ def _log_dipole(lines: list[str], summary: dict) -> None:
     if summary["dipole"]:
         return
     for i, line in enumerate(lines):
-        if re.search(r"dipole", line, re.I) and not re.search(r"transition", line, re.I):
+        if re.search(r"dipole", line, re.IGNORECASE) and not re.search(r"transition", line, re.IGNORECASE):
             for candidate in lines[i: i + 4]:
                 values = _floats(candidate)
                 if len(values) >= 3:

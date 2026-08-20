@@ -88,7 +88,7 @@ def context() -> ssl.SSLContext | None:
     if values["insecure"]:
         # Deliberately unverified: the user asked for this after their network
         # could not be verified any other way.
-        unverified = ssl._create_unverified_context()  # noqa: SLF001
+        unverified = ssl._create_unverified_context()
         return unverified
     bundle = values["ca_bundle"]
     if bundle and Path(bundle).is_file():
