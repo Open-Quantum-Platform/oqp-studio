@@ -41,6 +41,16 @@ On Windows, OpenQP runs through the WSL adapter until the native Windows
 build of the OpenQP core is available; the GUI itself is native on all
 three platforms.
 
+## Install with pip
+
+```bash
+pip install oqp-studio        # ships the server, UI, and results viewer
+oqp-studio                    # opens in its own window
+```
+
+Add the extras you need: `pip install "oqp-studio[desktop,chem]"` for the
+native window (pywebview) and 2D-sketch-to-3D conversion (RDKit).
+
 ## Run it as a desktop app (no browser)
 
 After building the frontend once (see below), the backend can open its own

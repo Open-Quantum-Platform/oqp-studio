@@ -288,6 +288,7 @@ def _frontend_dist() -> Path | None:
     bundle_dir = getattr(sys, "_MEIPASS", None)  # PyInstaller-frozen backend
     if bundle_dir:
         candidates.append(Path(bundle_dir) / "frontend_dist")
+    candidates.append(Path(__file__).resolve().parent / "web")  # installed wheel
     candidates.append(Path(__file__).resolve().parents[2] / "frontend" / "dist")
     return next((p for p in candidates if (p / "index.html").is_file()), None)
 

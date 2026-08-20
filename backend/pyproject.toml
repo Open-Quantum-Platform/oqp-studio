@@ -3,9 +3,11 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "oqp-studio-backend"
+name = "oqp-studio"
 version = "0.1.0"
-description = "Local backend for OQP Studio: runs and monitors OpenQP jobs"
+description = "Desktop GUI for the Open Quantum Platform: build, run, and visualize OpenQP calculations"
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",
@@ -31,8 +33,17 @@ chem = [
     "numpy>=1.26",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Open-Quantum-Platform/oqp-studio"
+Documentation = "https://github.com/Open-Quantum-Platform/oqp-studio#readme"
+
 [tool.setuptools.packages.find]
 include = ["oqp_studio*"]
+
+[tool.setuptools.package-data]
+# The built frontend is copied into oqp_studio/web/ by build_wheel.py so that
+# `pip install oqp-studio` ships the UI and the viewer with the server.
+oqp_studio = ["web/**/*"]
 
 [tool.ruff]
 line-length = 100

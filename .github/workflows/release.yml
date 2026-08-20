@@ -133,3 +133,47 @@ jobs:
             shell/src-tauri/target/release/bundle/**/*.msi
             shell/src-tauri/target/release/bundle/**/*.exe
             shell/src-tauri/target/release/bundle/macos/*.app.tar.gz
+
+  # `pip install oqp-studio` — the distribution channel that matches this
+  # audience, since OpenQP itself is installed with pip/conda.
+  python-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build wheel and sdist
+        working-directory: backend
+        run: |
+          pip install build
+          python build_wheel.py
+
+      - name: Verify the wheel serves the UI
+        run: |
+          python -m venv /tmp/check
+          /tmp/check/bin/pip install backend/dist/*.whl
+          cd /tmp
+          /tmp/check/bin/python -m uvicorn oqp_studio.main:app --port 8821 &
+          for _ in $(seq 30); do
+            curl -sf http://127.0.0.1:8821/api/health && break || sleep 1
+          done
+          curl -sf http://127.0.0.1:8821/ -o /dev/null
+          curl -sf http://127.0.0.1:8821/viewer/index.html -o /dev/null
+          echo "wheel serves the UI and viewer"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oqp-studio-python
+          path: backend/dist/*
+          if-no-files-found: error
