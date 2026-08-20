@@ -14,7 +14,7 @@ import uuid
 from collections import OrderedDict
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -51,6 +51,8 @@ app = FastAPI(title="OQP Studio backend", version=__version__)
 # FastAPI reads this as the file field; kept module level so it is not a
 # function call in a default argument.
 _UPLOAD = File(...)
+_UPLOADS = File(...)
+_IMPORT_NAME = Form("")
 
 
 @app.get("/api/health")
@@ -107,6 +109,79 @@ def job_file(job_id: str, name: str) -> FileResponse:
     if path is None:
         raise HTTPException(status_code=404, detail="file not found")
     return FileResponse(path, media_type="text/plain", filename=name)
+
+
+# Result files worth adopting when a whole folder is imported. Everything
+# else in a run directory -- scratch, restart files, submission scripts --
+# would only pad the file list.
+RESULT_SUFFIXES = (
+    ".log", ".out", ".json", ".molden", ".xyz", ".trj", ".cube", ".cub",
+    ".inp", ".oqp", ".dat", ".txt",
+)
+
+# Ignore anything larger than this on a folder import: a stray checkpoint is
+# not analysable and copying it would only cost the user disk.
+MAX_IMPORT_BYTES = 512 * 1024 * 1024
+
+
+class ImportPathRequest(BaseModel):
+    path: str
+    name: str = ""
+
+
+def _import_candidates(root: Path) -> list[Path]:
+    if root.is_file():
+        return [root]
+    return sorted(
+        path for path in root.iterdir()
+        if path.is_file() and path.suffix.lower() in RESULT_SUFFIXES
+        and path.stat().st_size <= MAX_IMPORT_BYTES
+    )
+
+
+@app.post("/api/jobs/import")
+async def import_results(files: list[UploadFile] = _UPLOADS,
+                         name: str = _IMPORT_NAME) -> JobInfo:
+    """Adopt result files produced outside this app.
+
+    A run made on a cluster, by the standalone command-line engine, or by an
+    earlier session becomes a job here, so every analysis the app offers --
+    summary, spectra, orbitals, normal modes, property maps -- applies to it
+    exactly as it does to a run this app started.
+    """
+    payload: list[tuple[str, bytes]] = []
+    for upload in files:
+        data = await upload.read()
+        if len(data) > MAX_IMPORT_BYTES:
+            raise HTTPException(status_code=413,
+                                detail=f"{upload.filename} is too large to import")
+        payload.append((upload.filename or "file", data))
+    try:
+        return manager.adopt(name or "imported", payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/import-path")
+def import_results_from_path(req: ImportPathRequest) -> JobInfo:
+    """Adopt a result file, or a whole run directory, already on this machine.
+
+    The desktop app and the backend share a filesystem, so pointing at a
+    directory beats uploading it: a molden file of a few hundred megabytes is
+    copied locally instead of pushed through the browser.
+    """
+    root = Path(req.path).expanduser()
+    if not root.exists():
+        raise HTTPException(status_code=404, detail=f"no such path: {root}")
+    candidates = _import_candidates(root)
+    if not candidates:
+        raise HTTPException(status_code=400,
+                            detail="no result files were found in that folder")
+    try:
+        return manager.adopt(req.name or root.stem or "imported",
+                             [(path.name, path.read_bytes()) for path in candidates])
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 PUBCHEM_URL = (

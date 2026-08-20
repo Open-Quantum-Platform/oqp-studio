@@ -307,6 +307,7 @@
           <div class="mmenu">
             <button class="menu-item" data-cmd="open-file">Open structure file…</button>
             <button class="menu-item" data-cmd="pubchem">Fetch from PubChem…</button>
+            <button class="menu-item" data-cmd="open-results">Open existing results…</button>
             <div class="msep"></div>
             <button class="menu-item" data-cmd="save-xyz">Save geometry as .xyz…</button>
             <button class="menu-item" data-cmd="save-oqp">Save input as .oqp…</button>
@@ -595,7 +596,19 @@
         <div class="cols">
           <div>
             <div class="card">
-              <h3>Jobs <button class="ghost" id="jobsRefresh" style="float:right;padding:0.15rem 0.7rem">↻</button></h3>
+              <h3>Jobs
+                <button class="ghost" id="jobsRefresh" style="float:right;padding:0.15rem 0.7rem">↻</button>
+              </h3>
+              <!-- Results computed elsewhere -- on a cluster, by the standalone
+                   command-line engine, or in an earlier session -- are analysed
+                   here exactly like a run this app started. -->
+              <p>
+                <button class="ghost" id="importBtn">Open existing results…</button>
+                <span class="hint" id="importStatus"></span>
+              </p>
+              <input type="file" id="importFiles" multiple
+                     accept=".log,.out,.json,.molden,.xyz,.trj,.cube,.cub,.inp,.oqp,.dat,.txt"
+                     style="display:none" />
               <table class="jobs">
                 <thead><tr><th>ID</th><th>Runner</th><th>Status</th></tr></thead>
                 <tbody id="jobsBody"></tbody>

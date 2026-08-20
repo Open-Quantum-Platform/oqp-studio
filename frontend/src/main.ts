@@ -41,7 +41,8 @@ const SAMPLES: Record<string, { label: string; atoms: Atom[] }> = {
   caffeine: { label: "Caffeine (C₈H₁₀N₄O₂)", atoms: [["C",3.294,0.253,0.440],["N",2.076,-0.507,0.312],["C",1.964,-1.871,0.367],["N",0.714,-2.262,0.215],["C",0.013,-1.105,0.059],["C",0.820,-0.009,0.113],["C",0.338,1.321,-0.022],["O",1.075,2.301,0.029],["N",-1.045,1.378,-0.215],["C",-1.660,2.682,-0.367],["C",-1.914,0.268,-0.277],["O",-3.126,0.421,-0.452],["N",-1.343,-0.997,-0.133],["C",-2.167,-2.191,-0.185],["H",3.200,0.918,1.302],["H",3.445,0.826,-0.478],["H",4.135,-0.429,0.591],["H",2.813,-2.526,0.518],["H",-2.167,2.725,-1.337],["H",-2.409,2.816,0.420],["H",-0.936,3.498,-0.310],["H",-1.826,-2.825,-1.009],["H",-2.070,-2.733,0.761],["H",-3.222,-1.951,-0.342]] },
 };
 
-const VIEWABLE = [".log", ".txt", ".json", ".molden", ".cube", ".cub", ".xyz"];
+const VIEWABLE = [".log", ".out", ".txt", ".json", ".molden", ".cube", ".cub",
+                  ".xyz", ".trj", ".inp", ".oqp"];
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -648,6 +649,47 @@ async function refreshJobs(): Promise<void> {
   }
 }
 $<HTMLButtonElement>("jobsRefresh").addEventListener("click", refreshJobs);
+
+// Results computed elsewhere — on a cluster, by the standalone command-line
+// engine, or in an earlier session — are copied into a job directory of their
+// own. Analysis is built on top of a job directory, so from that point on they
+// behave exactly like a run this app started: summary, spectra, orbitals,
+// normal modes and property maps all apply.
+const importFiles = $<HTMLInputElement>("importFiles");
+const importStatus = $<HTMLSpanElement>("importStatus");
+
+async function openExistingResults(): Promise<void> {
+  importFiles.value = "";
+  importFiles.click();
+}
+
+importFiles.addEventListener("change", async () => {
+  const chosen = Array.from(importFiles.files ?? []);
+  if (!chosen.length) return;
+  importStatus.textContent = `importing ${chosen.length} file(s)…`;
+  const body = new FormData();
+  for (const file of chosen) body.append("files", file, file.name);
+  body.append("name", chosen[0].name.replace(/\.[^.]+$/, ""));
+  try {
+    const res = await fetch("/api/jobs/import", { method: "POST", body });
+    if (!res.ok) {
+      const detail = await res.json().catch(() => null);
+      importStatus.textContent = `import failed: ${detail?.detail ?? res.status}`;
+      return;
+    }
+    const info = await res.json();
+    importStatus.textContent = `imported as ${info.id}`;
+    showTab("analysis");
+    await refreshJobs();
+    await selectJob(info.id);
+  } catch (err) {
+    importStatus.textContent = `import failed: ${err}`;
+  }
+});
+
+$<HTMLButtonElement>("importBtn").addEventListener("click", () => {
+  void openExistingResults();
+});
 
 async function selectJob(jobId: string): Promise<void> {
   selectedJob = jobId;
@@ -1316,6 +1358,7 @@ function download(name: string, text: string): void {
 
 const COMMANDS: Record<string, () => void> = {
   "open-file": () => $<HTMLInputElement>("fileInput").click(),
+  "open-results": () => { void openExistingResults(); },
   pubchem: () => { showTab("builder"); $<HTMLInputElement>("pubchemName").focus(); },
   "save-xyz": () => {
     const atoms = parseAtoms(xyzArea.value);

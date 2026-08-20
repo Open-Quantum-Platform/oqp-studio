@@ -168,3 +168,69 @@ def test_runner_hands_the_engine_an_absolute_input_path(tmp_path):
     passed = Path(Recording.seen[-1])
     assert passed.is_absolute()
     assert passed == (job_dir / "input.oqp").resolve()
+
+
+def test_imported_results_analyse_like_a_run_of_our_own(tmp_path, monkeypatch):
+    """A run made elsewhere must be analysable, not just downloadable.
+
+    Analysis is keyed on a job directory, so importing means giving foreign
+    output files one; the summary and spectrum endpoints then work unchanged.
+    """
+    import json
+
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    export = json.dumps({
+        "energy": -76.0107465151,
+        "frequencies_cm-1": [1600.0, 3700.0, 3800.0],
+        "infrared_intensities": [70.0, 10.0, 60.0],
+    })
+    res = client.post(
+        "/api/jobs/import",
+        files=[
+            ("files", ("hf.log", "TOTAL energy =  -76.0107465151\n", "text/plain")),
+            ("files", ("hf.json", export, "application/json")),
+        ],
+        data={"name": "cluster run"},
+    )
+    assert res.status_code == 200, res.text
+    job_id = res.json()["id"]
+    assert res.json()["runner"] == "imported"
+
+    summary = client.get(f"/api/jobs/{job_id}/summary").json()
+    assert summary["energy"]["total"] == -76.0107465151
+    assert summary["has_frequencies"]
+    assert client.get(f"/api/jobs/{job_id}/spectrum?kind=ir").json()["x"]
+
+
+def test_importing_a_folder_takes_the_results_and_leaves_the_rest(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path / "jobs")
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "water.log").write_text("TOTAL energy =  -76.0\n")
+    (run / "water.json").write_text("{}")
+    (run / "restart.bin").write_bytes(b"\0" * 16)
+
+    res = client.post("/api/jobs/import-path", json={"path": str(run)})
+    assert res.status_code == 200, res.text
+    names = [f["name"] for f in client.get(f"/api/jobs/{res.json()['id']}/files").json()]
+    assert names == ["water.json", "water.log"]
+
+    assert client.post("/api/jobs/import-path", json={"path": str(tmp_path / "no")}).status_code == 404
+
+
+def test_an_import_cannot_write_outside_its_job_directory(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path / "jobs")
+    res = client.post(
+        "/api/jobs/import",
+        files=[("files", ("../../escaped.log", "x", "text/plain"))],
+    )
+    assert res.status_code == 200, res.text
+    assert not (tmp_path / "escaped.log").exists()
+    names = [f["name"] for f in client.get(f"/api/jobs/{res.json()['id']}/files").json()]
+    assert names == ["escaped.log"]

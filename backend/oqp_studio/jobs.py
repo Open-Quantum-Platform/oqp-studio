@@ -91,6 +91,42 @@ class JobManager:
         threading.Thread(target=self._run, args=(job_id,), daemon=True).start()
         return info
 
+    def adopt(self, name: str, files: list[tuple[str, bytes]]) -> JobInfo:
+        """Register result files computed elsewhere as a job of their own.
+
+        Analysis is built entirely on top of a job directory, so a run made
+        on a cluster, by the command-line engine or by an earlier version of
+        this app becomes analysable simply by giving its output files a job
+        directory of their own -- summaries, spectra, orbitals, normal modes
+        and property maps then work on it unchanged.
+        """
+        job_id = uuid.uuid4().hex[:12]
+        job_dir = JOBS_ROOT / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        written = 0
+        for raw_name, data in files:
+            # Browsers send a path when a whole folder is picked; only the
+            # file name may reach the job directory.
+            safe = Path(raw_name.replace("\\", "/")).name
+            if not safe or safe.startswith("."):
+                continue
+            (job_dir / safe).write_bytes(data)
+            written += 1
+        if not written:
+            job_dir.rmdir()
+            raise ValueError("no usable files were given")
+        info = JobInfo(
+            id=job_id,
+            name=name or "imported",
+            status=JobStatus.done,
+            runner="imported",
+            created_at=datetime.now(timezone.utc).isoformat(),
+            exit_code=0,
+        )
+        with self._lock:
+            self._jobs[job_id] = info
+        return info
+
     def _run(self, job_id: str) -> None:
         info = self._jobs[job_id]
         info.status = JobStatus.running
