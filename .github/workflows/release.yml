@@ -7,6 +7,10 @@ on:
         description: "Publish a release under this tag (e.g. v0.1.0); leave empty to only build artifacts"
         required: false
         default: ""
+      openqp_windows_ref:
+        description: "OpenQP ref for the Windows engine (default: the PR that adds Windows support)"
+        required: false
+        default: ""
   push:
     tags: ["v*"]
 
@@ -271,12 +275,18 @@ jobs:
     with:
       release_tag: ${{ inputs.release_tag || github.ref_name }}
 
-  # No engine-windows job: OpenQP does not build on Windows yet.  Its DFT-D4
-  # stack stops CMake with "The replaceable DFT-D4 shared-library stack is
-  # currently supported only on Linux and macOS" (external/CMakeLists.txt), and
-  # OpenQP's own wheel matrix ships Linux and macOS only -- there is nothing to
-  # bundle.  windows-bundle.yml is kept and can still be dispatched by hand, so
-  # this job comes back as a three-line addition the day upstream lands Windows
-  # support.  Until then Windows users run the engine through WSL, which the app
-  # supports natively: install the linux-x86_64 archive inside the WSL
-  # distribution and pick the "wsl" runner.
+  # Windows is the platform most of our users are on, so its engine is built
+  # like every other one.  The engine's Windows support lives in OpenQP PR #359
+  # (Intel ifx/icx + MKL ILP64, DFT-D4 DLLs beside liboqp.dll) and is not in a
+  # release tag yet, so this job builds the ref named below rather than the
+  # latest release the other platforms use.  Once #359 ships in a tag, delete
+  # the `openqp_ref:` line and this job becomes identical to the others.
+  engine-windows:
+    needs: installers
+    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
+    uses: ./.github/workflows/windows-bundle.yml
+    permissions:
+      contents: write
+    with:
+      release_tag: ${{ inputs.release_tag || github.ref_name }}
+      openqp_ref: ${{ inputs.openqp_windows_ref || 'refs/pull/359/head' }}

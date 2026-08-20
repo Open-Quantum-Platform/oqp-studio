@@ -234,18 +234,3 @@ def test_an_import_cannot_write_outside_its_job_directory(tmp_path, monkeypatch)
     assert not (tmp_path / "escaped.log").exists()
     names = [f["name"] for f in client.get(f"/api/jobs/{res.json()['id']}/files").json()]
     assert names == ["escaped.log"]
-
-
-def test_windows_is_told_about_wsl_rather_than_a_missing_archive(monkeypatch):
-    """No native Windows engine exists, so say what does work instead.
-
-    OpenQP's DFT-D4 stack refuses to configure on Windows, so no archive is
-    published there; without this the user is told the build "runs after the
-    installers" and waits for something that never arrives.
-    """
-    from oqp_studio import engine
-
-    monkeypatch.setattr(engine.os, "name", "nt")
-    monkeypatch.setattr(engine.sys, "platform", "win32")
-    assert engine.archive_suffix() is None
-    assert "wsl" in engine.advice().lower()

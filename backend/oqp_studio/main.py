@@ -513,10 +513,8 @@ def engine_install() -> dict:
     if _engine_state["status"] == "downloading":
         return _engine_state
     if not engine.archive_suffix():
-        raise HTTPException(
-            status_code=400,
-            detail=(engine.advice()
-                    or "no engine archive is published for this platform"))
+        raise HTTPException(status_code=400,
+                            detail="no engine archive is published for this platform")
     info = update_check()
     assets = info.get("assets") or []
     if not engine.pick_asset(assets):
