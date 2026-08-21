@@ -505,6 +505,7 @@ const hessTypeSel = $<HTMLSelectElement>("hessType");
 const hessTypeHint = $<HTMLSpanElement>("hessTypeHint");
 
 function selectWorkflow(wf: Workflow): void {
+  const firstSelection = optionsCard.style.display === "none";
   currentWf = wf;
   document.querySelectorAll<HTMLElement>(".wf-card").forEach((c) => {
     c.classList.toggle("sel", c.dataset.key === wf.key);
@@ -515,7 +516,7 @@ function selectWorkflow(wf: Workflow): void {
   for (const option of Array.from(theorySel.options)) {
     option.disabled = !wf.theories.includes(option.value);
   }
-  if (!wf.theories.includes(theorySel.value)) {
+  if (firstSelection || !wf.theories.includes(theorySel.value)) {
     theorySel.value = wf.defaultTheory ?? wf.theories[0];
   }
   if (wf.key === "hess" && ["hf", "dft"].includes(theorySel.value)) {
