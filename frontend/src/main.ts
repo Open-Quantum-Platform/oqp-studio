@@ -60,7 +60,10 @@ function showTab(name: string): void {
     b.classList.toggle("active", b.dataset.tab === name);
   });
   if (name === "analysis") {
-    if (!resultFrame.src) resultFrame.src = "/builder3d.html";
+    if (!resultFrame.src) {
+      resultViewerReady = false;
+      resultFrame.src = "/builder3d.html";
+    }
     refreshJobs();
   }
   if (name === "method") updateInpPreview();
@@ -413,7 +416,8 @@ document.querySelectorAll<HTMLSelectElement>(".style-input").forEach((select) =>
 // into it rather than reloading the page, which would re-initialize WebGL.
 let viewerReady = false;
 window.addEventListener("message", (event) => {
-  if (event.origin === window.location.origin && event.data?.type === "oqp-viewer-ready") {
+  if (event.origin === window.location.origin && event.data?.type === "oqp-viewer-ready" &&
+      event.source === $<HTMLIFrameElement>("previewFrame").contentWindow) {
     viewerReady = true;
     updatePreview();
   }
@@ -790,6 +794,7 @@ runButton.addEventListener("click", async () => {
 
 // ---------- results ----------
 let selectedJob = "";
+let resultMoldenFiles: string[] = [];
 
 async function refreshJobs(): Promise<void> {
   const jobs: { id: string; name: string; runner: string; status: string }[] =
@@ -855,6 +860,9 @@ async function selectJob(jobId: string): Promise<void> {
   loadSummary(jobId).catch(() => {});
   const files: { name: string; size: number }[] =
     await (await fetch(`/api/jobs/${jobId}/files`)).json();
+  resultMoldenFiles = files
+    .map((file) => file.name)
+    .filter((name) => name.toLowerCase().endsWith(".molden"));
   const list = $<HTMLUListElement>("resultFiles");
   list.innerHTML = files.length ? "" : '<li class="hint">no files</li>';
   for (const f of files) {
@@ -919,26 +927,36 @@ const modeCard = $<HTMLDivElement>("modeCard");
 const modeSel = $<HTMLSelectElement>("modeSel");
 const amplitudeRange = $<HTMLInputElement>("ampRange");
 let currentMolden: { jobId: string; name: string } | null = null;
+type OrbitalSource = { name: string; index: number };
+const orbitalSources = new Map<string, OrbitalSource>();
 let resultFrames: { label: string; atoms: Atom[] }[] = [];
 let resultViewerReady = false;
+let pendingResultMessage: Record<string, unknown> | null = null;
 
 // Everything in Analysis renders through the same Mol* page the Builder uses,
 // so results look like the rest of the app rather than a second program.
 window.addEventListener("message", (event) => {
-  if (event.origin === window.location.origin && event.data?.type === "oqp-viewer-ready") {
+  if (event.origin === window.location.origin && event.data?.type === "oqp-viewer-ready" &&
+      event.source === resultFrame.contentWindow) {
     resultViewerReady = true;
+    if (pendingResultMessage) {
+      resultFrame.contentWindow?.postMessage(pendingResultMessage, window.location.origin);
+      pendingResultMessage = null;
+    }
   }
 });
 
 function pushToResultViewer(message: Record<string, unknown>): void {
-  const send = () => resultFrame.contentWindow?.postMessage(message, window.location.origin);
+  pendingResultMessage = message;
   if (!resultFrame.src) {
+    resultViewerReady = false;
     resultFrame.src = "/builder3d.html";
-    resultFrame.addEventListener("load", () => setTimeout(send, 400), { once: true });
     return;
   }
-  if (resultViewerReady) send();
-  else setTimeout(send, 600);
+  if (resultViewerReady) {
+    resultFrame.contentWindow?.postMessage(message, window.location.origin);
+    pendingResultMessage = null;
+  }
 }
 
 function showResultFrame(index: number): void {
@@ -959,6 +977,7 @@ function hideResultPanels(): void {
   modeCard.style.display = "none";
   $<HTMLDivElement>("resultFrameCard").style.display = "none";
   currentMolden = null;
+  orbitalSources.clear();
 }
 
 async function viewResultFile(jobId: string, name: string, url: string): Promise<void> {
@@ -973,19 +992,52 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
   if (lower.endsWith(".molden")) {
     const base = `/api/jobs/${jobId}/molden/${encodeURIComponent(name)}`;
     currentMolden = { jobId, name };
-    const [orbitals, modes] = await Promise.all([
-      fetch(`${base}/orbitals`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    const moldenFiles = [...new Set([...resultMoldenFiles, name])];
+    const [orbitalFiles, modes] = await Promise.all([
+      Promise.all(moldenFiles.map(async (moldenName) => {
+        const sourceBase = `/api/jobs/${jobId}/molden/${encodeURIComponent(moldenName)}`;
+        const data = await fetch(`${sourceBase}/orbitals`)
+          .then((r) => (r.ok ? r.json() : null)).catch(() => null);
+        return { name: moldenName, data };
+      })),
       fetch(`${base}/modes`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
-    if (orbitals?.orbitals?.length) {
-      orbitalSel.innerHTML = '<option value="">Choose molecular orbital…</option>';
-      for (const o of orbitals.orbitals) {
+    const scfFile = orbitalFiles.find((file) =>
+      file.data?.orbitals?.some((orbital: { kind?: string }) => orbital.kind === "scf"));
+    if (scfFile) currentMolden = { jobId, name: scfFile.name };
+    const allOrbitals = orbitalFiles.flatMap((file) =>
+      (file.data?.orbitals ?? []).map((orbital: Record<string, unknown>) => ({
+        ...orbital,
+        sourceName: file.name,
+      })),
+    );
+    if (allOrbitals.length) {
+      orbitalSources.clear();
+      orbitalSel.innerHTML = '<option value="">Choose an orbital…</option>';
+      const scfGroup = document.createElement("optgroup");
+      scfGroup.label = "SCF orbitals";
+      const dysonGroup = document.createElement("optgroup");
+      dysonGroup.label = "Dyson orbitals";
+      for (const o of allOrbitals) {
         const opt = document.createElement("option");
-        opt.value = String(o.index);
-        const occ = o.occupancy != null ? ` occ=${o.occupancy}` : "";
-        opt.textContent = `MO ${o.index}  E=${o.energy.toFixed(4)} Ha${occ} ${o.spin}`;
-        orbitalSel.appendChild(opt);
+        const sourceName = String(o.sourceName);
+        const index = Number(o.index);
+        const sourceId = `${sourceName}\u0000${index}`;
+        orbitalSources.set(sourceId, { name: sourceName, index });
+        opt.value = sourceId;
+        if (o.kind === "dyson") {
+          const strength = o.strength == null ? "" : ` strength=${Number(o.strength).toFixed(6)}`;
+          const occupation = o.occupation == null ? "" : ` occupation=${Number(o.occupation).toFixed(6)}`;
+          opt.textContent = `Dyson ${o.dyson_kind} state ${o.state_index}${strength}${occupation}`;
+          dysonGroup.appendChild(opt);
+        } else {
+          const occ = o.occupancy == null ? "" : ` occ=${Number(o.occupancy).toFixed(4)}`;
+          opt.textContent = `MO ${index}  E=${Number(o.energy).toFixed(4)} Ha${occ} ${o.spin}`;
+          scfGroup.appendChild(opt);
+        }
       }
+      if (scfGroup.children.length) orbitalSel.appendChild(scfGroup);
+      if (dysonGroup.children.length) orbitalSel.appendChild(dysonGroup);
       orbitalCard.style.display = "";
     }
     if (modes?.modes?.length) {
@@ -998,9 +1050,9 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
         modeSel.appendChild(opt);
       }
       modeCard.style.display = "";
-      if (!orbitals?.orbitals?.length) showMode();
+      if (!allOrbitals.length) showMode();
     }
-    if (!orbitals?.orbitals?.length && !modes?.modes?.length) {
+    if (!allOrbitals.length && !modes?.modes?.length) {
       await openAsStructure(name, url);
     }
     return;
@@ -1039,9 +1091,13 @@ const MAP_ISO: Record<string, number> = {
 
 const mapKind = $<HTMLSelectElement>("mapKind");
 
-function mapUrl(base: string): string {
+function selectedOrbitalSource(): OrbitalSource | null {
+  return orbitalSources.get(orbitalSel.value) ?? null;
+}
+
+function mapUrl(base: string, source: OrbitalSource | null): string {
   return mapKind.value === "mo"
-    ? `${base}/cube?mo=${orbitalSel.value}`
+    ? `/api/jobs/${currentMolden!.jobId}/molden/${encodeURIComponent(source!.name)}/cube?mo=${source!.index}`
     : `${base}/map?kind=${mapKind.value}`;
 }
 
@@ -1049,7 +1105,8 @@ function showOrbital(): void {
   if (!currentMolden) return;
   pushOrbitalStyle();
   $<HTMLDivElement>("orbitalPick").style.display = mapKind.value === "mo" ? "" : "none";
-  if (mapKind.value === "mo" && !orbitalSel.value) return;
+  const source = selectedOrbitalSource();
+  if (mapKind.value === "mo" && !source) return;
   const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
   const iso = +isoRange.value;
   fetch(`${base}/geom.xyz`)
@@ -1058,7 +1115,7 @@ function showOrbital(): void {
       pushToResultViewer({
         type: "oqp-cube",
         xyz,
-        cube: mapUrl(base),
+        cube: mapUrl(base, source),
         iso,
       }),
     );
@@ -1142,10 +1199,16 @@ function fixed(value: number, digits = 6): string {
 
 function renderSummary(data: Summary): void {
   const parts: string[] = [];
+  const finalStates = Object.entries(data.energy.final_states ?? {})
+    .map(([index, value]) => [Number(index), value] as const)
+    .sort(([a], [b]) => a - b);
 
   const energy: [string, string][] = [];
   if (data.scf.energy !== undefined) {
     energy.push([`${data.scf.method ?? "SCF"} energy (Ha)`, fixed(data.scf.energy, 8)]);
+  }
+  if (data.energy.total !== undefined) {
+    energy.push(["Total energy (Ha)", fixed(data.energy.total, 8)]);
   }
   if (data.scf.iterations !== undefined) {
     energy.push(["SCF iterations", String(data.scf.iterations)]);
@@ -1159,7 +1222,16 @@ function renderSummary(data: Summary): void {
     // The virial ratio is dimensionless; everything else here is in Hartree.
     energy.push([key === "virial_ratio" ? label : `${label} (Ha)`, fixed(value)]);
   }
-  if (energy.length) parts.push(`<div class="sum-title">Energy</div>${rows(energy)}`);
+  if (finalStates.length) {
+    const stateRows = finalStates.map(([index, value]) =>
+      `<tr><td class="k">State ${index}</td><td class="v">${fixed(value, 8)} Ha</td></tr>`,
+    ).join("");
+    parts.push(`<div class="sum-title">Final state energies</div><table class="sum">${stateRows}</table>`);
+  }
+  if (energy.length) {
+    const title = finalStates.length ? "SCF reference" : "Energy";
+    parts.push(`<div class="sum-title">${title}</div>${rows(energy)}`);
+  }
 
   if (data.symmetry?.point_group) {
     const upper = (text: string) =>

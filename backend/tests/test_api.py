@@ -159,6 +159,29 @@ def test_molden_parse_and_cube():
     assert "E=" in header[1]
 
 
+def test_dyson_strength_is_reported_as_twice_its_occupation(monkeypatch):
+    """Molden's Occup field is an OpenQP Dyson strength, not an occupancy."""
+    import numpy as np
+
+    from oqp_studio import main, molden
+
+    data = molden.MoldenData(
+        atoms=[],
+        orbitals=[
+            molden.Orbital(1, -0.5, "Alpha", 1.0004,
+                           "Dyson-IP-state-2", np.zeros(0)),
+        ],
+    )
+    monkeypatch.setattr(main, "_load_molden", lambda _job, _name: data)
+
+    orbital = main.molden_orbitals("job", "dyson.molden")["orbitals"][0]
+    assert orbital["kind"] == "dyson"
+    assert orbital["dyson_kind"] == "IP"
+    assert orbital["state_index"] == 2
+    assert orbital["strength"] == 1.0004
+    assert orbital["occupation"] == 2.0008
+
+
 def test_normal_modes_and_trajectory():
     from pathlib import Path
 

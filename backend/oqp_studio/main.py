@@ -403,18 +403,34 @@ def molden_orbitals(job_id: str, name: str) -> dict:
             status_code=422,
             detail=f"spherical shells not yet supported: {', '.join(data.unsupported)}",
         )
+    def orbital_info(orbital):
+        """Expose Dyson metadata without treating its strength as occupancy."""
+        result = {
+            "index": orbital.index,
+            "energy": orbital.energy,
+            "spin": orbital.spin,
+            "occupancy": orbital.occupancy,
+            "symmetry": orbital.symmetry,
+            "kind": "scf",
+        }
+        match = re.fullmatch(
+            r"Dyson-(IP|EA)-state-(\d+)", orbital.symmetry or "", re.IGNORECASE,
+        )
+        if match:
+            strength = orbital.occupancy
+            result.update({
+                "kind": "dyson",
+                "dyson_kind": match.group(1).upper(),
+                "state_index": int(match.group(2)),
+                "strength": strength,
+                # OpenQP writes the Dyson pole strength in Molden's Occup field.
+                "occupation": 2.0 * strength if strength is not None else None,
+            })
+        return result
+
     return {
         "atoms": len(data.atoms),
-        "orbitals": [
-            {
-                "index": o.index,
-                "energy": o.energy,
-                "spin": o.spin,
-                "occupancy": o.occupancy,
-                "symmetry": o.symmetry,
-            }
-            for o in data.orbitals
-        ],
+        "orbitals": [orbital_info(orbital) for orbital in data.orbitals],
     }
 
 
