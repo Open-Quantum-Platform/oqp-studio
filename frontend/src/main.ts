@@ -484,8 +484,23 @@ function buildWorkflowGrid(): void {
   }
 }
 
+// The Basis Set Exchange, which the engine reads its basis sets from, knows
+// the polarised Pople sets by their asterisk spelling: "6-31G*" is a name it
+// has, "6-31G(d)" is not -- and asking for a name it does not have aborts the
+// job at basis setup with a KeyError, after the settings dump, which reads
+// like the calculation failed rather than like a typo.  Both spellings mean
+// the same basis, so translate rather than refuse.
+function normalizeBasis(name: string): string {
+  return name.trim().replace(
+    /^(\d-\d+\+*g)\((d|d,p)\)$/i,
+    (_, stem: string, pol: string) => stem + (pol.toLowerCase() === "d" ? "*" : "**"),
+  );
+}
+
 function currentBasis(): string {
-  return basisSel.value === "__custom__" ? basisCustom.value.trim() : basisSel.value;
+  return normalizeBasis(
+    basisSel.value === "__custom__" ? basisCustom.value : basisSel.value,
+  );
 }
 
 // Generates concise .oqp input: ROUTE, one primary driver, globals, geometry.
