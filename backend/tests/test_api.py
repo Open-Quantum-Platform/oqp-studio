@@ -369,3 +369,35 @@ def test_the_user_chooses_where_results_are_written(tmp_path, monkeypatch):
     back = client.post("/api/workspace", json={"jobs_dir": ""})
     assert back.status_code == 200
     assert workspace.configured() == ""
+
+
+def test_starting_the_server_touches_no_directory_it_may_be_denied(tmp_path, monkeypatch):
+    """Importing must not create anything, or the app never finishes starting.
+
+    macOS asks the user before an app may write to Documents and blocks until
+    they answer. Doing that while the module is imported happens before the
+    server binds its port, and the shell -- which waits thirty seconds --
+    reports the backend as failing to start.
+    """
+    from pathlib import Path
+
+    from oqp_studio import jobs, workspace
+
+    home = tmp_path / "home"
+    (home / "Documents").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("OQP_STUDIO_CONFIG", str(tmp_path / "cfg" / "network.json"))
+    monkeypatch.delenv("OQP_STUDIO_JOBS", raising=False)
+
+    wanted = workspace.preferred()
+    assert wanted == home / "Documents" / "OQP Studio" / "jobs"
+    assert not wanted.exists(), "preferred() created a directory"
+
+    # A fresh manager is what import builds; it must not reach the disk either.
+    manager = jobs.JobManager()
+    assert not wanted.exists(), "constructing the job manager created a directory"
+
+    # The first job is what creates it.
+    monkeypatch.setattr(jobs, "JOBS_ROOT", wanted)
+    assert manager._ensure() == wanted.resolve()
+    assert wanted.is_dir()

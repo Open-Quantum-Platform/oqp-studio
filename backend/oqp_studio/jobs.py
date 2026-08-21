@@ -11,14 +11,16 @@ from pydantic import BaseModel
 from .runners import get_runner
 
 
-def _resolve_root() -> Path:
+def _preferred_root() -> Path:
     from . import workspace
 
-    return workspace.resolve()
+    return workspace.preferred()
 
 
-# Absolute, and re-resolved when the user changes where results go.
-JOBS_ROOT = _resolve_root()
+# Worked out from the environment and the saved setting alone -- importing
+# this module must not touch the disk. The directory is created, and any
+# fallback chosen, the first time a job actually needs it.
+JOBS_ROOT = _preferred_root()
 
 
 class JobStatus(str, Enum):
@@ -54,7 +56,26 @@ class JobManager:
     def __init__(self) -> None:
         self._jobs: dict[str, JobInfo] = {}
         self._lock = threading.Lock()
+        self._ready = False
+
+    def _ensure(self) -> Path:
+        """Create the results directory, once, on the first job that needs it.
+
+        Deliberately not done in __init__: this module is imported while the
+        server is starting, and on macOS creating a directory in Documents
+        waits for the user to grant permission -- which the shell, waiting
+        thirty seconds for a port, reads as the backend failing to start.
+        """
+        global JOBS_ROOT
+
+        if self._ready:
+            return JOBS_ROOT
+        from . import workspace
+
+        JOBS_ROOT = workspace.ensure(JOBS_ROOT)
+        self._ready = True
         self._recover()
+        return JOBS_ROOT
 
     def _recover(self) -> None:
         """Adopt job directories left by earlier runs.
@@ -78,6 +99,7 @@ class JobManager:
             )
 
     def submit(self, req: JobRequest) -> JobInfo:
+        self._ensure()
         job_id = uuid.uuid4().hex[:12]
         job_dir = JOBS_ROOT / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -105,6 +127,7 @@ class JobManager:
         directory of their own -- summaries, spectra, orbitals, normal modes
         and property maps then work on it unchanged.
         """
+        self._ensure()
         job_id = uuid.uuid4().hex[:12]
         job_dir = JOBS_ROOT / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -157,9 +180,11 @@ class JobManager:
         return self._jobs.get(job_id)
 
     def list(self) -> list[JobInfo]:
+        self._ensure()
         return sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
 
     def files(self, job_id: str) -> list[dict]:
+        self._ensure()
         job_dir = JOBS_ROOT / job_id
         if not job_dir.is_dir():
             return []
@@ -201,5 +226,6 @@ def set_root(directory: Path) -> Path:
     global JOBS_ROOT
 
     JOBS_ROOT = directory
+    manager._ready = True
     manager.rebase()
     return JOBS_ROOT

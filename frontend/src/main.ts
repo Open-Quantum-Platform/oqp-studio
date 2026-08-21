@@ -717,6 +717,28 @@ async function selectJob(jobId: string): Promise<void> {
       viewResultFile(jobId, a.dataset.name!, a.dataset.url!);
     });
   });
+
+  // Show something straight away. Picking a job, or importing one, is the
+  // user saying "let me see this" -- making them hunt for a "view" link
+  // first is a step that never had a reason to exist.
+  const best = bestFileToShow(files.map((f) => f.name));
+  if (best) {
+    await viewResultFile(jobId, best,
+                         `/api/jobs/${jobId}/files/${encodeURIComponent(best)}`);
+  }
+}
+
+// What to open of its own accord, best first: a molden file carries orbitals
+// and normal modes, a log or an optimisation trajectory carries the geometry
+// as it moved, and the rest are still better than an empty panel.
+const SHOW_FIRST = [".molden", ".trj", ".log", ".out", ".xyz", ".json", ".oqp", ".inp"];
+
+function bestFileToShow(names: string[]): string | undefined {
+  for (const extension of SHOW_FIRST) {
+    const match = names.find((name) => name.toLowerCase().endsWith(extension));
+    if (match) return match;
+  }
+  return undefined;
 }
 
 // Energies, states, frequencies and properties, read back from whatever the

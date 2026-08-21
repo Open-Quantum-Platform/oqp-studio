@@ -74,25 +74,49 @@ def default_candidates() -> list[Path]:
     return roots
 
 
-def resolve() -> Path:
-    """The directory this process will write results into.
+def preferred() -> Path:
+    """Where results should go, worked out without touching the disk.
+
+    Nothing here may create a directory or write a file. macOS asks the user
+    before an app may write to Documents and BLOCKS until they answer, and
+    this runs while the module is being imported -- ahead of the server
+    binding its port, which the shell gives up waiting for after thirty
+    seconds. Startup must not depend on a filesystem the app may not have
+    permission for yet; `ensure()` does that part, on first use.
+    """
+    override = os.environ.get("OQP_STUDIO_JOBS")
+    if override:
+        return Path(override).expanduser()
+    chosen = configured()
+    if chosen:
+        return Path(chosen).expanduser()
+    return Path.home() / "Documents" / "OQP Studio" / "jobs"
+
+
+def ensure(start: Path | None = None) -> Path:
+    """The first directory this process can actually write results into.
+
+    Called when a run is submitted, not at import: on macOS the consent
+    prompt then arrives in response to something the user did, with the
+    window already up.
 
     Never the working directory: an app launched from Finder or the Dock
     inherits launchd's cwd, which is "/", so a relative default resolved to
     /jobs_data -- a path macOS refuses an unprivileged process, and every run
     failed at submission with nothing but a 500.
     """
-    override = os.environ.get("OQP_STUDIO_JOBS")
-    if override:
-        return Path(override).expanduser().resolve()
-    chosen = configured()
-    candidates = ([Path(chosen).expanduser()] if chosen else []) + default_candidates()
-    for candidate in candidates:
+    wanted = start or preferred()
+    for candidate in [wanted, *default_candidates()]:
         try:
             return usable(candidate).resolve()
         except OSError:
             continue
-    return Path(tempfile.gettempdir()).resolve() / "oqp-studio-jobs"
+    return usable(Path(tempfile.gettempdir()) / "oqp-studio-jobs").resolve()
+
+
+def resolve() -> Path:
+    """Backwards-compatible name for `ensure()`."""
+    return ensure()
 
 
 def status(active: Path) -> dict:

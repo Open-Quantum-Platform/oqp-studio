@@ -64,6 +64,32 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
+/// Where the backend records a startup failure; kept in step with
+/// server_main.log_path() on the Python side.
+fn backend_log() -> std::path::PathBuf {
+    let base = if cfg!(target_os = "macos") {
+        dirs_home().join("Library/Application Support/OQP Studio")
+    } else if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(dirs_home)
+            .join("OQP Studio")
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| dirs_home().join(".config"))
+            .join("oqp-studio")
+    };
+    base.join("backend.log")
+}
+
+fn dirs_home() -> std::path::PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default()
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -115,11 +141,17 @@ fn main() {
                     .expect("valid backend url");
                     let _ = window.navigate(url);
                 } else {
-                    let _ = window.eval(
+                    // Name the file the backend writes its traceback to: the
+                    // message on its own gives the user, and us, nothing to
+                    // act on.
+                    let log = backend_log().to_string_lossy().to_string();
+                    let _ = window.eval(&format!(
                         "document.body.innerHTML = \
-                         '<p style=\"font-family:sans-serif;padding:2rem\">\
-                          OQP Studio backend failed to start.</p>'",
-                    );
+                         '<div style=\"font-family:sans-serif;padding:2rem;line-height:1.5\">\
+                          <p>OQP Studio backend failed to start.</p>\
+                          <p style=\"opacity:.7\">Details are in<br><code>{log}</code></p>\
+                          </div>'"
+                    ));
                 }
             });
             Ok(())
