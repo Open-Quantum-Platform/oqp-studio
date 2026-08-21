@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -12,25 +11,14 @@ from pydantic import BaseModel
 from .runners import get_runner
 
 
-def _default_root() -> Path:
-    """Where job directories go when nothing says otherwise.
+def _resolve_root() -> Path:
+    from . import workspace
 
-    Not the working directory. An app launched from Finder or the Dock
-    inherits launchd's cwd, which is "/", so a relative default resolved to
-    /jobs_data — a path macOS refuses to let an unprivileged process create,
-    and every run failed at submission with nothing but a 500. The user's own
-    application-data directory is writable by definition, and it is where the
-    app already keeps its settings and the engine it downloads.
-    """
-    from . import network
-
-    return network.settings_path().parent / "jobs"
+    return workspace.resolve()
 
 
-# Absolute, and overridable, so a job directory means the same thing however
-# the server was launched.
-JOBS_ROOT = (Path(os.environ["OQP_STUDIO_JOBS"]).resolve()
-             if os.environ.get("OQP_STUDIO_JOBS") else _default_root())
+# Absolute, and re-resolved when the user changes where results go.
+JOBS_ROOT = _resolve_root()
 
 
 class JobStatus(str, Enum):
@@ -155,6 +143,16 @@ class JobManager:
             info.error = str(exc)
             info.status = JobStatus.failed
 
+    def rebase(self) -> None:
+        """Forget the old results directory and read the new one."""
+        with self._lock:
+            self._jobs.clear()
+        self._recover()
+
+    def busy(self) -> bool:
+        return any(job.status in (JobStatus.queued, JobStatus.running)
+                   for job in self._jobs.values())
+
     def get(self, job_id: str) -> JobInfo | None:
         return self._jobs.get(job_id)
 
@@ -191,3 +189,17 @@ class JobManager:
 
 
 manager = JobManager()
+
+
+def set_root(directory: Path) -> Path:
+    """Write results somewhere else from now on.
+
+    A job already running keeps writing where it was told -- its runner has
+    the old path -- which is why the API refuses to move while one is in
+    flight rather than leaving its output stranded.
+    """
+    global JOBS_ROOT
+
+    JOBS_ROOT = directory
+    manager.rebase()
+    return JOBS_ROOT

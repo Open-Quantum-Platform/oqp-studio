@@ -58,6 +58,10 @@ def pick_asset(assets: list[dict]) -> dict | None:
     return None
 
 
+_bundled: Path | None = None
+_bundled_resolved = False
+
+
 def bundled_dir() -> Path | None:
     """The engine an all-in-one installer shipped inside the app, if any.
 
@@ -67,6 +71,10 @@ def bundled_dir() -> Path | None:
     Falling back to the sidecar's own location covers a build that predates
     the variable, and running the backend straight out of a source tree.
     """
+    global _bundled, _bundled_resolved
+
+    if _bundled_resolved:
+        return _bundled
     roots: list[Path] = []
     declared = os.environ.get("OQP_STUDIO_RESOURCES")
     if declared:
@@ -76,8 +84,34 @@ def bundled_dir() -> Path | None:
     for root in roots:
         candidate = root / "engine"
         if (candidate / EXECUTABLE).is_file():
-            return candidate
-    return None
+            _bundled = candidate
+            break
+    _bundled_resolved = True
+    if _bundled is not None:
+        _make_runnable(_bundled)
+    return _bundled
+
+
+def _make_runnable(directory: Path) -> None:
+    """Clear what would stop the bundled engine from being executed.
+
+    An unsigned app downloaded through a browser arrives quarantined, and
+    Gatekeeper applies that to every executable inside it -- so the app can be
+    approved and opened while the engine it carries is still refused when the
+    backend tries to run it. Clearing the flag on our own directory is the
+    same thing the downloaded engine already does, done once per process.
+    """
+    if sys.platform != "darwin":
+        return
+    import subprocess
+
+    try:
+        subprocess.run(["xattr", "-dr", "com.apple.quarantine", str(directory)],
+                       check=False, capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        # Best effort: a quarantined engine still runs once the user approves
+        # it, and there is nothing useful to do here if xattr is unavailable.
+        pass
 
 
 # Where an engine may already be, in the order worth trying: one the user

@@ -124,6 +124,47 @@ def job_file(job_id: str, name: str) -> FileResponse:
     return FileResponse(path, media_type="text/plain", filename=name)
 
 
+class WorkspaceRequest(BaseModel):
+    jobs_dir: str
+
+
+@app.get("/api/workspace")
+def workspace_status() -> dict:
+    """Where results are written, and where the user asked for them."""
+    from . import jobs as jobs_module
+    from . import workspace
+
+    return workspace.status(jobs_module.JOBS_ROOT)
+
+
+@app.post("/api/workspace")
+def set_workspace(req: WorkspaceRequest) -> dict:
+    """Choose where results are written from now on."""
+    from pathlib import Path
+
+    from . import jobs as jobs_module
+    from . import workspace
+
+    if manager.busy():
+        raise HTTPException(
+            status_code=409,
+            detail="a job is still running; let it finish before moving the folder")
+    wanted = req.jobs_dir.strip()
+    if wanted:
+        try:
+            target = workspace.usable(Path(wanted).expanduser())
+        except OSError as exc:
+            raise HTTPException(status_code=400,
+                                detail=f"cannot write to {wanted}: {exc}") from exc
+        workspace.save(str(target))
+        jobs_module.set_root(target.resolve())
+    else:
+        # An empty box means "go back to choosing for me".
+        workspace.save("")
+        jobs_module.set_root(workspace.resolve())
+    return workspace.status(jobs_module.JOBS_ROOT)
+
+
 # Result files worth adopting when a whole folder is imported. Everything
 # else in a run directory -- scratch, restart files, submission scripts --
 # would only pad the file list.
@@ -576,6 +617,34 @@ def open_external(link: ExternalLink) -> dict:
     if not webbrowser.open(link.url):
         raise HTTPException(status_code=500, detail="no browser could be launched")
     return {"opened": link.url}
+
+
+@app.post("/api/reveal-results")
+def reveal_results() -> dict:
+    """Show the results folder in the user's file manager.
+
+    The path is this app's own results directory, never one the page names:
+    an endpoint that opened any path a request asked for would let a web page
+    open anything on the machine.
+    """
+    import subprocess
+
+    from . import jobs as jobs_module
+
+    target = str(jobs_module.JOBS_ROOT)
+    if sys.platform == "darwin":
+        command = ["open", target]
+    elif os.name == "nt":
+        command = ["explorer", target]
+    else:
+        command = ["xdg-open", target]
+    try:
+        subprocess.Popen(command, start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as exc:
+        raise HTTPException(status_code=500,
+                            detail=f"could not open {target}: {exc}") from exc
+    return {"opened": target}
 
 
 class NetworkSettings(BaseModel):

@@ -27,9 +27,11 @@ jobs:
   # The same installer with the engine inside it, so one download installs an
   # application that computes -- no second step, and nothing fetched at run
   # time.  It waits for the engine builds, which is why it lands last.
+  # Nothing here is gated on a release tag: a dispatch with no tag builds
+  # every artifact and publishes none, which is how a change gets verified
+  # before it is released rather than by releasing it and finding out.
   installers-with-engine:
     needs: [engine-linux, engine-macos, engine-windows]
-    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
     uses: ./.github/workflows/installers.yml
     permissions:
       contents: write
@@ -115,7 +117,6 @@ jobs:
   # Each archive is also a standalone download: unzip and run ./openqp, no GUI
   # and no Python involved.
   engine-linux:
-    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
     uses: ./.github/workflows/linux-bundle.yml
     permissions:
       contents: write
@@ -123,7 +124,6 @@ jobs:
       release_tag: ${{ inputs.release_tag || github.ref_name }}
 
   engine-macos:
-    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
     uses: ./.github/workflows/macos-bundle.yml
     permissions:
       contents: write
@@ -131,7 +131,6 @@ jobs:
       release_tag: ${{ inputs.release_tag || github.ref_name }}
 
   engine-windows:
-    if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
     uses: ./.github/workflows/windows-bundle.yml
     permissions:
       contents: write

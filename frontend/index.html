@@ -309,6 +309,8 @@
             <button class="menu-item" data-cmd="pubchem">Fetch from PubChem…</button>
             <button class="menu-item" data-cmd="open-results">Open existing results…</button>
             <div class="msep"></div>
+            <button class="menu-item" data-cmd="workspace">Results folder…</button>
+            <div class="msep"></div>
             <button class="menu-item" data-cmd="save-xyz">Save geometry as .xyz…</button>
             <button class="menu-item" data-cmd="save-oqp">Save input as .oqp…</button>
             <div class="msep"></div>
@@ -823,6 +825,32 @@
           <button class="primary" id="networkSave">Save</button>
           <button class="ghost" id="networkTest">Test connection</button>
           <span class="hint" id="networkNote"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Where runs write their log, JSON export and molden file. The user's
+         data, so the user picks the folder. -->
+    <div id="workspaceOverlay" style="display:none;position:fixed;inset:0;z-index:90;
+         background:rgba(0,0,0,.55)">
+      <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+           width:min(620px,92vw);background:var(--panel);border:1px solid var(--border);
+           border-radius:12px;padding:1.1rem 1.3rem">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong>Results folder</strong>
+          <button class="ghost" id="workspaceClose" style="padding:.2rem .8rem">✕</button>
+        </div>
+        <div class="hint" style="margin-top:.6rem">
+          Every run gets a folder of its own here, holding its input, log, JSON
+          export and any molden file. Pick somewhere you can find again.
+        </div>
+        <div id="workspaceStatus" style="margin:.8rem 0"></div>
+        <label>Folder</label>
+        <input type="text" id="workspaceDir" placeholder="leave empty to let the app choose" />
+        <div class="actions">
+          <button class="primary" id="workspaceSave">Save</button>
+          <button class="ghost" id="workspaceReveal">Open folder</button>
+          <span class="hint" id="workspaceNote"></span>
         </div>
       </div>
     </div>

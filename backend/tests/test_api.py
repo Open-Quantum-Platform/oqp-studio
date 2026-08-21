@@ -254,6 +254,8 @@ def test_an_installer_that_carries_the_engine_needs_no_download(tmp_path, monkey
     executable.chmod(executable.stat().st_mode | stat.S_IEXEC)
 
     monkeypatch.setenv("OQP_STUDIO_RESOURCES", str(resources))
+    monkeypatch.setattr(engine, "_bundled", None)
+    monkeypatch.setattr(engine, "_bundled_resolved", False)
     monkeypatch.setattr(engine, "data_dir", lambda: tmp_path / "unused")
     # No engine of the user's own on PATH, so the bundled one is what is found.
     monkeypatch.setattr(environment, "locate", lambda command: None)
@@ -288,21 +290,82 @@ def test_updating_an_all_in_one_install_keeps_the_engine(monkeypatch):
     assert update.pick_asset(assets[:1])["name"].endswith("windows-x64-setup.exe")
 
 
-def test_jobs_never_land_relative_to_the_working_directory(tmp_path, monkeypatch):
-    """An app started from Finder has "/" as its working directory.
+def test_results_land_in_documents_where_the_user_can_find_them(tmp_path, monkeypatch):
+    """Two things at once, both of which broke a real install.
 
-    A relative default resolved to /jobs_data there, which macOS will not let
-    an unprivileged process create, so every run died at submission with a
-    bare 500. The default has to be a directory the user owns.
+    The working directory is never it: an app started from Finder has "/",
+    where the old relative default resolved to /jobs_data and macOS refused
+    the mkdir, so every run died at submission with a bare 500. And of the
+    directories the user does own, results belong in Documents -- Finder
+    hides ~/Library, so anything written there is invisible.
     """
-    from oqp_studio import jobs
+    from pathlib import Path
 
+    from oqp_studio import workspace
+
+    home = tmp_path / "home"
+    (home / "Documents").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
     monkeypatch.setenv("OQP_STUDIO_CONFIG", str(tmp_path / "cfg" / "network.json"))
     monkeypatch.delenv("OQP_STUDIO_JOBS", raising=False)
     monkeypatch.chdir("/")
 
-    root = jobs._default_root()
+    root = workspace.resolve()
     assert root.is_absolute()
-    assert root == tmp_path / "cfg" / "jobs"
-    # Writable, which "/" is not.
-    root.mkdir(parents=True)
+    assert root == home / "Documents" / "OQP Studio" / "jobs"
+    assert root.is_dir()
+
+
+def test_a_refused_documents_folder_does_not_stop_the_app(tmp_path, monkeypatch):
+    """macOS asks before an app may write to Documents, and can be refused."""
+    from pathlib import Path
+
+    from oqp_studio import workspace
+
+    home = tmp_path / "home"
+    documents = home / "Documents"
+    documents.mkdir(parents=True)
+    # Something in the way that no uid can mkdir through -- a refusal that
+    # reproduces whether or not the test runs as root.
+    (documents / "OQP Studio").write_text("not a directory")
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
+    monkeypatch.setenv("OQP_STUDIO_CONFIG", str(tmp_path / "cfg" / "network.json"))
+    monkeypatch.delenv("OQP_STUDIO_JOBS", raising=False)
+
+    root = workspace.resolve()
+    assert root.is_dir()
+    assert documents not in root.parents
+
+
+def test_the_user_chooses_where_results_are_written(tmp_path, monkeypatch):
+    """Results are the user's data, so the folder is theirs to pick."""
+    from oqp_studio import jobs, workspace
+
+    monkeypatch.setenv("OQP_STUDIO_CONFIG", str(tmp_path / "cfg" / "network.json"))
+    monkeypatch.delenv("OQP_STUDIO_JOBS", raising=False)
+    chosen = tmp_path / "My Calculations"
+
+    res = client.post("/api/workspace", json={"jobs_dir": str(chosen)})
+    assert res.status_code == 200, res.text
+    assert res.json()["active"] == str(chosen.resolve())
+    assert jobs.JOBS_ROOT == chosen.resolve()
+    assert chosen.is_dir()
+    # It has to survive a restart, so it is on disk, not just in memory.
+    assert workspace.configured() == str(chosen)
+
+    # And the job that follows lands there.
+    job = client.post("/api/jobs", json={"input_text": "energy\n", "runner": "local"})
+    assert job.status_code == 200, job.text
+    assert (chosen / job.json()["id"]).is_dir()
+
+    # A directory that cannot be written is refused with the reason, not a 500.
+    blocked = tmp_path / "blocked"
+    blocked.write_text("a file, not a directory")
+    bad = client.post("/api/workspace", json={"jobs_dir": str(blocked)})
+    assert bad.status_code == 400
+    assert str(blocked) in bad.json()["detail"]
+
+    # Clearing it hands the choice back to the app.
+    back = client.post("/api/workspace", json={"jobs_dir": ""})
+    assert back.status_code == 200
+    assert workspace.configured() == ""

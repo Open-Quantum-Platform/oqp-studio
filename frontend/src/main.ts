@@ -1361,6 +1361,7 @@ function download(name: string, text: string): void {
 const COMMANDS: Record<string, () => void> = {
   "open-file": () => $<HTMLInputElement>("fileInput").click(),
   "open-results": () => { void openExistingResults(); },
+  workspace: () => { void openWorkspaceSettings(); },
   pubchem: () => { showTab("builder"); $<HTMLInputElement>("pubchemName").focus(); },
   "save-xyz": () => {
     const atoms = parseAtoms(xyzArea.value);
@@ -1462,6 +1463,71 @@ function renderNetworkStatus(status: NetworkStatus): void {
   caBundle.value = status.ca_bundle;
   insecureSsl.checked = status.insecure;
 }
+
+// ---------- results folder ----------
+// Runs write their outputs here. That is the user's data, so the folder is
+// the user's choice; the app only picks a sensible one until they say.
+const workspaceOverlay = $<HTMLDivElement>("workspaceOverlay");
+const workspaceDir = $<HTMLInputElement>("workspaceDir");
+const workspaceNote = $<HTMLSpanElement>("workspaceNote");
+
+interface Workspace {
+  jobs_dir: string;
+  active: string;
+  default: string;
+  overridden: boolean;
+}
+
+function renderWorkspace(status: Workspace): void {
+  workspaceDir.value = status.jobs_dir;
+  const chosen = status.jobs_dir
+    ? "your choice"
+    : status.overridden
+      ? "set by OQP_STUDIO_JOBS"
+      : "chosen by the app";
+  $<HTMLDivElement>("workspaceStatus").innerHTML =
+    `<div>Writing to <strong>${status.active}</strong></div>` +
+    `<div class="hint">${chosen}</div>`;
+}
+
+async function openWorkspaceSettings(): Promise<void> {
+  workspaceNote.textContent = "";
+  workspaceOverlay.style.display = "block";
+  try {
+    renderWorkspace(await (await fetch("/api/workspace")).json());
+  } catch {
+    workspaceNote.textContent = "could not read the current folder";
+  }
+}
+
+$<HTMLButtonElement>("workspaceClose").addEventListener("click", () => {
+  workspaceOverlay.style.display = "none";
+});
+
+$<HTMLButtonElement>("workspaceSave").addEventListener("click", async () => {
+  workspaceNote.textContent = "saving…";
+  const response = await fetch("/api/workspace", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jobs_dir: workspaceDir.value.trim() }),
+  });
+  const data = await response.json().catch(() => null);
+  if (response.ok) {
+    renderWorkspace(data);
+    workspaceNote.textContent = "saved";
+    await refreshJobs();
+  } else {
+    workspaceNote.textContent = data?.detail ?? "could not save";
+  }
+});
+
+$<HTMLButtonElement>("workspaceReveal").addEventListener("click", async () => {
+  const response = await fetch("/api/reveal-results", { method: "POST" });
+  if (!response.ok) {
+    workspaceNote.textContent =
+      (await response.json().catch(() => null))?.detail ?? "could not open the folder";
+  }
+});
 
 async function openNetworkSettings(): Promise<void> {
   networkNote.textContent = "";
