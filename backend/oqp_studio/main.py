@@ -395,6 +395,22 @@ def _load_molden(job_id: str, name: str):
     return _molden_cache[key]
 
 
+def _dyson_source_state(job_id: str) -> str | None:
+    """Return the physical neutral state used for an IP/EA calculation."""
+    pattern = re.compile(r"PyOQP Physical target state\(s\):\s*(S\d+)", re.IGNORECASE)
+    for entry in manager.files(job_id):
+        name = entry["name"]
+        if not name.lower().endswith((".log", ".out")):
+            continue
+        path = manager.file_path(job_id, name)
+        if path is None:
+            continue
+        match = pattern.search(path.read_text(errors="replace"))
+        if match:
+            return match.group(1).upper()
+    return None
+
+
 @app.get("/api/jobs/{job_id}/molden/{name}/orbitals")
 def molden_orbitals(job_id: str, name: str) -> dict:
     data = _load_molden(job_id, name)
@@ -403,6 +419,8 @@ def molden_orbitals(job_id: str, name: str) -> dict:
             status_code=422,
             detail=f"spherical shells not yet supported: {', '.join(data.unsupported)}",
         )
+    dyson_source_state = _dyson_source_state(job_id)
+
     def orbital_info(orbital):
         """Expose Dyson metadata without treating its strength as occupancy."""
         result = {
@@ -422,6 +440,7 @@ def molden_orbitals(job_id: str, name: str) -> dict:
                 "kind": "dyson",
                 "dyson_kind": match.group(1).upper(),
                 "state_index": int(match.group(2)),
+                "source_state": dyson_source_state,
                 "strength": strength,
                 # OpenQP writes the Dyson pole strength in Molden's Occup field.
                 "occupation": 2.0 * strength if strength is not None else None,

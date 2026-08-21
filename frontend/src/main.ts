@@ -1017,8 +1017,10 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       orbitalSel.innerHTML = '<option value="">Choose an orbital…</option>';
       const scfGroup = document.createElement("optgroup");
       scfGroup.label = "SCF orbitals";
+      scfGroup.dataset.kind = "scf";
       const dysonGroup = document.createElement("optgroup");
       dysonGroup.label = "Dyson orbitals";
+      dysonGroup.dataset.kind = "dyson";
       for (const o of allOrbitals) {
         const opt = document.createElement("option");
         const sourceName = String(o.sourceName);
@@ -1030,7 +1032,8 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
           opt.dataset.kind = "dyson";
           const strength = o.strength == null ? "" : ` strength=${Number(o.strength).toFixed(6)}`;
           const occupation = o.occupation == null ? "" : ` occupation=${Number(o.occupation).toFixed(6)}`;
-          opt.textContent = `Dyson ${o.dyson_kind} state ${o.state_index}${strength}${occupation}`;
+          const sourceState = typeof o.source_state === "string" ? ` from ${o.source_state}` : "";
+          opt.textContent = `Dyson ${o.dyson_kind}${sourceState}, root ${o.state_index}${strength}${occupation}`;
           dysonGroup.appendChild(opt);
         } else {
           const occ = o.occupancy == null ? "" : ` occ=${Number(o.occupancy).toFixed(4)}`;
@@ -1050,6 +1053,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       dysonMapOption.disabled = !hasDyson;
       if (!hasDyson && mapKind.value === "dyson") mapKind.value = "mo";
       orbitalCard.style.display = "";
+      selectOrbitalClass(mapKind.value);
     }
     if (modes?.modes?.length) {
       modeSel.innerHTML = "";
@@ -1106,6 +1110,17 @@ const MAP_ISO: Record<string, number> = {
 };
 
 const mapKind = $<HTMLSelectElement>("mapKind");
+
+function selectOrbitalClass(map: string): void {
+  const wanted = map === "dyson" ? "dyson" : "scf";
+  orbitalSel.querySelectorAll<HTMLOptGroupElement>("optgroup[data-kind]").forEach((group) => {
+    group.hidden = group.dataset.kind !== wanted;
+  });
+  const selected = orbitalSel.selectedOptions[0];
+  if (selected?.dataset.kind === wanted) return;
+  const first = [...orbitalSel.options].find((option) => option.dataset.kind === wanted);
+  orbitalSel.value = first?.value ?? "";
+}
 
 function selectedOrbitalSource(): OrbitalSource | null {
   return orbitalSources.get(orbitalSel.value) ?? null;
@@ -1166,10 +1181,7 @@ isoRange.addEventListener("change", showOrbital);
 mapKind.addEventListener("change", () => {
   // Each field has its own natural contour, so move the slider with it.
   isoRange.value = String(MAP_ISO[mapKind.value] ?? 0.05);
-  if (mapKind.value === "dyson") {
-    const firstDyson = [...orbitalSel.options].find((option) => option.dataset.kind === "dyson");
-    if (firstDyson) orbitalSel.value = firstDyson.value;
-  }
+  if (mapKind.value === "mo" || mapKind.value === "dyson") selectOrbitalClass(mapKind.value);
   showOrbital();
 });
 
