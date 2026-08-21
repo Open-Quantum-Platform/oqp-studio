@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .input_files import SUPPORTED_INPUT_SUFFIXES, calculation_log, find_input_file
 from .runners import get_runner
@@ -36,6 +36,7 @@ class JobRequest(BaseModel):
     runner: str = "local"
     name: str = "job"
     input_name: str | None = None
+    threads: int = Field(default=1, ge=1)
 
 
 class JobInfo(BaseModel):
@@ -43,6 +44,7 @@ class JobInfo(BaseModel):
     name: str
     status: JobStatus
     runner: str
+    threads: int = 1
     created_at: str
     exit_code: int | None = None
     error: str | None = None
@@ -101,6 +103,15 @@ class JobManager:
             )
 
     def submit(self, req: JobRequest) -> JobInfo:
+        from . import host
+
+        check = host.admission(req.input_text, req.threads)
+        if not check["permitted"]:
+            raise ValueError(
+                f"RAM limit: estimated {check['estimated_memory_bytes'] / 1024**3:.1f} GiB, "
+                f"available {check['memory_available_bytes'] / 1024**3:.1f} GiB. "
+                "Choose a smaller calculation or free memory before running."
+            )
         self._ensure()
         job_id = uuid.uuid4().hex[:12]
         job_dir = JOBS_ROOT / job_id
@@ -112,6 +123,7 @@ class JobManager:
             name=req.name,
             status=JobStatus.queued,
             runner=req.runner,
+            threads=req.threads,
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         with self._lock:
@@ -174,7 +186,7 @@ class JobManager:
         info = self._jobs[job_id]
         info.status = JobStatus.running
         try:
-            exit_code = get_runner(info.runner).run(JOBS_ROOT / job_id)
+            exit_code = get_runner(info.runner).run(JOBS_ROOT / job_id, info.threads)
             info.exit_code = exit_code
             info.status = JobStatus.done if exit_code == 0 else JobStatus.failed
         except Exception as exc:  # noqa: BLE001 — any failure must land in the job record

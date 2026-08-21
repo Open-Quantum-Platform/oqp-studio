@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import __version__, engine, environment, network
+from . import __version__, engine, environment, host, network
 from .jobs import JobInfo, JobRequest, manager
 from .runners import available_runners
 
@@ -120,6 +120,21 @@ def runner_detail() -> dict:
             "bundled": engine.version(bundled_openqp),
         },
     }
+
+
+class ResourceRequest(BaseModel):
+    input_text: str
+    threads: int = 1
+
+
+@app.get("/api/host")
+def host_status() -> dict:
+    return host.snapshot()
+
+
+@app.post("/api/host/admission")
+def host_admission(req: ResourceRequest) -> dict:
+    return host.admission(req.input_text, req.threads)
 
 
 @app.post("/api/jobs")

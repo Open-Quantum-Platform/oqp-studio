@@ -67,6 +67,22 @@ def test_runners_listed():
     assert set(res.json()) >= {"local", "bundled", "wsl"}
 
 
+def test_memory_admission_refuses_a_calculation_above_available_ram(monkeypatch):
+    """The execution preflight must stop before a memory-starved launch."""
+    from oqp_studio import host
+
+    monkeypatch.setattr(host, "snapshot", lambda: {
+        "platform": "darwin",
+        "physical_cores": 4,
+        "logical_cores": 8,
+        "memory_total_bytes": 8 * 1024**3,
+        "memory_available_bytes": 512 * 1024**2,
+    })
+    check = host.admission("ccsd/cc-pvtz\nenergy\ngeom=\"\"\"\nO 0 0 0\n\"\"\"\n", 4)
+    assert not check["permitted"]
+    assert "currently available RAM" in check["reason"]
+
+
 def test_bundled_engine_version_is_read_from_its_readme(tmp_path):
     from oqp_studio import engine
 

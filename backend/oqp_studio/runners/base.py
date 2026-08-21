@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+import os
 import subprocess
 from pathlib import Path
 
@@ -24,7 +25,7 @@ class Runner(abc.ABC):
     def build_command(self, input_file: Path) -> list[str]:
         """Command line that runs OpenQP on `input_file`."""
 
-    def run(self, job_dir: Path) -> int:
+    def run(self, job_dir: Path, threads: int = 1) -> int:
         """Blocking execution; the job manager calls this from a worker thread."""
         if not self.is_available():
             raise RunnerUnavailable(f"runner '{self.name}' is not available on this machine")
@@ -40,5 +41,6 @@ class Runner(abc.ABC):
                 cwd=job_dir,
                 stdout=log,
                 stderr=subprocess.STDOUT,
+                env={**os.environ, "OMP_NUM_THREADS": str(threads)},
             )
             return proc.wait()

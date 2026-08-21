@@ -783,6 +783,10 @@ const runStatus = $<HTMLSpanElement>("runStatus");
 const runLog = $<HTMLPreElement>("runLog");
 const runnerSelect = $<HTMLSelectElement>("runner");
 const runButton = $<HTMLButtonElement>("runBtn");
+const threadsInput = $<HTMLInputElement>("threads");
+let admissionPermitted = true;
+let admissionTimer: number | undefined;
+let threadsInitialized = false;
 const RUNNER_LABELS: Record<string, string> = {
   local: "OpenQP (local)",
   bundled: "OpenQP (bundled)",
@@ -792,6 +796,77 @@ const RUNNER_LABELS: Record<string, string> = {
 function runnerLabel(name: string, version?: string): string {
   const label = RUNNER_LABELS[name] ?? name;
   return version ? `${label} v${version}` : label;
+}
+
+type HostStatus = {
+  platform: string;
+  physical_cores: number;
+  logical_cores: number;
+  memory_total_bytes: number | null;
+  memory_available_bytes: number | null;
+  estimated_memory_bytes?: number;
+  permitted?: boolean;
+  reason?: string | null;
+};
+
+function gib(bytes: number | null | undefined): string {
+  return bytes == null ? "unavailable" : `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+}
+
+function threadCount(): number {
+  return Math.max(1, Math.floor(+threadsInput.value || 1));
+}
+
+function renderHostStatus(host: HostStatus): void {
+  const physical = host.physical_cores;
+  threadsInput.max = String(host.logical_cores);
+  if (!threadsInitialized) {
+    threadsInput.value = String(physical);
+    threadsInitialized = true;
+  }
+  $<HTMLDivElement>("hostInfo").innerHTML =
+    `<div>${physical} physical cores · ${host.logical_cores} logical cores</div>` +
+    `<div>RAM: ${gib(host.memory_total_bytes)} installed · ${gib(host.memory_available_bytes)} available now</div>`;
+}
+
+async function checkMemoryAdmission(): Promise<void> {
+  const input = $<HTMLTextAreaElement>("input").value;
+  if (!input.trim()) {
+    $<HTMLDivElement>("memoryInfo").textContent = "Waiting for input…";
+    admissionPermitted = true;
+    return;
+  }
+  try {
+    const response = await fetch("/api/host/admission", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input_text: input, threads: threadCount() }),
+    });
+    const check: HostStatus = await response.json();
+    admissionPermitted = check.permitted !== false;
+    $<HTMLDivElement>("memoryInfo").textContent = admissionPermitted
+      ? `Estimated ${gib(check.estimated_memory_bytes)}; admitted`
+      : `RAM limit: estimated ${gib(check.estimated_memory_bytes)}, available ${gib(check.memory_available_bytes)}`;
+    $<HTMLDivElement>("memoryInfo").style.color = admissionPermitted ? "" : "var(--err)";
+  } catch {
+    admissionPermitted = true;
+    $<HTMLDivElement>("memoryInfo").textContent = "Memory preflight unavailable; the server will check before running.";
+  }
+}
+
+function scheduleMemoryAdmission(): void {
+  if (admissionTimer !== undefined) window.clearTimeout(admissionTimer);
+  admissionTimer = window.setTimeout(() => { void checkMemoryAdmission(); }, 250);
+}
+
+async function refreshExecutionHost(): Promise<void> {
+  try {
+    const host: HostStatus = await (await fetch("/api/host")).json();
+    renderHostStatus(host);
+    await checkMemoryAdmission();
+  } catch {
+    $<HTMLDivElement>("hostInfo").textContent = "Hardware status unavailable.";
+  }
 }
 
 async function loadRunners(): Promise<void> {
@@ -846,6 +921,11 @@ runnerSelect.addEventListener("change", () => {
   runStatus.textContent = runnerSelect.value ? "" : "Choose an OpenQP runner";
 });
 
+threadsInput.addEventListener("input", scheduleMemoryAdmission);
+$<HTMLTextAreaElement>("input").addEventListener("input", scheduleMemoryAdmission);
+$<HTMLButtonElement>("hostRefresh").addEventListener("click", () => { void refreshExecutionHost(); });
+$<HTMLButtonElement>("executionWorkspace").addEventListener("click", () => { void openWorkspaceSettings(); });
+
 async function pollJob(jobId: string): Promise<void> {
   const infoResponse = await fetch(`/api/jobs/${jobId}`);
   if (!infoResponse.ok) {
@@ -871,6 +951,11 @@ runButton.addEventListener("click", async () => {
     runStatus.textContent = "Choose an OpenQP runner";
     return;
   }
+  await checkMemoryAdmission();
+  if (!admissionPermitted) {
+    runStatus.textContent = "RAM limit: free memory or reduce the calculation before running.";
+    return;
+  }
   runStatus.textContent = "submitting…";
   const res = await fetch("/api/jobs", {
     method: "POST",
@@ -880,6 +965,7 @@ runButton.addEventListener("click", async () => {
       input_name: $<HTMLInputElement>("inputName").value,
       name: projectName.value.trim() || "job",
       runner: runnerSelect.value,
+      threads: threadCount(),
     }),
   });
   if (!res.ok) {
@@ -1849,6 +1935,7 @@ function renderWorkspace(status: Workspace): void {
   $<HTMLDivElement>("workspaceStatus").innerHTML =
     `<div>Writing to <strong>${status.active}</strong></div>` +
     `<div class="hint">${chosen}</div>`;
+  $<HTMLSpanElement>("executionOutputDir").textContent = status.active;
 }
 
 async function openWorkspaceSettings(): Promise<void> {
@@ -2131,4 +2218,5 @@ fetch("/api/health")
   .then((h) => { $<HTMLSpanElement>("health").textContent = `OQP Studio engine: v${h.version} ✓`; })
   .catch(() => { $<HTMLSpanElement>("health").textContent = "OQP Studio engine: unavailable"; });
 loadRunners().catch(() => {});
+refreshExecutionHost().catch(() => {});
 updatePreview().catch(() => {});
