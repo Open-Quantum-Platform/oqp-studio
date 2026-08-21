@@ -108,8 +108,24 @@ jobs:
           New-Item -ItemType Directory -Force -Path C:\oqpx, C:\oqpb | Out-Null
           python -m pip install --upgrade pip
           python -m pip install cmake ninja numpy cffi scikit-build-core pyinstaller
+
+          # OpenQP patches mctc-lib with whatever `patch` CMake finds first.
+          # On this runner that can be Strawberry Perl's GNU patch 2.5.9,
+          # which does not fail on our patch -- it CRASHES on it:
+          #   Assertation failed! ... patch-2.5.9-src\patch.c, Line 354
+          # and the crash is reported as "source matches neither side of
+          # patch", failing the build.  Which of the two patch.exe on the
+          # image comes first depends on PATH, so the same commit built
+          # yesterday and did not today.  Git for Windows ships GNU patch
+          # 2.7.6; name it explicitly and prove it runs before the hour-long
+          # build starts.
+          $patch = "C:\Program Files\Git\usr\bin\patch.exe"
+          if (-not (Test-Path $patch)) { throw "no usable patch.exe: $patch" }
+          & $patch --version | Select-Object -First 1
+
           python -m pip install -v .\openqp --no-build-isolation `
             --config-settings=build-dir=C:\oqpb `
+            "--config-settings=cmake.define.OQP_DFTD4_PATCH_EXECUTABLE=$patch" `
             --config-settings=cmake.define.LINALG_LIB=Intel10_64ilp `
             --config-settings=cmake.define.ENABLE_MPI=OFF `
             --config-settings=cmake.define.ENABLE_OPENMP=ON `
