@@ -286,3 +286,23 @@ def test_updating_an_all_in_one_install_keeps_the_engine(monkeypatch):
 
     # A release that published no all-in-one still updates the app.
     assert update.pick_asset(assets[:1])["name"].endswith("windows-x64-setup.exe")
+
+
+def test_jobs_never_land_relative_to_the_working_directory(tmp_path, monkeypatch):
+    """An app started from Finder has "/" as its working directory.
+
+    A relative default resolved to /jobs_data there, which macOS will not let
+    an unprivileged process create, so every run died at submission with a
+    bare 500. The default has to be a directory the user owns.
+    """
+    from oqp_studio import jobs
+
+    monkeypatch.setenv("OQP_STUDIO_CONFIG", str(tmp_path / "cfg" / "network.json"))
+    monkeypatch.delenv("OQP_STUDIO_JOBS", raising=False)
+    monkeypatch.chdir("/")
+
+    root = jobs._default_root()
+    assert root.is_absolute()
+    assert root == tmp_path / "cfg" / "jobs"
+    # Writable, which "/" is not.
+    root.mkdir(parents=True)

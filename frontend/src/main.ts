@@ -624,7 +624,9 @@ $<HTMLButtonElement>("runBtn").addEventListener("click", async () => {
     }),
   });
   if (!res.ok) {
-    runStatus.textContent = `submit failed (${res.status})`;
+    // The backend says why — usually a job directory it cannot write to.
+    const detail = await res.json().then((d) => d?.detail).catch(() => null);
+    runStatus.textContent = detail ?? `submit failed (${res.status})`;
     return;
   }
   pollJob((await res.json()).id);

@@ -11,9 +11,26 @@ from pydantic import BaseModel
 
 from .runners import get_runner
 
+
+def _default_root() -> Path:
+    """Where job directories go when nothing says otherwise.
+
+    Not the working directory. An app launched from Finder or the Dock
+    inherits launchd's cwd, which is "/", so a relative default resolved to
+    /jobs_data — a path macOS refuses to let an unprivileged process create,
+    and every run failed at submission with nothing but a 500. The user's own
+    application-data directory is writable by definition, and it is where the
+    app already keeps its settings and the engine it downloads.
+    """
+    from . import network
+
+    return network.settings_path().parent / "jobs"
+
+
 # Absolute, and overridable, so a job directory means the same thing however
-# the server was launched — the desktop app starts it from an arbitrary cwd.
-JOBS_ROOT = Path(os.environ.get("OQP_STUDIO_JOBS", "jobs_data")).resolve()
+# the server was launched.
+JOBS_ROOT = (Path(os.environ["OQP_STUDIO_JOBS"]).resolve()
+             if os.environ.get("OQP_STUDIO_JOBS") else _default_root())
 
 
 class JobStatus(str, Enum):

@@ -68,12 +68,25 @@ def runners() -> dict:
 @app.get("/api/runners/detail")
 def runner_detail() -> dict:
     """Which runners work and, for the native one, the binary that was found."""
-    return {"available": available_runners(), **environment.describe()}
+    from .jobs import JOBS_ROOT
+
+    return {"available": available_runners(), "jobs_root": str(JOBS_ROOT),
+            **environment.describe()}
 
 
 @app.post("/api/jobs")
 def submit_job(req: JobRequest) -> JobInfo:
-    return manager.submit(req)
+    try:
+        return manager.submit(req)
+    except OSError as exc:
+        # A bare 500 says nothing; the thing that goes wrong here is the job
+        # directory being somewhere the user cannot write, so name it.
+        from .jobs import JOBS_ROOT
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"could not create a job directory under {JOBS_ROOT}: {exc}",
+        ) from exc
 
 
 @app.get("/api/jobs")
