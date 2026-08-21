@@ -1,18 +1,18 @@
 """Execution adapters that run an OpenQP input file and stream its log.
 
 Adapters share one contract (`Runner`): given a job directory containing
-`input.inp`, launch OpenQP, append stdout/stderr to `job.log`, and report
-the exit code. The GUI never cares which adapter ran the job.
+an .oqp or .inp input, launch OpenQP, append stdout/stderr to `job.log`, and
+report the exit code. The GUI never cares which adapter ran the job.
 """
 
 from .base import Runner, RunnerUnavailable
+from .bundled import BundledRunner
 from .local import LocalRunner
-from .pyoqp import PyOqpRunner
 from .wsl import WslRunner
 
 _REGISTRY = {
-    "pyoqp": PyOqpRunner,
     "local": LocalRunner,
+    "bundled": BundledRunner,
     "wsl": WslRunner,
 }
 

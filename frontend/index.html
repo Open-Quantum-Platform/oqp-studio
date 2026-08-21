@@ -187,7 +187,7 @@
         min-height: 420px;
         border: 1px solid var(--border);
         border-radius: var(--radius);
-        background: var(--panel);
+        background: #1b1e24;
       }
       pre.log {
         background: var(--bg);
@@ -242,6 +242,12 @@
 
       /* Viewer plus its measurement read-out. */
       .viewer-wrap { position: relative; min-width: 0; height: 100%; }
+      .viewer-resize-cover {
+        position: absolute; inset: 0; z-index: 20;
+        background: #1b1e24; opacity: 0; visibility: hidden;
+        pointer-events: none;
+      }
+      .viewer-resize-cover.on { opacity: 1; visibility: visible; }
       .measure {
         position: absolute; left: 10px; bottom: 10px; right: 10px;
         display: none; gap: .5rem; align-items: center; flex-wrap: wrap;
@@ -287,6 +293,11 @@
       #busy .sub { color: var(--text-dim); font-size: 13px; margin-top: -0.7rem; }
       @keyframes spin { to { transform: rotate(360deg); } }
       #runStatus { font-size: 13px; }
+      #panel-run .cols > .card {
+        display: flex; flex-direction: column;
+        min-height: 0; margin-bottom: 0;
+      }
+      #runLog { flex: 1; min-height: 0; max-height: none; }
       .menu-item {
         display: block; width: 100%; text-align: left;
         background: transparent; border: 0; border-radius: 7px;
@@ -396,6 +407,10 @@
                 </div>
               </div>
               <div class="row">
+                <div>
+                  <label for="projectName">Project name</label>
+                  <input type="text" id="projectName" value="water" spellcheck="false" />
+                </div>
                 <div>
                   <label>Sample</label>
                   <select id="sample">
@@ -507,21 +522,74 @@
             </div>
             <div class="card" id="optionsCard" style="display:none">
               <h3>Options <span class="hint" id="wfLabel" style="text-transform:none;letter-spacing:0"></span></h3>
+              <div class="actions" style="margin-top:0;margin-bottom:1rem">
+                <button class="primary" id="generate">Generate input →</button>
+                <span class="hint">writes the .oqp and opens the Execution tab</span>
+              </div>
               <div class="row">
                 <div>
                   <label>Method</label>
                   <select id="theory">
-                    <option value="hf">Hartree–Fock</option>
-                    <option value="dft">DFT</option>
-                    <option value="mp2">MP2</option>
-                    <option value="tddft">TDDFT</option>
-                    <option value="mrsf" selected>MRSF-TDDFT</option>
+                    <optgroup label="Single-reference">
+                      <option value="hf">Hartree–Fock</option>
+                      <option value="dft">DFT</option>
+                      <option value="mp2">MP2</option>
+                      <option value="ccsd">CCSD</option>
+                      <option value="ccsd_t">CCSD(T)</option>
+                    </optgroup>
+                    <optgroup label="Excited states">
+                      <option value="tddft">TDDFT</option>
+                      <option value="tda">TDA</option>
+                      <option value="sf">SF-TDDFT</option>
+                      <option value="mrsf" selected>MRSF-TDDFT</option>
+                    </optgroup>
+                    <optgroup label="Multiconfigurational">
+                      <option value="fci">FCI</option>
+                      <option value="casci">CASCI</option>
+                      <option value="casscf">CASSCF</option>
+                      <option value="sa-casscf">SA-CASSCF</option>
+                      <option value="caspt2">CASPT2</option>
+                      <option value="ms-caspt2">MS-CASPT2</option>
+                      <option value="xms-caspt2">XMS-CASPT2</option>
+                      <option value="nevpt2">NEVPT2</option>
+                      <option value="sc-nevpt2">SC-NEVPT2</option>
+                      <option value="mrmp2">MRMP2</option>
+                      <option value="mcqdpt2">MCQDPT2</option>
+                      <option value="xmcqdpt2">XMCQDPT2</option>
+                    </optgroup>
                   </select>
                 </div>
                 <div>
                   <label>Functional</label>
-                  <input type="text" id="functional" value="bhhlyp" />
+                  <select id="functional">
+                    <optgroup label="Representative">
+                      <option value="bhhlyp">BHHLYP</option>
+                      <option value="b3lypv5">B3LYP</option>
+                      <option value="pbe">PBE</option>
+                      <option value="pbe0">PBE0</option>
+                      <option value="cam-b3lyp">CAM-B3LYP</option>
+                      <option value="m06-2x">M06-2X</option>
+                      <option value="slater">Slater</option>
+                    </optgroup>
+                    <optgroup label="DTCAM series">
+                      <option value="dtcam-aee">DTCAM-AEE</option>
+                      <option value="dtcam-stg">DTCAM-STG</option>
+                      <option value="dtcam-tune">DTCAM-Tune</option>
+                      <option value="dtcam-vaee">DTCAM-VAEE</option>
+                      <option value="dtcam-vee">DTCAM-VEE</option>
+                      <option value="dtcam-xi">DTCAM-XI</option>
+                      <option value="dtcam-xiv">DTCAM-XIV</option>
+                    </optgroup>
+                    <option value="__custom__">Custom…</option>
+                  </select>
                 </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label>Custom functional</label>
+                  <input type="text" id="functionalCustom" placeholder="OpenQP functional name" disabled />
+                </div>
+                <div></div>
               </div>
               <div class="row">
                 <div>
@@ -553,6 +621,19 @@
                 </div>
                 <div></div>
               </div>
+              <div class="row wf-opt" data-for="hess">
+                <div>
+                  <label>Hessian evaluation</label>
+                  <select id="hessType">
+                    <option value="analytical">Analytical</option>
+                    <option value="numerical">Numerical</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Availability</label>
+                  <span class="hint" id="hessTypeHint"></span>
+                </div>
+              </div>
               <div class="row wf-opt" data-for="meci">
                 <div><label>MECI state A</label><input type="number" id="meciA" value="0" min="0" /></div>
                 <div><label>MECI state B</label><input type="number" id="meciB" value="1" min="0" /></div>
@@ -561,15 +642,12 @@
                 <div><label><input type="checkbox" id="ektIp" checked style="width:auto;margin-right:.4rem" />Ionization (IP)</label></div>
                 <div><label><input type="checkbox" id="ektEa" style="width:auto;margin-right:.4rem" />Electron affinity (EA)</label></div>
               </div>
-              <div class="actions">
-                <button class="primary" id="generate">Generate input →</button>
-                <span class="hint">writes the .oqp and opens the Execution tab</span>
-              </div>
             </div>
           </div>
           <div class="card">
-            <h3>Input preview (.oqp)</h3>
+            <h3>Input preview (.oqp) <button id="editPreview" type="button" style="float:right">Edit input</button></h3>
             <pre class="log" id="inpPreview" style="min-height:20rem"></pre>
+            <textarea class="log" id="inpPreviewEditor" spellcheck="false" style="display:none;min-height:20rem;width:100%;box-sizing:border-box"></textarea>
           </div>
         </div>
       </section>
@@ -579,9 +657,11 @@
         <div class="cols">
           <div class="card">
             <h3>OpenQP input (.oqp — legacy .inp also accepted)</h3>
+            <label for="inputName">Input file name</label>
+            <input id="inputName" value="input.oqp" spellcheck="false" />
             <textarea id="input" rows="20" spellcheck="false"></textarea>
             <div class="actions">
-              <button class="primary" id="runBtn">▶ Run</button>
+              <button class="primary" id="runBtn" disabled>▶ Run</button>
               <select id="runner" style="width:auto"></select>
               <span id="runStatus"></span>
             </div>
@@ -612,12 +692,12 @@
                      accept=".log,.out,.json,.molden,.xyz,.trj,.cube,.cub,.inp,.oqp,.dat,.txt"
                      style="display:none" />
               <table class="jobs">
-                <thead><tr><th>ID</th><th>Runner</th><th>Status</th></tr></thead>
+                <thead><tr><th>Project</th><th>Runner</th><th>Status</th></tr></thead>
                 <tbody id="jobsBody"></tbody>
               </table>
             </div>
             <div class="card">
-              <h3>Output files</h3>
+              <h3>Project files</h3>
               <ul class="files" id="resultFiles"><li class="hint">select a job</li></ul>
             </div>
             <div class="card" id="resultFrameCard" style="display:none">
@@ -628,11 +708,6 @@
             <div class="card" id="summaryCard" style="display:none">
               <h3>Results summary</h3>
               <div id="summaryBody"></div>
-            </div>
-            <div class="card" id="levelCard" style="display:none">
-              <h3>Orbital energy levels</h3>
-              <div id="levelPlot"></div>
-              <div class="hint">click a level to show that orbital</div>
             </div>
             <div class="card" id="spectrumCard" style="display:none">
               <h3>Spectrum
@@ -663,7 +738,8 @@
               <div class="hint" id="specNote"></div>
             </div>
             <div class="card" id="orbitalCard" style="display:none">
-              <h3>Orbitals and 3D maps</h3>
+              <h3>Orbitals and 3D maps <button class="ghost" id="orbitalReset"
+                  type="button" style="float:right;padding:.15rem .7rem;font-size:12px">Reset map</button></h3>
               <label>Show</label>
               <select id="mapKind">
                 <option value="mo">Molecular orbital</option>
@@ -673,7 +749,7 @@
               </select>
               <div id="orbitalPick">
                 <label>Orbital</label>
-                <select id="orbitalSel"></select>
+                <select id="orbitalSel"><option value="">Choose molecular orbital…</option></select>
               </div>
               <label>Isovalue</label>
               <input type="range" id="isoRange" min="0.01" max="0.15" step="0.01" value="0.05" />
@@ -866,7 +942,7 @@
     </div>
 
     <footer>
-      <span id="health">backend: connecting…</span>
+      <span id="health">OQP Studio engine: connecting…</span>
       <span id="runnersInfo"></span>
       <span id="copyright" style="margin-left:auto"></span>
     </footer>

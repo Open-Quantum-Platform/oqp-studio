@@ -13,8 +13,8 @@ Design document: [OQP Studio — Design Proposal](https://github.com/Open-Quantu
 ```
 frontend/   TypeScript + Vite UI; Mol*-based 3D viewer, Ketcher sketcher,
             input forms, job monitor (also deployable as a website)
-backend/    Python FastAPI local server; runs jobs through pyoqp,
-            execution adapters (native / WSL / SSH), Molden→cube grid engine
+backend/    Python FastAPI local server; runs jobs through local or bundled
+            OpenQP commands, execution adapters (WSL / SSH), Molden→cube grid engine
 shell/      Tauri 2 desktop shell; produces MSI (Windows), DMG (macOS),
             AppImage/deb (Linux) installers
 docs/       architecture notes and development guides
@@ -28,11 +28,11 @@ docs/       architecture notes and development guides
 │  ┌──────────────────────────┐      ┌───────────────────────────────────┐ │
 │  │ Frontend (TypeScript)    │ HTTP │ Local backend (Python, FastAPI)   │ │
 │  │  • Builder (Ketcher 2D,  │◄────►│  • RDKit: SMILES→3D, MMFF pre-opt │ │
-│  │    3D editor)            │  WS  │  • pyoqp: run jobs in-process     │ │
+│  │    3D editor)            │  WS  │  • OpenQP: local or bundled       │ │
 │  │  • Template & DB browser │      │  • Job queue                      │ │
 │  │  • Input form/editor     │      │  • Grid engine: molden→MO cubes   │ │
 │  │  • Mol*-based 3D viewer  │      │  • Execution adapters:            │ │
-│  │  • Spectra/plots         │      │    local · WSL · SSH/SLURM        │ │
+│  │  • Spectra/plots         │      │    local · bundled · WSL · SSH    │ │
 │  └──────────────────────────┘      └───────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
@@ -63,7 +63,7 @@ and output; the installed application does not open a local HTTP port.
 
 ## Development quick start
 
-Backend API development (requires Python ≥ 3.10; OpenQP/pyoqp optional — mock mode without it):
+Backend API development (requires Python ≥ 3.10; OpenQP optional — mock mode without it):
 
 ```bash
 cd backend
@@ -167,7 +167,7 @@ the Apple Developer Program at no cost through Apple's fee waiver — see
 
 Working end to end: build a molecule (2D sketcher, PubChem, samples, or raw
 coordinates), pick a workflow, generate the `.oqp` input, run it through a
-local OpenQP (native, WSL, or the pyoqp API), and inspect the results —
+local OpenQP (native or WSL), and inspect the results —
 orbitals, normal modes, geometries — rendered with Mol*. Installers are built
 for Windows, macOS (Apple Silicon and Intel), and Linux.
 

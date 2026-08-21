@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.request
 import uuid
 from collections import OrderedDict
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -66,9 +67,23 @@ network.activate()
 _trace("TLS")
 _warm_up_rdkit()
 
-app = FastAPI(title="OQP Studio backend", version=__version__)
-_trace("app built")
+def _warm_runner_versions() -> None:
+    """Read engine versions once, after the server is ready for requests."""
+    local_openqp = environment.locate(os.environ.get("OQP_COMMAND", "openqp"))
+    engine.version(local_openqp)
+    engine.version(engine.bundled_or_downloaded())
 
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Version probing may start a Python interpreter for a pip-installed
+    # command. It must never add latency to the sidecar becoming reachable.
+    threading.Thread(target=_warm_runner_versions, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="OQP Studio backend", version=__version__, lifespan=_lifespan)
+_trace("app built")
 
 # FastAPI reads this as the file field; kept module level so it is not a
 # function call in a default argument.
@@ -92,14 +107,27 @@ def runner_detail() -> dict:
     """Which runners work and, for the native one, the binary that was found."""
     from .jobs import JOBS_ROOT
 
-    return {"available": available_runners(), "jobs_root": str(JOBS_ROOT),
-            **environment.describe()}
+    local_openqp = environment.locate(os.environ.get("OQP_COMMAND", "openqp"))
+    bundled_openqp = engine.bundled_or_downloaded()
+    return {
+        "available": available_runners(),
+        "jobs_root": str(JOBS_ROOT),
+        **environment.describe(),
+        "openqp": local_openqp,
+        "bundled_openqp": bundled_openqp,
+        "versions": {
+            "local": engine.version(local_openqp),
+            "bundled": engine.version(bundled_openqp),
+        },
+    }
 
 
 @app.post("/api/jobs")
 def submit_job(req: JobRequest) -> JobInfo:
     try:
         return manager.submit(req)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
         # A bare 500 says nothing; the thing that goes wrong here is the job
         # directory being somewhere the user cannot write, so name it.

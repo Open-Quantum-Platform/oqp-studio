@@ -1,36 +1,28 @@
 from __future__ import annotations
 
 import os
-import shutil
 from pathlib import Path
 
+from .. import environment
 from .base import Runner
 
 
 class LocalRunner(Runner):
-    """Runs the native OpenQP engine.
+    """Runs the OpenQP command available on this computer.
 
-    Looks for it on PATH first — a user who installed OpenQP themselves means
-    that one — and otherwise for a standalone engine archive, either the copy
-    this app downloaded or one the user unpacked in a usual place. The
-    archives are self-contained, so the one the app installs needs no Python
-    or BLAS on the machine.
+    This runner deliberately uses PATH only, so selecting it never silently
+    switches to the engine shipped with or downloaded by Studio.
     """
 
     name = "local"
 
     @property
     def command(self) -> str:
-        override = os.environ.get("OQP_COMMAND")
-        if override:
-            return override
-        from .. import engine
-
-        return engine.locate() or "openqp"
+        command = os.environ.get("OQP_COMMAND", "openqp")
+        return environment.locate(command) or command
 
     def is_available(self) -> bool:
-        command = self.command
-        return shutil.which(command) is not None or Path(command).is_file()
+        return Path(self.command).is_file()
 
     def build_command(self, input_file: Path) -> list[str]:
         return [self.command, str(input_file)]

@@ -7,6 +7,14 @@
     <style>
       html, body { margin: 0; height: 100%; background: #1b1e24; overflow: hidden; }
       #app { position: absolute; inset: 0; }
+      #bootCover { position: fixed; inset: 0; z-index: 10; background: #1b1e24; }
+      /* Mol*'s bundled stylesheet uses a light viewport until WebGL paints.
+         Override every layer that can be exposed during a resize. */
+      .msp-plugin,
+      .msp-plugin .msp-layout-standard,
+      .msp-plugin .msp-layout-main,
+      .msp-plugin .msp-viewport,
+      .msp-plugin canvas { background: #1b1e24 !important; }
       /* Hide Mol* chrome — this page is a pure render surface. */
       .msp-plugin .msp-layout-expanded { border: none; }
       .msp-viewport-controls, .msp-traj-controls { display: none; }
@@ -14,6 +22,7 @@
   </head>
   <body>
     <div id="app"></div>
+    <div id="bootCover" aria-hidden="true"></div>
     <script src="/molstar/molstar.js"></script>
     <script>
       const DARK_BG = 0x1b1e24;
@@ -61,6 +70,13 @@
             },
           });
         }
+
+        // Mol* creates its canvas with its own default clear colour before
+        // setProps above takes effect. Keep the studio-colour cover in place
+        // for those first frames so resizing never exposes a white flash.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          document.querySelector("#bootCover")?.remove();
+        }));
 
         // Keep this viewer alive across previews: reloading the page would
         // re-download Mol* and rebuild the WebGL context on every edit, which

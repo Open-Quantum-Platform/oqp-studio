@@ -4,6 +4,8 @@ import abc
 import subprocess
 from pathlib import Path
 
+from ..input_files import find_input_file
+
 
 class RunnerUnavailable(RuntimeError):
     """Raised when a runner cannot execute on this machine."""
@@ -30,10 +32,7 @@ class Runner(abc.ABC):
         # server's own directory would not resolve for it — and an engine that
         # writes its results next to the input would put them somewhere else.
         job_dir = job_dir.resolve()
-        input_file = next(
-            (f for name in ("input.oqp", "input.inp") if (f := job_dir / name).exists()),
-            job_dir / "input.oqp",
-        )
+        input_file = find_input_file(job_dir)
         log_file = job_dir / "job.log"
         with log_file.open("ab") as log:
             proc = subprocess.Popen(

@@ -59,7 +59,10 @@ function showTab(name: string): void {
   nav.querySelectorAll("button").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === name);
   });
-  if (name === "analysis") refreshJobs();
+  if (name === "analysis") {
+    if (!resultFrame.src) resultFrame.src = "/builder3d.html";
+    refreshJobs();
+  }
   if (name === "method") updateInpPreview();
 }
 nav.addEventListener("click", (e) => {
@@ -70,6 +73,26 @@ nav.addEventListener("click", (e) => {
 // ---------- builder ----------
 const xyzArea = $<HTMLTextAreaElement>("xyz");
 const builderStatus = $<HTMLSpanElement>("builderStatus");
+const projectName = $<HTMLInputElement>("projectName");
+
+// WebKit can briefly expose an iframe's default white surface while its WebGL
+// backing store is resized. Cover it only for the active resize gesture.
+const viewerResizeCovers = Array.from(document.querySelectorAll<HTMLElement>(".viewer-wrap"))
+  .map((wrap) => {
+    const cover = document.createElement("div");
+    cover.className = "viewer-resize-cover";
+    cover.setAttribute("aria-hidden", "true");
+    wrap.appendChild(cover);
+    return cover;
+  });
+let viewerResizeTimer = 0;
+window.addEventListener("resize", () => {
+  viewerResizeCovers.forEach((cover) => cover.classList.add("on"));
+  clearTimeout(viewerResizeTimer);
+  viewerResizeTimer = window.setTimeout(() => {
+    viewerResizeCovers.forEach((cover) => cover.classList.remove("on"));
+  }, 150);
+});
 
 function atomsToText(atoms: Atom[]): string {
   return atoms
@@ -448,10 +471,13 @@ const WORKFLOWS: Workflow[] = [
 let currentWf: Workflow = WORKFLOWS[0];
 
 const theorySel = $<HTMLSelectElement>("theory");
-const functionalInp = $<HTMLInputElement>("functional");
+const functionalSel = $<HTMLSelectElement>("functional");
+const functionalCustom = $<HTMLInputElement>("functionalCustom");
 const basisSel = $<HTMLSelectElement>("basis");
 const basisCustom = $<HTMLInputElement>("basisCustom");
 const optionsCard = $<HTMLDivElement>("optionsCard");
+const hessTypeSel = $<HTMLSelectElement>("hessType");
+const hessTypeHint = $<HTMLSpanElement>("hessTypeHint");
 
 function selectWorkflow(wf: Workflow): void {
   currentWf = wf;
@@ -507,6 +533,12 @@ function currentBasis(): string {
   );
 }
 
+function currentFunctional(): string {
+  return functionalSel.value === "__custom__"
+    ? functionalCustom.value.trim() || "bhhlyp"
+    : functionalSel.value;
+}
+
 // Generates concise .oqp input: ROUTE, one primary driver, globals, geometry.
 function generateInp(): string {
   const atoms = parseAtoms(xyzArea.value);
@@ -516,23 +548,43 @@ function generateInp(): string {
   const nstate = +$<HTMLInputElement>("nstate").value || 3;
   const target = +$<HTMLInputElement>("targetState").value || 0;
   const basis = currentBasis();
-  const functional = functionalInp.value.trim() || "bhhlyp";
+  const functional = currentFunctional();
 
   const routes: Record<string, string> = {
     hf: `hf/${basis}`,
     dft: `dft/${functional}/${basis}`,
     mp2: `mp2/${basis}`,
     tddft: `tddft(nstate=${nstate})/${functional}/${basis}`,
+    tda: `tda(nstate=${nstate})/${functional}/${basis}`,
+    sf: `sf(nstate=${nstate})/${functional}/${basis}`,
     mrsf: `mrsf(nstate=${nstate})/${functional}/${basis}`,
+    ccsd: `ccsd/${basis}`,
+    ccsd_t: `ccsd_t/${basis}`,
+    fci: `fci/${basis}`,
+    casci: `casci/${basis}`,
+    casscf: `casscf/${basis}`,
+    "sa-casscf": `sa-casscf/${basis}`,
+    caspt2: `caspt2/${basis}`,
+    "ms-caspt2": `ms-caspt2/${basis}`,
+    "xms-caspt2": `xms-caspt2/${basis}`,
+    nevpt2: `nevpt2/${basis}`,
+    "sc-nevpt2": `sc-nevpt2/${basis}`,
+    mrmp2: `mrmp2/${basis}`,
+    mcqdpt2: `mcqdpt2/${basis}`,
+    xmcqdpt2: `xmcqdpt2/${basis}`,
   };
 
-  const usesStates = theory === "tddft" || theory === "mrsf";
+  const usesStates = ["tddft", "tda", "sf", "mrsf"].includes(theory);
   const stateArg = usesStates && target > 0 ? `(S${target})` : "";
   let driver: string;
   switch (currentWf.key) {
     case "energy": driver = `energy${stateArg}`; break;
     case "opt": driver = `opt${stateArg}`; break;
-    case "hess": driver = `hess${stateArg}`; break;
+    case "hess": {
+      const hessState = stateArg ? `${stateArg.slice(0, -1)},` : "(";
+      driver = `hess${hessState}type=${hessTypeSel.value})`;
+      break;
+    }
     case "abs": driver = "energy"; break;
     case "exgrad": driver = `grad(S${target || 1})`; break;
     case "exopt": driver = `opt(S${target || 1})`; break;
@@ -565,17 +617,51 @@ function generateInp(): string {
   return lines.join("\n") + "\n";
 }
 
-function updateInpPreview(): void {
-  $<HTMLPreElement>("inpPreview").textContent = generateInp();
-}
-function syncFieldStates(): void {
-  functionalInp.disabled =
-    !theorySel.disabled && (theorySel.value === "hf" || theorySel.value === "mp2");
-  basisCustom.disabled = basisSel.value !== "__custom__";
+const inpPreview = $<HTMLPreElement>("inpPreview");
+const inpPreviewEditor = $<HTMLTextAreaElement>("inpPreviewEditor");
+const editPreviewButton = $<HTMLButtonElement>("editPreview");
+let previewIsEditing = false;
+
+function previewInput(): string {
+  return previewIsEditing ? inpPreviewEditor.value : generateInp();
 }
 
-for (const id of ["theory", "functional", "basis", "basisCustom", "charge", "mult",
-                  "nstate", "targetState", "meciA", "meciB", "ektIp", "ektEa"]) {
+function updateInpPreview(): void {
+  if (!previewIsEditing) inpPreview.textContent = generateInp();
+}
+
+editPreviewButton.addEventListener("click", () => {
+  previewIsEditing = !previewIsEditing;
+  if (previewIsEditing) {
+    inpPreviewEditor.value = inpPreview.textContent ?? generateInp();
+    inpPreview.style.display = "none";
+    inpPreviewEditor.style.display = "block";
+    inpPreviewEditor.focus();
+    editPreviewButton.textContent = "Done editing";
+  } else {
+    inpPreview.textContent = inpPreviewEditor.value;
+    inpPreview.style.display = "";
+    inpPreviewEditor.style.display = "none";
+    editPreviewButton.textContent = "Edit input";
+  }
+});
+function syncFieldStates(): void {
+  const usesFunctional = ["dft", "tddft", "tda", "sf", "mrsf"].includes(theorySel.value);
+  functionalSel.disabled = !usesFunctional;
+  functionalCustom.disabled = !usesFunctional || functionalSel.value !== "__custom__";
+  basisCustom.disabled = basisSel.value !== "__custom__";
+
+  const analyticHessian = !theorySel.disabled &&
+    (theorySel.value === "hf" || theorySel.value === "dft");
+  if (!analyticHessian) hessTypeSel.value = "numerical";
+  hessTypeSel.disabled = !analyticHessian;
+  hessTypeHint.textContent = analyticHessian
+    ? "Analytical is available for the ground state; numerical remains selectable."
+    : "Analytical Hessian is unavailable for this theory; numerical is required.";
+}
+
+for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCustom", "charge", "mult",
+                  "nstate", "targetState", "meciA", "meciB", "ektIp", "ektEa", "hessType"]) {
   $<HTMLElement>(id).addEventListener("input", () => {
     syncFieldStates();
     updateInpPreview();
@@ -583,7 +669,9 @@ for (const id of ["theory", "functional", "basis", "basisCustom", "charge", "mul
 }
 
 $<HTMLButtonElement>("generate").addEventListener("click", () => {
-  $<HTMLTextAreaElement>("input").value = generateInp();
+  $<HTMLTextAreaElement>("input").value = previewInput();
+  const name = projectName.value.trim() || "input";
+  $<HTMLInputElement>("inputName").value = `${name}.oqp`;
   showTab("run");
 });
 
@@ -591,34 +679,69 @@ $<HTMLButtonElement>("generate").addEventListener("click", () => {
 const runStatus = $<HTMLSpanElement>("runStatus");
 const runLog = $<HTMLPreElement>("runLog");
 const runnerSelect = $<HTMLSelectElement>("runner");
+const runButton = $<HTMLButtonElement>("runBtn");
+const RUNNER_LABELS: Record<string, string> = {
+  local: "OpenQP (local)",
+  bundled: "OpenQP (bundled)",
+  wsl: "OpenQP (WSL)",
+};
+
+function runnerLabel(name: string, version?: string): string {
+  const label = RUNNER_LABELS[name] ?? name;
+  return version ? `${label} v${version}` : label;
+}
 
 async function loadRunners(): Promise<void> {
   const runners: Record<string, boolean> = await (await fetch("/api/runners")).json();
   runnerSelect.innerHTML = "";
+  const prompt = document.createElement("option");
+  prompt.value = "";
+  prompt.textContent = "Choose OpenQP runner…";
+  prompt.selected = true;
+  prompt.disabled = true;
+  runnerSelect.appendChild(prompt);
   for (const [name, available] of Object.entries(runners)) {
     const opt = document.createElement("option");
     opt.value = name;
-    opt.textContent = available ? name : `${name} (unavailable)`;
+    const label = runnerLabel(name);
+    opt.textContent = available ? label : `${label} (unavailable)`;
     opt.disabled = !available;
     runnerSelect.appendChild(opt);
   }
-  const first = Object.entries(runners).find(([, ok]) => ok)?.[0];
-  if (first) runnerSelect.value = first;
+  runButton.disabled = true;
+  runStatus.textContent = "Choose an OpenQP runner";
   const info = $<HTMLSpanElement>("runnersInfo");
-  info.textContent =
-    "runners: " + Object.entries(runners).map(([n, ok]) => `${n} ${ok ? "✓" : "✗"}`).join(" · ");
-  // Say which openqp was found: "local ✓" is not much use without the path,
-  // and "local ✗" needs to say where the app looked.
+  info.textContent = "runners: " + Object.entries(runners)
+    .map(([name, ok]) => `${runnerLabel(name)} ${ok ? "✓" : "✗"}`)
+    .join(" · ");
   try {
     const detail = await (await fetch("/api/runners/detail")).json();
-    info.title = detail.openqp
-      ? `native openqp: ${detail.openqp}`
-      : `no openqp on PATH — searched:\n${(detail.path_entries ?? []).join("\n")}`;
-    if (detail.openqp) info.textContent += `  (${detail.openqp})`;
+    const versions: Record<string, string | undefined> = detail.versions ?? {};
+    for (const [name, available] of Object.entries(runners)) {
+      const option = runnerSelect.querySelector<HTMLOptionElement>(`option[value="${name}"]`);
+      if (option) option.textContent = available
+        ? runnerLabel(name, versions[name])
+        : `${runnerLabel(name, versions[name])} (unavailable)`;
+    }
+    info.textContent = "runners: " + Object.entries(runners)
+      .map(([name, ok]) => `${runnerLabel(name, versions[name])} ${ok ? "✓" : "✗"}`)
+      .join(" · ");
+    const locations = [
+      detail.openqp && `local: ${detail.openqp}`,
+      detail.bundled_openqp && `bundled: ${detail.bundled_openqp}`,
+    ].filter(Boolean);
+    info.title = locations.length
+      ? locations.join("\n")
+      : `no local OpenQP on PATH — searched:\n${(detail.path_entries ?? []).join("\n")}`;
   } catch {
     // The footer is decoration; a missing detail endpoint is not worth a fuss.
   }
 }
+
+runnerSelect.addEventListener("change", () => {
+  runButton.disabled = !runnerSelect.value;
+  runStatus.textContent = runnerSelect.value ? "" : "Choose an OpenQP runner";
+});
 
 async function pollJob(jobId: string): Promise<void> {
   const infoResponse = await fetch(`/api/jobs/${jobId}`);
@@ -640,14 +763,20 @@ async function pollJob(jobId: string): Promise<void> {
   }
 }
 
-$<HTMLButtonElement>("runBtn").addEventListener("click", async () => {
+runButton.addEventListener("click", async () => {
+  if (!runnerSelect.value) {
+    runStatus.textContent = "Choose an OpenQP runner";
+    return;
+  }
   runStatus.textContent = "submitting…";
   const res = await fetch("/api/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       input_text: $<HTMLTextAreaElement>("input").value,
-      runner: runnerSelect.value || "local",
+      input_name: $<HTMLInputElement>("inputName").value,
+      name: projectName.value.trim() || "job",
+      runner: runnerSelect.value,
     }),
   });
   if (!res.ok) {
@@ -663,7 +792,7 @@ $<HTMLButtonElement>("runBtn").addEventListener("click", async () => {
 let selectedJob = "";
 
 async function refreshJobs(): Promise<void> {
-  const jobs: { id: string; runner: string; status: string }[] =
+  const jobs: { id: string; name: string; runner: string; status: string }[] =
     await (await fetch("/api/jobs")).json();
   const body = $<HTMLTableSectionElement>("jobsBody");
   body.innerHTML = "";
@@ -671,7 +800,7 @@ async function refreshJobs(): Promise<void> {
     const tr = document.createElement("tr");
     if (job.id === selectedJob) tr.className = "sel";
     tr.innerHTML =
-      `<td>${job.id}</td><td>${job.runner}</td>` +
+      `<td>${job.name}</td><td>${job.runner}</td>` +
       `<td><span class="badge ${job.status}">${job.status}</span></td>`;
     tr.addEventListener("click", () => selectJob(job.id));
     body.appendChild(tr);
@@ -707,7 +836,7 @@ importFiles.addEventListener("change", async () => {
       return;
     }
     const info = await res.json();
-    importStatus.textContent = `imported as ${info.id}`;
+    importStatus.textContent = `imported as ${info.name}`;
     showTab("analysis");
     await refreshJobs();
     await selectJob(info.id);
@@ -784,6 +913,7 @@ async function loadSummary(jobId: string): Promise<void> {
 const resultFrame = $<HTMLIFrameElement>("resultFrame");
 const orbitalCard = $<HTMLDivElement>("orbitalCard");
 const orbitalSel = $<HTMLSelectElement>("orbitalSel");
+const orbitalReset = $<HTMLButtonElement>("orbitalReset");
 const isoRange = $<HTMLInputElement>("isoRange");
 const modeCard = $<HTMLDivElement>("modeCard");
 const modeSel = $<HTMLSelectElement>("modeSel");
@@ -826,7 +956,6 @@ $<HTMLInputElement>("resultFrameRange").addEventListener("input", (event) => {
 
 function hideResultPanels(): void {
   orbitalCard.style.display = "none";
-  $<HTMLDivElement>("levelCard").style.display = "none";
   modeCard.style.display = "none";
   $<HTMLDivElement>("resultFrameCard").style.display = "none";
   currentMolden = null;
@@ -849,7 +978,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       fetch(`${base}/modes`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
     if (orbitals?.orbitals?.length) {
-      orbitalSel.innerHTML = "";
+      orbitalSel.innerHTML = '<option value="">Choose molecular orbital…</option>';
       for (const o of orbitals.orbitals) {
         const opt = document.createElement("option");
         opt.value = String(o.index);
@@ -857,12 +986,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
         opt.textContent = `MO ${o.index}  E=${o.energy.toFixed(4)} Ha${occ} ${o.spin}`;
         orbitalSel.appendChild(opt);
       }
-      const homo = [...orbitals.orbitals].reverse()
-        .find((o: { occupancy: number | null }) => (o.occupancy ?? 0) > 1e-6);
-      if (homo) orbitalSel.value = String(homo.index);
       orbitalCard.style.display = "";
-      drawLevels(orbitals.orbitals);
-      showOrbital();
     }
     if (modes?.modes?.length) {
       modeSel.innerHTML = "";
@@ -925,6 +1049,7 @@ function showOrbital(): void {
   if (!currentMolden) return;
   pushOrbitalStyle();
   $<HTMLDivElement>("orbitalPick").style.display = mapKind.value === "mo" ? "" : "none";
+  if (mapKind.value === "mo" && !orbitalSel.value) return;
   const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
   const iso = +isoRange.value;
   fetch(`${base}/geom.xyz`)
@@ -939,6 +1064,14 @@ function showOrbital(): void {
     );
 }
 orbitalSel.addEventListener("change", showOrbital);
+orbitalReset.addEventListener("click", () => {
+  if (!currentMolden) return;
+  orbitalSel.value = "";
+  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
+  fetch(`${base}/geom.xyz`)
+    .then((response) => response.text())
+    .then((xyz) => pushToResultViewer({ type: "oqp-structure", xyz }));
+});
 isoRange.addEventListener("change", showOrbital);
 mapKind.addEventListener("change", () => {
   // Each field has its own natural contour, so move the slider with it.
@@ -1047,15 +1180,18 @@ function renderSummary(data: Summary): void {
   }
 
   if (data.states.length > 1) {
-    const head = "<tr><th>State</th><th>ΔE (eV)</th><th>λ (nm)</th><th>f</th></tr>";
-    const body = data.states.slice(1).map((state) =>
+    const s0 = data.states.find((state) => state.index === 0);
+    const head = "<tr><th>State</th><th>E (Ha)</th><th>ΔE from S0 (eV)</th><th>λ (nm)</th><th>f</th></tr>";
+    const body = data.states.map((state) =>
       `<tr><td class="k">S${state.index}</td>` +
+      `<td class="v">${state.total.toFixed(8)}</td>` +
       `<td class="v">${state.excitation_ev.toFixed(3)}</td>` +
       `<td class="v">${state.excitation_nm ? state.excitation_nm.toFixed(1) : "—"}</td>` +
       `<td class="v">${state.oscillator != null ? state.oscillator.toFixed(4) : "—"}</td></tr>`,
     ).join("");
     parts.push(`<div class="sum-title">Excited states</div>` +
       `<table class="sum">${head}${body}</table>` +
+      (s0 ? `<div class="hint">Reference energy: S0 = ${s0.total.toFixed(8)} Ha</div>` : "") +
       (data.has_oscillators ? "" :
         '<div class="hint">the output carries no oscillator strengths</div>'));
   }
@@ -1121,6 +1257,7 @@ function buildSpectrumList(data: Summary): void {
     option.textContent = entry.label;
     specKind.appendChild(option);
   }
+  if (data.has_states) specKind.value = "absorption";
   $<HTMLDivElement>("spectrumCard").style.display = usable.length ? "" : "none";
   if (usable.length) syncSpectrumControls();
 }
@@ -1270,70 +1407,6 @@ $<HTMLButtonElement>("specCsv").addEventListener("click", () => {
     .join("\n");
   download(`${specKind.value}-spectrum.csv`, `${header}${sticks}\n${curve}\n`);
 });
-
-// ---------- orbital energy level diagram ----------
-// The picture GaussView and IQmol show beside the orbitals: occupied levels
-// below the gap, virtuals above, the HOMA-LUMO gap read at a glance.
-type LevelOrbital = { index: number; energy: number; occupancy: number | null; spin: string };
-
-function drawLevels(orbitals: LevelOrbital[]): void {
-  const card = $<HTMLDivElement>("levelCard");
-  const plot = $<HTMLDivElement>("levelPlot");
-  if (orbitals.length < 2) {
-    card.style.display = "none";
-    return;
-  }
-  // Only the frontier region is legible: a core level at -20 Ha would squash
-  // the valence levels and the gap into a single line.
-  const homoAt = orbitals.reduce(
-    (best, o, i) => ((o.occupancy ?? 0) > 1e-6 ? i : best), 0);
-  const homoEnergy = orbitals[homoAt].energy;
-  const window = orbitals.slice(Math.max(0, homoAt - 9), homoAt + 10);
-  const shown = window.filter((o) => Math.abs(o.energy - homoEnergy) <= 1.5);
-  const hidden = orbitals.length - shown.length;
-  const w = 300, h = 260, pad = 26;
-  const energies = shown.map((o) => o.energy);
-  const lo = Math.min(...energies), hi = Math.max(...energies);
-  const sy = (e: number) => h - pad - ((e - lo) / (hi - lo || 1)) * (h - 2 * pad);
-
-  const lines = shown.map((orbital) => {
-    const y = sy(orbital.energy).toFixed(1);
-    const occupied = (orbital.occupancy ?? 0) > 1e-6;
-    const x1 = occupied ? 60 : 160, x2 = occupied ? 140 : 240;
-    return `<line class="level-line" data-mo="${orbital.index}" x1="${x1}" y1="${y}" ` +
-      `x2="${x2}" y2="${y}" stroke="${occupied ? "var(--accent)" : "var(--text-dim)"}" ` +
-      `stroke-width="2.5"><title>MO ${orbital.index}  ${orbital.energy.toFixed(4)} Ha` +
-      `${occupied ? `  occ=${orbital.occupancy}` : ""}</title></line>`;
-  }).join("");
-
-  plot.innerHTML =
-    `<svg viewBox="0 0 ${w} ${h}" width="100%">` +
-    `<text x="100" y="14" fill="var(--text-dim)" font-size="11" text-anchor="middle">occupied</text>` +
-    `<text x="200" y="14" fill="var(--text-dim)" font-size="11" text-anchor="middle">virtual</text>` +
-    lines +
-    `<text x="52" y="${(sy(hi) + 4).toFixed(1)}" fill="var(--text-dim)" font-size="10" ` +
-    `text-anchor="end">${hi.toFixed(2)}</text>` +
-    `<text x="52" y="${(sy(lo) + 4).toFixed(1)}" fill="var(--text-dim)" font-size="10" ` +
-    `text-anchor="end">${lo.toFixed(2)} Ha</text>` +
-    `</svg>` +
-    (hidden
-      ? `<div class="hint">${hidden} level(s) outside ±1.5 Ha of the HOMO not shown</div>`
-      : "");
-  const lumo = orbitals[homoAt + 1];
-  if (lumo) {
-    const gap = (lumo.energy - homoEnergy) * 27.211386;
-    plot.insertAdjacentHTML("beforeend",
-      `<div class="hint">HOMO–LUMO gap ${gap.toFixed(2)} eV</div>`);
-  }
-  plot.querySelectorAll<SVGLineElement>(".level-line").forEach((line) => {
-    line.addEventListener("click", () => {
-      mapKind.value = "mo";
-      orbitalSel.value = line.dataset.mo!;
-      showOrbital();
-    });
-  });
-  card.style.display = "";
-}
 
 // ---------- measurements ----------
 // The viewer reports what the user clicked; both tabs show the read-out.
@@ -1715,7 +1788,7 @@ async function installEngine(): Promise<void> {
     if (state.status === "downloading") {
       menuNote.textContent = `downloading the engine… ${state.percent}% (${state.detail})`;
     } else if (state.status === "ready") {
-      menuNote.textContent = "the engine is installed — the local runner is ready";
+      menuNote.textContent = "the engine is installed — OpenQP is ready";
       await loadRunners();
       return;
     } else if (state.status === "failed") {
@@ -1816,7 +1889,7 @@ selectWorkflow(WORKFLOWS[0]);
 $<HTMLSpanElement>("copyright").textContent = COPYRIGHT;
 fetch("/api/health")
   .then((r) => r.json())
-  .then((h) => { $<HTMLSpanElement>("health").textContent = `backend: v${h.version} ✓`; })
-  .catch(() => { $<HTMLSpanElement>("health").textContent = "backend: not reachable (start it on port 8814)"; });
+  .then((h) => { $<HTMLSpanElement>("health").textContent = `OQP Studio engine: v${h.version} ✓`; })
+  .catch(() => { $<HTMLSpanElement>("health").textContent = "OQP Studio engine: unavailable"; });
 loadRunners().catch(() => {});
 updatePreview().catch(() => {});

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from .input_files import SUPPORTED_INPUT_SUFFIXES, calculation_log, find_input_file
 from .runners import get_runner
 
 
@@ -34,6 +35,7 @@ class JobRequest(BaseModel):
     input_text: str
     runner: str = "local"
     name: str = "job"
+    input_name: str | None = None
 
 
 class JobInfo(BaseModel):
@@ -103,8 +105,7 @@ class JobManager:
         job_id = uuid.uuid4().hex[:12]
         job_dir = JOBS_ROOT / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
-        # Sectioned legacy input starts with a [section]; otherwise .oqp route style.
-        input_name = "input.inp" if req.input_text.lstrip().startswith("[") else "input.oqp"
+        input_name = self._input_name(req)
         (job_dir / input_name).write_text(req.input_text)
         info = JobInfo(
             id=job_id,
@@ -117,6 +118,20 @@ class JobManager:
             self._jobs[job_id] = info
         threading.Thread(target=self._run, args=(job_id,), daemon=True).start()
         return info
+
+    @staticmethod
+    def _input_name(req: JobRequest) -> str:
+        """Choose a default input name or validate the name supplied by the UI."""
+        if not req.input_name or not req.input_name.strip():
+            # Sectioned legacy input starts with a [section]; otherwise .oqp route style.
+            return "input.inp" if req.input_text.lstrip().startswith("[") else "input.oqp"
+        supplied = req.input_name.strip()
+        name = Path(supplied).name
+        if name != supplied or name.startswith(".") or name in {"", ".", ".."}:
+            raise ValueError("input file name must not contain a path")
+        if Path(name).suffix.lower() not in SUPPORTED_INPUT_SUFFIXES:
+            raise ValueError("input file name must end in .oqp or .inp")
+        return name
 
     def adopt(self, name: str, files: list[tuple[str, bytes]]) -> JobInfo:
         """Register result files computed elsewhere as a job of their own.
@@ -206,8 +221,22 @@ class JobManager:
         return candidate
 
     def log_tail(self, job_id: str, max_bytes: int = 65536) -> str:
-        log_file = JOBS_ROOT / job_id / "job.log"
-        if not log_file.exists():
+        job_dir = JOBS_ROOT / job_id
+        # job.log is the runner process's stdout/stderr capture. OpenQP writes
+        # its actual calculation record separately, so show that record when
+        # it has appeared rather than the launcher transcript.
+        input_file = find_input_file(job_dir)
+        candidates = [calculation_log(input_file)]
+        candidates.extend(
+            sorted(
+                path for suffix in ("*.log", "*.out")
+                for path in job_dir.glob(suffix)
+                if path not in {job_dir / "job.log", calculation_log(input_file)}
+            )
+        )
+        candidates.append(job_dir / "job.log")
+        log_file = next((path for path in candidates if path.is_file()), None)
+        if log_file is None:
             return ""
         data = log_file.read_bytes()
         return data[-max_bytes:].decode(errors="replace")

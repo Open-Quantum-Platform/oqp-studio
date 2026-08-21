@@ -359,12 +359,17 @@ def spectrum(summary: dict, kind: str, *, shape: str = "lorentzian",
         [1.0 if f is None else f for f in strengths],
         fwhm_ev=fwhm or 0.3, shape=shape, eta=eta,
     )
+    # The band shape is broadened on its linear energy grid, but electronic
+    # spectra are conventionally read on the derived wavelength axis.
+    data["x"] = data.pop("x_nm")
+    for stick in data["sticks"]:
+        stick["position"] = stick.pop("position_nm")
     data.update({
         "available": True,
         "title": title,
-        "x_label": "Energy (eV)",
+        "x_label": "Wavelength (nm)",
         "y_label": "ε (L mol⁻¹ cm⁻¹)" if not estimated else "Intensity (arb. units)",
-        "reverse_x": False,
+        "reverse_x": True,
         "fwhm": fwhm or 0.3,
         "shape": shape,
         # Say so rather than passing unit sticks off as intensities.

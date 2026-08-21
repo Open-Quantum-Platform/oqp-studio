@@ -14,10 +14,67 @@ def test_health():
     assert res.json()["status"] == "ok"
 
 
+def test_live_log_prefers_the_openqp_calculation_log(tmp_path, monkeypatch):
+    """The Execution panel must show OpenQP's record, not launcher stdout."""
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    job_dir = tmp_path / "calculation"
+    job_dir.mkdir()
+    (job_dir / "input.oqp").write_text("hf/sto-3g\nenergy\n")
+    (job_dir / "job.log").write_text("launcher progress\n")
+    (job_dir / "input.log").write_text("TOTAL energy = -76.01074651\n")
+
+    assert jobs.manager.log_tail("calculation") == "TOTAL energy = -76.01074651\n"
+
+
+def test_custom_input_name_controls_the_calculation_log(tmp_path, monkeypatch):
+    """The record follows the selected input name, not a fixed oqp.log name."""
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    job_dir = tmp_path / "calculation"
+    job_dir.mkdir()
+    (job_dir / "water.oqp").write_text("hf/sto-3g\nenergy\n")
+    (job_dir / "water.log").write_text("TOTAL energy = -76.01074651\n")
+    (job_dir / "job.log").write_text("launcher progress\n")
+
+    assert jobs.manager.log_tail("calculation") == "TOTAL energy = -76.01074651\n"
+
+
+def test_custom_input_name_is_saved(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    res = client.post(
+        "/api/jobs",
+        json={
+            "input_text": "hf/sto-3g\nenergy\n",
+            "input_name": "water.oqp",
+            "name": "water",
+            "runner": "local",
+        },
+    )
+    assert res.status_code == 200
+    assert res.json()["name"] == "water"
+    names = {f["name"] for f in client.get(f"/api/jobs/{res.json()['id']}/files").json()}
+    assert "water.oqp" in names
+
+
 def test_runners_listed():
     res = client.get("/api/runners")
     assert res.status_code == 200
-    assert set(res.json()) >= {"pyoqp", "local", "wsl"}
+    assert set(res.json()) >= {"local", "bundled", "wsl"}
+
+
+def test_bundled_engine_version_is_read_from_its_readme(tmp_path):
+    from oqp_studio import engine
+
+    executable = tmp_path / engine.EXECUTABLE
+    executable.write_text("#!/bin/sh\n")
+    (tmp_path / "README.txt").write_text("OpenQP version : 1.3.1\n")
+
+    assert engine.version(str(executable)) == "1.3.1"
 
 
 def test_submit_without_openqp_fails_gracefully(tmp_path, monkeypatch):

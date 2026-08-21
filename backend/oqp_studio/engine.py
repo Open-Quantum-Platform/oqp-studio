@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import shutil
+import subprocess
 import stat
 import sys
 import tarfile
@@ -28,6 +30,8 @@ from pathlib import Path
 from . import network
 
 EXECUTABLE = "openqp.exe" if os.name == "nt" else "openqp"
+_VERSION_LINE = re.compile(r"^OpenQP version\s*:\s*(.+)$", re.MULTILINE)
+_versions: dict[Path, str | None] = {}
 
 
 def data_dir() -> Path:
@@ -149,6 +153,61 @@ def locate() -> str | None:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return str(candidate)
     return None
+
+
+def bundled_or_downloaded() -> str | None:
+    """The engine managed by Studio, deliberately excluding PATH.
+
+    This keeps the bundled-runner choice meaningful when a different OpenQP
+    command is also installed on the computer.
+    """
+    for directory in (bundled_dir(), data_dir()):
+        if directory is None:
+            continue
+        candidate = directory / EXECUTABLE
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def version(command: str | None) -> str | None:
+    """Best-effort OpenQP version for a specific executable.
+
+    The standalone engine records its version in README.txt. A pip-installed
+    command is a Python script, so its interpreter can report the OpenQP
+    distribution metadata. The executable has no --version flag.
+    """
+    if not command:
+        return None
+    path = Path(command).resolve()
+    if path in _versions:
+        return _versions[path]
+    found: str | None = None
+    readme = path.parent / "README.txt"
+    try:
+        match = _VERSION_LINE.search(readme.read_text(errors="replace"))
+        if match:
+            found = match.group(1).strip()
+    except OSError:
+        pass
+    if found is None:
+        try:
+            first_line = path.read_text(errors="replace").splitlines()[0]
+            if first_line.startswith("#!"):
+                interpreter = first_line[2:].strip().split()[0]
+                result = subprocess.run(
+                    [interpreter, "-c", "from importlib.metadata import version; print(version('OpenQP'))"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    check=False,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    found = result.stdout.strip().splitlines()[0]
+        except (OSError, IndexError, subprocess.SubprocessError):
+            pass
+    _versions[path] = found
+    return found
 
 
 def _source(found: str | None) -> str:

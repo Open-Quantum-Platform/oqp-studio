@@ -2,10 +2,10 @@
 
 Usage: python -m oqp_studio.pyoqp_worker <job_dir>
 
-Reads <job_dir>/input.inp, runs it with oqp.pyoqp.Runner (log appended by the
-parent to job.log via stdout), and writes a JSON summary of runner.results()
-to <job_dir>/results.json. Exit code 0 only if the calculation completed and
-the summary was written.
+Reads the job's .oqp or .inp input, runs it with oqp.pyoqp.Runner, and writes
+the calculation record next to that input (for example, input.log). The parent
+also captures launcher stdout/stderr in job.log. A JSON summary of
+runner.results() is written to <job_dir>/results.json.
 """
 
 from __future__ import annotations
@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+
+from .input_files import calculation_log, find_input_file
 
 
 def _jsonable(value):
@@ -31,17 +33,14 @@ def _jsonable(value):
 
 def main() -> int:
     job_dir = Path(sys.argv[1]).resolve()
-    input_file = next(
-        (f for name in ("input.oqp", "input.inp") if (f := job_dir / name).exists()),
-        job_dir / "input.oqp",
-    )
+    input_file = find_input_file(job_dir)
 
     from oqp.pyoqp import Runner  # deferred: only the worker needs OpenQP
 
     runner = Runner(
-        project=job_dir.name,
+        project=input_file.stem,
         input_file=str(input_file),
-        log=str(job_dir / "oqp.log"),
+        log=str(calculation_log(input_file)),
     )
     runner.run()
 
