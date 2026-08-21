@@ -456,20 +456,41 @@ interface Workflow {
   key: string;
   title: string;
   desc: string;
-  mrsfOnly?: boolean;   // enforces the MRSF-TDDFT route
+  theories: string[];
   defaultTheory?: string;
 }
 
+const ALL_THEORIES = [
+  "hf", "dft", "mp2", "ccsd", "ccsd_t", "fci", "casci", "casscf", "sa-casscf",
+  "caspt2", "ms-caspt2", "xms-caspt2", "nevpt2", "sc-nevpt2", "mrmp2", "mcqdpt2", "xmcqdpt2",
+  "tddft", "tda", "sf", "mrsf", "umrsf",
+];
+const DFT_RESPONSE = ["tddft", "tda", "sf", "mrsf", "umrsf"];
+const GRADIENT_THEORIES = ["hf", "dft", "mp2", ...DFT_RESPONSE, "casscf", "sa-casscf", "caspt2", "ms-caspt2", "xms-caspt2", "nevpt2", "sc-nevpt2"];
+
 const WORKFLOWS: Workflow[] = [
-  { key: "energy", title: "Single-point energy", desc: "HF / DFT / MP2 / MRSF energy at the given geometry", defaultTheory: "dft" },
-  { key: "opt", title: "Geometry optimization", desc: "Minimize the ground- or excited-state structure", defaultTheory: "dft" },
-  { key: "hess", title: "Frequencies (Hessian)", desc: "Vibrational frequencies, IR; thermochemistry", defaultTheory: "dft" },
-  { key: "abs", title: "Absorption spectrum", desc: "MRSF-TDDFT vertical excitation energies", mrsfOnly: true },
-  { key: "exgrad", title: "Excited-state gradient", desc: "MRSF-TDDFT gradient of a chosen state", mrsfOnly: true },
-  { key: "exopt", title: "Excited-state optimization", desc: "Optimize S1 or another MRSF state", mrsfOnly: true },
-  { key: "meci", title: "MECI search", desc: "Minimum-energy conical intersection between two states", mrsfOnly: true },
-  { key: "soc", title: "Spin–orbit coupling", desc: "MRSF-TDDFT SOC between singlets and triplets", mrsfOnly: true },
-  { key: "ekt", title: "Ionization / EA (EKT)", desc: "MRSF extended-Koopmans IP and EA with Dyson orbitals", mrsfOnly: true },
+  { key: "energy", title: "Single-point energy", desc: "Electronic energy at the supplied geometry", theories: ALL_THEORIES, defaultTheory: "dft" },
+  { key: "grad", title: "Energy gradient", desc: "Ground- or state-specific gradient", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
+  { key: "opt", title: "Geometry optimization", desc: "Minimum on a ground or excited-state surface", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
+  { key: "hess", title: "Frequencies (Hessian)", desc: "Vibrational frequencies, IR, and thermochemistry", theories: ["hf", "dft", ...DFT_RESPONSE], defaultTheory: "dft" },
+  { key: "prop", title: "Molecular properties", desc: "Population, multipoles, and state properties", theories: ["hf", "dft", "mrsf", "umrsf"], defaultTheory: "dft" },
+  { key: "nmr", title: "NMR shielding", desc: "Ground-state NMR properties", theories: ["hf", "dft"], defaultTheory: "dft" },
+  { key: "pcm", title: "PCM solvation", desc: "ddX reference-SCF energy in a dielectric continuum", theories: ["hf", "dft"], defaultTheory: "hf" },
+  { key: "abs", title: "Vertical excited states", desc: "Excitation energies and oscillator strengths at the S0 geometry", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
+  { key: "exgrad", title: "Excited-state gradient", desc: "Gradient of a selected electronic state", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
+  { key: "exopt", title: "Excited-state optimization", desc: "Optimize a selected excited state", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
+  { key: "meci", title: "MECI search", desc: "Minimum-energy conical intersection between singlet states", theories: ["tddft", "tda", "sf", "mrsf", "umrsf", "casscf", "sa-casscf"], defaultTheory: "mrsf" },
+  { key: "mecp", title: "MECP search", desc: "Minimum-energy crossing between states of different spin", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "tci", title: "Three-state intersection", desc: "Three-state conical-intersection search", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "ts", title: "Transition-state search", desc: "First-order saddle point on a selected surface", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
+  { key: "irc", title: "Intrinsic reaction coordinate", desc: "Follow the path downhill from a transition state", theories: ["hf", "dft"], defaultTheory: "dft" },
+  { key: "mep", title: "Minimum-energy path", desc: "Trace a path from a selected state", theories: GRADIENT_THEORIES, defaultTheory: "mrsf" },
+  { key: "neb", title: "Nudged elastic band", desc: "Reaction path between reactant and product geometries", theories: ["hf", "dft"], defaultTheory: "dft" },
+  { key: "nac", title: "Nonadiabatic coupling", desc: "State-to-state nonadiabatic coupling", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "nacme", title: "NACME", desc: "Nonadiabatic coupling matrix element", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "soc", title: "Spin-orbit coupling", desc: "Spin-orbit coupling between singlets and triplets", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "ekt", title: "Ionization / EA (EKT)", desc: "MRSF extended-Koopmans IP and EA with Dyson orbitals", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "namd", title: "Nonadiabatic dynamics", desc: "Surface-hopping molecular dynamics", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
 ];
 
 let currentWf: Workflow = WORKFLOWS[0];
@@ -491,14 +512,14 @@ function selectWorkflow(wf: Workflow): void {
   document.querySelectorAll<HTMLElement>(".wf-opt").forEach((row) => {
     row.classList.toggle("on", (row.dataset.for ?? "").split(" ").includes(wf.key));
   });
-  if (wf.mrsfOnly) {
-    theorySel.value = "mrsf";
-    theorySel.disabled = true;
-  } else {
-    theorySel.disabled = false;
-    if (theorySel.value === "mrsf" || !theorySel.value) {
-      theorySel.value = wf.defaultTheory ?? "dft";
-    }
+  for (const option of Array.from(theorySel.options)) {
+    option.disabled = !wf.theories.includes(option.value);
+  }
+  if (!wf.theories.includes(theorySel.value)) {
+    theorySel.value = wf.defaultTheory ?? wf.theories[0];
+  }
+  if (wf.key === "hess" && ["hf", "dft"].includes(theorySel.value)) {
+    hessTypeSel.value = "analytical";
   }
   $<HTMLSpanElement>("wfLabel").textContent = `— ${wf.title}`;
   optionsCard.style.display = "";
@@ -543,16 +564,51 @@ function currentFunctional(): string {
     : functionalSel.value;
 }
 
+function fieldValue(id: string): string {
+  return $<HTMLInputElement | HTMLSelectElement>(id).value.trim();
+}
+
+function optionList(entries: [string, string][]): string {
+  return entries.filter(([, value]) => value !== "").map(([key, value]) => `${key}=${value}`).join(",");
+}
+
+function withOptions(driver: string, options: string): string {
+  if (!options) return driver;
+  const opening = driver.indexOf("(");
+  return opening >= 0 ? `${driver.slice(0, -1)},${options})` : `${driver}(${options})`;
+}
+
+function optimisationOptions(): string {
+  return optionList([
+    ["maxit", fieldValue("geomMaxit")],
+    ["rmsd_grad", fieldValue("rmsdGrad")],
+    ["max_grad", fieldValue("maxGrad")],
+    ["rmsd_step", fieldValue("rmsdStep")],
+    ["max_step", fieldValue("maxStep")],
+  ]);
+}
+
+function pcmInput(atoms: Atom[], charge: number, mult: number, theory: string, basis: string): string {
+  const reference = fieldValue("pcmReference");
+  const atomicNumber: Record<string, number> = { H: 1, He: 2, Li: 3, Be: 4, B: 5, C: 6, N: 7, O: 8, F: 9, Ne: 10, P: 15, S: 16, Cl: 17, Br: 35, I: 53 };
+  const lines = ["[input]", "system="];
+  for (const [el, x, y, z] of atoms) lines.push(`${atomicNumber[el] ?? el} ${x.toFixed(9)} ${y.toFixed(9)} ${z.toFixed(9)}`);
+  lines.push(`charge=${charge}`, "runtype=energy", `basis=${basis}`, `method=${theory}`, "", "[scf]", `multiplicity=${mult}`, `type=${reference}`, `maxit=${fieldValue("scfMaxit")}`, `conv=${fieldValue("scfConv")}`, "", "[pcm]", "enabled=true", "backend=ddx", "mode=reference_scf", `model=${fieldValue("pcmModel")}`, `epsilon=${fieldValue("pcmEpsilon")}`);
+  return lines.join("\n") + "\n";
+}
+
 // Generates concise .oqp input: ROUTE, one primary driver, globals, geometry.
 function generateInp(): string {
   const atoms = parseAtoms(xyzArea.value);
-  const theory = currentWf.mrsfOnly ? "mrsf" : theorySel.value;
+  const theory = theorySel.value;
   const charge = +$<HTMLInputElement>("charge").value || 0;
   const mult = +$<HTMLInputElement>("mult").value || 1;
   const nstate = +$<HTMLInputElement>("nstate").value || 3;
   const target = +$<HTMLInputElement>("targetState").value || 0;
   const basis = currentBasis();
   const functional = currentFunctional();
+
+  if (currentWf.key === "pcm") return pcmInput(atoms, charge, mult, theory, basis);
 
   const routes: Record<string, string> = {
     hf: `hf/${basis}`,
@@ -562,6 +618,7 @@ function generateInp(): string {
     tda: `tda(nstate=${nstate})/${functional}/${basis}`,
     sf: `sf(nstate=${nstate})/${functional}/${basis}`,
     mrsf: `mrsf(nstate=${nstate})/${functional}/${basis}`,
+    umrsf: `umrsf(nstate=${nstate})/${functional}/${basis}`,
     ccsd: `ccsd/${basis}`,
     ccsd_t: `ccsd_t/${basis}`,
     fci: `fci/${basis}`,
@@ -578,11 +635,12 @@ function generateInp(): string {
     xmcqdpt2: `xmcqdpt2/${basis}`,
   };
 
-  const usesStates = ["tddft", "tda", "sf", "mrsf"].includes(theory);
+  const usesStates = DFT_RESPONSE.includes(theory);
   const stateArg = usesStates && target > 0 ? `(S${target})` : "";
   let driver: string;
   switch (currentWf.key) {
     case "energy": driver = `energy${stateArg}`; break;
+    case "grad": driver = `grad${stateArg}`; break;
     case "opt": driver = `opt${stateArg}`; break;
     case "hess": {
       const hessState = stateArg ? `${stateArg.slice(0, -1)},` : "(";
@@ -598,6 +656,20 @@ function generateInp(): string {
       driver = `meci(S${Math.min(a, b)},S${Math.max(a, b)})`;
       break;
     }
+    case "mecp": driver = `mecp(${fieldValue("mecpA") || "S0"},${fieldValue("mecpB") || "T0"})`; break;
+    case "tci": driver = `tci(${fieldValue("tciA") || "S0"},${fieldValue("tciB") || "S1"},${fieldValue("tciC") || "S2"})`; break;
+    case "ts": driver = `ts${stateArg}`; break;
+    case "irc": driver = `irc${stateArg}`; break;
+    case "mep": driver = `mep(S${target || 1})`; break;
+    case "neb": {
+      const product = fieldValue("nebProduct");
+      driver = `neb(S${target || 0},${optionList([["maxit", fieldValue("geomMaxit")], ["product", product ? `\"${product}\"` : ""], ["nimage", fieldValue("nebImages")], ["spring", fieldValue("nebSpring")]])})`;
+      break;
+    }
+    case "prop": driver = `prop${stateArg}`; break;
+    case "nmr": driver = "nmr"; break;
+    case "nac": driver = `nac(${fieldValue("couplingA") || "S0"},${fieldValue("couplingB") || "S1"})`; break;
+    case "nacme": driver = `nacme(${fieldValue("couplingA") || "S0"},${fieldValue("couplingB") || "S1"})`; break;
     case "soc": driver = "soc"; break;
     case "ekt": {
       const opts = [];
@@ -606,10 +678,32 @@ function generateInp(): string {
       driver = `ekt(${opts.join(",") || "ip=true"})`;
       break;
     }
+    case "namd": driver = "namd(S0,nstep=100,dt=0.5)"; break;
     default: driver = "energy";
   }
 
   const lines: string[] = [routes[theory], driver];
+  const scfOptions = optionList([["maxit", fieldValue("scfMaxit")], ["conv", fieldValue("scfConv")]]);
+  if (scfOptions) lines.push(`scf(${scfOptions})`);
+  if (usesStates) {
+    const responseOptions = optionList([["maxit", fieldValue("responseMaxit")], ["resp_cutoff", fieldValue("responseCutoff")]]);
+    if (responseOptions) lines.push(`tdhf(${responseOptions})`);
+  }
+  if (["opt", "exopt", "ts", "mep"].includes(currentWf.key)) {
+    const opts = optimisationOptions();
+    lines[1] = withOptions(driver, opts);
+  }
+  if (["meci", "mecp", "tci"].includes(currentWf.key)) {
+    const crossing = optionList([
+      ["maxit", fieldValue("geomMaxit")], ["energy_shift", fieldValue("energyShift")],
+      ["energy_gap", fieldValue("energyGap")], ["rmsd_grad", fieldValue("rmsdGrad")],
+      ["max_grad", fieldValue("maxGrad")], ["rmsd_step", fieldValue("rmsdStep")],
+      ["max_step", fieldValue("maxStep")], ["trust", fieldValue("trustRadius")],
+    ]);
+    const algorithm = fieldValue("crossingAlgorithm");
+    const key = currentWf.key === "meci" ? "algorithm" : currentWf.key === "mecp" ? "mecp_search" : "algorithm";
+    lines[1] = withOptions(driver, `${key}=${algorithm}${crossing ? `,${crossing}` : ""}`);
+  }
   if (charge !== 0) lines.push(`charge=${charge}`);
   // MRSF selects its high-spin working reference automatically — no mult.
   if (mult !== 1 && theory !== "mrsf") lines.push(`mult=${mult}`);
@@ -650,7 +744,7 @@ editPreviewButton.addEventListener("click", () => {
   }
 });
 function syncFieldStates(): void {
-  const usesFunctional = ["dft", "tddft", "tda", "sf", "mrsf"].includes(theorySel.value);
+  const usesFunctional = ["dft", ...DFT_RESPONSE].includes(theorySel.value);
   functionalSel.disabled = !usesFunctional;
   functionalCustom.disabled = !usesFunctional || functionalSel.value !== "__custom__";
   basisCustom.disabled = basisSel.value !== "__custom__";
@@ -665,7 +759,11 @@ function syncFieldStates(): void {
 }
 
 for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCustom", "charge", "mult",
-                  "nstate", "targetState", "meciA", "meciB", "ektIp", "ektEa", "hessType"]) {
+                  "nstate", "targetState", "meciA", "meciB", "mecpA", "mecpB", "tciA", "tciB", "tciC",
+                  "couplingA", "couplingB", "nebProduct", "nebImages", "nebSpring", "pcmReference", "pcmModel",
+                  "pcmEpsilon", "ektIp", "ektEa", "hessType", "scfMaxit", "scfConv", "responseMaxit",
+                  "responseCutoff", "geomMaxit", "rmsdGrad", "maxGrad", "rmsdStep", "maxStep", "energyShift",
+                  "energyGap", "trustRadius", "crossingAlgorithm"]) {
   $<HTMLElement>(id).addEventListener("input", () => {
     syncFieldStates();
     updateInpPreview();
@@ -1377,9 +1475,9 @@ function renderSummary(data: Summary): void {
 const SPECTRA: { value: string; label: string; needs: "freq" | "states" }[] = [
   { value: "ir", label: "IR absorption", needs: "freq" },
   { value: "raman", label: "Raman", needs: "freq" },
-  { value: "absorption", label: "UV/Vis absorption", needs: "states" },
-  { value: "emission", label: "Emission (Kasha)", needs: "states" },
-  { value: "esa", label: "Excited-state absorption", needs: "states" },
+  { value: "absorption", label: "Absorption (S0 geometry)", needs: "states" },
+  { value: "emission", label: "Emission (excited-state geometry)", needs: "states" },
+  { value: "esa", label: "Excited-state absorption (excited-state geometry)", needs: "states" },
 ];
 
 const specKind = $<HTMLSelectElement>("specKind");

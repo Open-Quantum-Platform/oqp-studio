@@ -334,11 +334,11 @@ def spectrum(summary: dict, kind: str, *, shape: str = "lorentzian",
 
     if kind == "absorption":
         pairs = [(s["excitation_ev"], s.get("oscillator")) for s in states[1:]]
-        title = "Absorption"
+        title = "Absorption from S0"
     elif kind == "emission":
         chosen = next((s for s in states if s["index"] == state), states[1])
         pairs = [(chosen["excitation_ev"], chosen.get("oscillator"))]
-        title = f"Emission from state {chosen['index']}"
+        title = f"Emission from S{chosen['index']}"
     elif kind == "esa":
         base = next((s for s in states if s["index"] == state), states[1])
         pairs = [
@@ -364,11 +364,18 @@ def spectrum(summary: dict, kind: str, *, shape: str = "lorentzian",
     data["x"] = data.pop("x_nm")
     for stick in data["sticks"]:
         stick["position"] = stick.pop("position_nm")
+    peak = max(data["y"], default=0.0)
+    if peak > 0.0:
+        data["y"] = [value / peak for value in data["y"]]
+        stick_peak = max((stick["intensity"] for stick in data["sticks"]), default=0.0)
+        for stick in data["sticks"]:
+            if stick_peak > 0.0:
+                stick["intensity"] /= stick_peak
     data.update({
         "available": True,
         "title": title,
         "x_label": "Wavelength (nm)",
-        "y_label": "ε (L mol⁻¹ cm⁻¹)" if not estimated else "Intensity (arb. units)",
+        "y_label": "Normalized intensity",
         "reverse_x": True,
         "fwhm": fwhm or 0.3,
         "shape": shape,
