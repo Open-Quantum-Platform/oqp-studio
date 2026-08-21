@@ -1040,7 +1040,11 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       }
       if (scfGroup.children.length) orbitalSel.appendChild(scfGroup);
       if (dysonGroup.children.length) orbitalSel.appendChild(dysonGroup);
-      const hasDyson = dysonGroup.children.length > 0;
+      // IP/EA output carries a dedicated Dyson Molden file. Use that durable
+      // output contract as well as the parsed labels, so a partial orbital
+      // metadata response cannot hide the Dyson display mode.
+      const hasDyson = dysonGroup.children.length > 0 ||
+        moldenFiles.some((moldenName) => /dyson/i.test(moldenName));
       const dysonMapOption = $<HTMLOptionElement>("dysonMapKind");
       dysonMapOption.hidden = !hasDyson;
       dysonMapOption.disabled = !hasDyson;

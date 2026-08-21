@@ -27,6 +27,40 @@
     <script>
       const DARK_BG = 0x1b1e24;
 
+      // Mol* owns this iframe and therefore its volume loader uses the
+      // iframe's fetch. Route API reads through the parent Tauri webview's
+      // sidecar bridge just as the top-level UI does.
+      const parentInvoke = window.parent?.__TAURI__?.core?.invoke;
+      if (parentInvoke) {
+        const browserFetch = window.fetch.bind(window);
+        const decodeBase64 = (value) => {
+          const text = atob(value);
+          const bytes = new Uint8Array(text.length);
+          for (let i = 0; i < text.length; i += 1) bytes[i] = text.charCodeAt(i);
+          return bytes.buffer;
+        };
+        window.fetch = async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : input, window.location.href);
+          if (!url.pathname.startsWith("/api/")) return browserFetch(input, init);
+          const request = new Request(input, init);
+          const raw = request.method === "GET" || request.method === "HEAD"
+            ? ""
+            : btoa(String.fromCharCode(...new Uint8Array(await request.arrayBuffer())));
+          const response = await parentInvoke("backend_call", {
+            request: {
+              method: request.method,
+              path: url.pathname + url.search,
+              headers: Object.fromEntries(request.headers.entries()),
+              body: raw,
+            },
+          });
+          return new Response(decodeBase64(response.body), {
+            status: response.status,
+            headers: response.headers,
+          });
+        };
+      }
+
       function sameOriginHref(value) {
         if (!value) return null;
         const url = new URL(value, window.location.href);
