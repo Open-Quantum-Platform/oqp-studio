@@ -235,25 +235,41 @@
           return `data:text/plain;base64,${btoa(unescape(encodeURIComponent(xyz)))}`;
         }
 
-        function normalModeSpec(xyz, mode, amplitude, showArrows) {
+        let normalMode = null;
+        let normalModeTimer = null;
+        let normalModeFrame = 0;
+
+        function normalModeXyz(mode, amplitude, phase = 0) {
+          const factor = amplitude * Math.sin(phase);
+          const atoms = mode.atoms || [];
+          return `${atoms.length}\nnormal-mode geometry\n` + atoms.map((atom) => {
+            const displacement = atom.displacement || [0, 0, 0];
+            const position = atom.position.map((value, index) => value + factor * displacement[index]);
+            return `${atom.element} ${position.map((value) => value.toFixed(6)).join(" ")}`;
+          }).join("\n") + "\n";
+        }
+
+        function normalModeSpec(mode, amplitude, showArrows, phase = 0) {
           const arrows = showArrows ? (mode.atoms || []).map((atom) => {
             const start = atom.position;
             const displacement = atom.displacement || [0, 0, 0];
             const magnitude = Math.hypot(...displacement);
             if (magnitude < 1e-6) return null;
-            // The physical trajectory preserves the calculated displacement.
-            // Normalized display vectors stay legible when modes differ greatly
-            // in mass-weighted amplitude.
-            const scale = (1.25 * amplitude) / magnitude;
+            // Start outside the atom sphere; arrows beginning at a nucleus are
+            // hidden by the ball-and-stick representation.
+            const direction = displacement.map((value) => value / magnitude);
+            const offset = atom.element === "H" ? 0.38 : 0.65;
+            const length = Math.max(0.9, 1.7 * amplitude);
+            const arrowStart = start.map((value, index) => value + offset * direction[index]);
             return {
               kind: "primitive",
               params: {
                 kind: "arrow",
-                start,
-                end: start.map((value, index) => value + scale * displacement[index]),
-                tube_radius: 0.055,
+                start: arrowStart,
+                end: arrowStart.map((value, index) => value + length * direction[index]),
+                tube_radius: 0.075,
                 show_end_cap: true,
-                color: "orange",
+                color: "yellow",
               },
             };
           }).filter(Boolean) : [];
@@ -266,7 +282,7 @@
                 { kind: "canvas", params: { background_color: "#15191e" } },
                 {
                   kind: "download",
-                  params: { url: trajectoryDataUrl(xyz) },
+                  params: { url: trajectoryDataUrl(normalModeXyz(mode, amplitude, phase)) },
                   children: [{
                     kind: "parse",
                     params: { format: "xyz" },
@@ -282,29 +298,46 @@
                             params: { type: "ball_and_stick" },
                           }],
                         },
-                        ...(arrows.length ? [{
-                          kind: "primitives",
-                          params: { opacity: 0.95 },
-                          children: arrows,
-                        }] : []),
                       ],
                     }],
                   }],
                 },
+                ...(arrows.length ? [{
+                  kind: "primitives",
+                  params: { opacity: 1.0 },
+                  children: arrows,
+                }] : []),
               ],
             },
           };
         }
 
-        async function playNormalMode() {
-          const animation = viewer.plugin.managers.animation.animations.find(
-            (item) => item.name === "built-in.animate-model-index"
+        function stopNormalMode() {
+          if (normalModeTimer !== null) window.clearTimeout(normalModeTimer);
+          normalModeTimer = null;
+          viewer.plugin.managers.animation.stop();
+        }
+
+        async function drawNormalModeFrame(phase) {
+          if (!normalMode) return;
+          await viewer.plugin.clear();
+          await viewer.loadMvsData(
+            JSON.stringify(normalModeSpec(
+              normalMode.mode, normalMode.amplitude, normalMode.arrows, phase,
+            )),
+            "mvsj",
+            { keepCamera: true, doNotReportErrors: false },
           );
-          if (!animation) return;
-          await viewer.plugin.managers.animation.play(animation, {
-            mode: { name: "palindrome", params: {} },
-            duration: { name: "fixed", params: { durationInS: 2 } },
-          });
+        }
+
+        async function playNormalMode() {
+          if (!normalMode || normalModeTimer !== null) return;
+          const tick = async () => {
+            normalModeFrame = (normalModeFrame + 1) % 24;
+            await drawNormalModeFrame((2 * Math.PI * normalModeFrame) / 24);
+            normalModeTimer = window.setTimeout(tick, 110);
+          };
+          await tick();
         }
 
         // Orbital appearance, in the spirit of MacMolPlt and IQmol: a phase
@@ -485,17 +518,22 @@
           } else if (message.type === "oqp-normal-mode") {
             picked.length = 0;
             report();
-            await viewer.plugin.clear();
-            await viewer.loadMvsData(
-              JSON.stringify(normalModeSpec(message.xyz, message.mode, message.amplitude, message.arrows)),
-              "mvsj",
-              { keepCamera: true, doNotReportErrors: false },
-            );
+            stopNormalMode();
+            normalMode = { mode: message.mode, amplitude: message.amplitude, arrows: message.arrows };
+            normalModeFrame = 0;
+            await drawNormalModeFrame(0);
             if (message.playing) await playNormalMode();
           } else if (message.type === "oqp-normal-mode-play") {
             await playNormalMode();
           } else if (message.type === "oqp-normal-mode-pause") {
-            await viewer.plugin.managers.animation.stop();
+            stopNormalMode();
+          } else if (message.type === "oqp-normal-mode-reset") {
+            stopNormalMode();
+            normalMode = null;
+            picked.length = 0;
+            report();
+            await viewer.plugin.clear();
+            await drawStructure(message.xyz);
           } else if (message.type === "oqp-file") {
             await viewer.plugin.clear();
             await drawStructure(message.text, message.format);

@@ -1113,6 +1113,7 @@ const modeSel = $<HTMLSelectElement>("modeSel");
 const amplitudeRange = $<HTMLInputElement>("ampRange");
 const modePlay = $<HTMLButtonElement>("modePlay");
 const modePause = $<HTMLButtonElement>("modePause");
+const modeReset = $<HTMLButtonElement>("modeReset");
 const modeArrows = $<HTMLInputElement>("modeArrows");
 let currentMolden: { jobId: string; name: string } | null = null;
 type OrbitalSource = { name: string; index: number };
@@ -1373,24 +1374,28 @@ mapKind.addEventListener("change", () => {
   showOrbital();
 });
 
+function modeEquilibriumXyz(mode: { atoms: { element: string; position: number[] }[] }): string {
+  return `${mode.atoms.length}\nnormal-mode equilibrium geometry\n` + mode.atoms
+    .map((atom) => `${atom.element} ${atom.position.map((value) => value.toFixed(6)).join(" ")}`)
+    .join("\n") + "\n";
+}
+
 async function showMode(): Promise<void> {
   if (!currentMolden) return;
   const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
-  const query = `mode=${modeSel.value}&amplitude=${amplitudeRange.value}`;
-  const [trajectory, vectors] = await Promise.all([
-    fetch(`${base}/mode.xyz?${query}`),
-    fetch(`${base}/mode?mode=${modeSel.value}`),
-  ]);
-  if (!trajectory.ok || !vectors.ok) return;
+  const vectors = await fetch(`${base}/mode?mode=${modeSel.value}`);
+  if (!vectors.ok) return;
+  const mode = await vectors.json();
   pushToResultViewer({
     type: "oqp-normal-mode",
-    xyz: await trajectory.text(),
-    mode: await vectors.json(),
+    xyz: modeEquilibriumXyz(mode),
+    mode,
     amplitude: Number(amplitudeRange.value),
     arrows: modeArrows.checked,
-    playing: true,
+    playing: false,
   });
 }
+
 modeSel.addEventListener("change", showMode);
 amplitudeRange.addEventListener("change", showMode);
 modeArrows.addEventListener("change", showMode);
@@ -1398,6 +1403,13 @@ modePlay.addEventListener("click", () =>
   pushToResultViewer({ type: "oqp-normal-mode-play" }));
 modePause.addEventListener("click", () =>
   pushToResultViewer({ type: "oqp-normal-mode-pause" }));
+modeReset.addEventListener("click", async () => {
+  if (!currentMolden) return;
+  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
+  const response = await fetch(`${base}/geom.xyz`);
+  if (!response.ok) return;
+  pushToResultViewer({ type: "oqp-normal-mode-reset", xyz: await response.text() });
+});
 
 // ---------- results summary ----------
 type Summary = {
