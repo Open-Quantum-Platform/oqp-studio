@@ -133,3 +133,6 @@ for Windows, macOS (Apple Silicon and Intel), and Linux.
 
 Remaining: SSH/SLURM submission, style presets and high-resolution export,
 code signing (see above). See the design proposal for the full roadmap.
+
+Picking the work up: [docs/handoff.md](docs/handoff.md) says where the project
+stands, which problems are open and what has already been ruled out on each.
