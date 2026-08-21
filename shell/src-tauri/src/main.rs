@@ -78,10 +78,23 @@ fn main() {
             let matching = probe_version(requested).as_deref() == Some(env!("CARGO_PKG_VERSION"));
             let port = if matching { requested } else { free_port(requested) };
             if !matching {
+                // Where an installer that carries the compute engine put it.
+                // The backend cannot work this out reliably on its own: the
+                // resource directory sits next to the executable on Windows,
+                // in Contents/Resources on macOS, and under /usr/lib on Linux.
+                // Tauri knows, so it says so.
+                let mut env = std::collections::HashMap::new();
+                if let Ok(resources) = app.path().resource_dir() {
+                    env.insert(
+                        "OQP_STUDIO_RESOURCES".to_string(),
+                        resources.to_string_lossy().to_string(),
+                    );
+                }
                 let (_rx, child) = app
                     .shell()
                     .sidecar("oqp-studio-backend")?
                     .args(["--port", &port.to_string()])
+                    .envs(env)
                     .spawn()?;
                 *app.state::<Backend>().0.lock().unwrap() = Some(child);
             }

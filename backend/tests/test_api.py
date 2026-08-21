@@ -234,3 +234,55 @@ def test_an_import_cannot_write_outside_its_job_directory(tmp_path, monkeypatch)
     assert not (tmp_path / "escaped.log").exists()
     names = [f["name"] for f in client.get(f"/api/jobs/{res.json()['id']}/files").json()]
     assert names == ["escaped.log"]
+
+
+def test_an_installer_that_carries_the_engine_needs_no_download(tmp_path, monkeypatch):
+    """An all-in-one installer must just work: no download, no configuration.
+
+    The shell tells the backend where its resources went, because that
+    directory is in a different place on every platform.
+    """
+    import os
+    import stat
+
+    from oqp_studio import engine, environment
+
+    resources = tmp_path / "resources"
+    (resources / "engine").mkdir(parents=True)
+    executable = resources / "engine" / engine.EXECUTABLE
+    executable.write_text("#!/bin/sh\nexit 0\n")
+    executable.chmod(executable.stat().st_mode | stat.S_IEXEC)
+
+    monkeypatch.setenv("OQP_STUDIO_RESOURCES", str(resources))
+    monkeypatch.setattr(engine, "data_dir", lambda: tmp_path / "unused")
+    # No engine of the user's own on PATH, so the bundled one is what is found.
+    monkeypatch.setattr(environment, "locate", lambda command: None)
+
+    assert engine.bundled_dir() == resources / "engine"
+    assert engine.locate() == str(executable)
+    assert engine.status()["source"] == "included with the installer"
+    assert os.access(executable, os.X_OK)
+
+
+def test_updating_an_all_in_one_install_keeps_the_engine(monkeypatch):
+    """The slim installer would replace the directory the engine lives in.
+
+    Someone who installed the all-in-one must be offered the all-in-one
+    again, or the update would silently leave them unable to compute.
+    """
+    from oqp_studio import engine, update
+
+    monkeypatch.setattr(update, "_platform_asset", lambda: ("windows-x64", "-setup.exe"))
+    assets = [
+        {"name": "OQP-Studio-0.2.0-windows-x64-setup.exe"},
+        {"name": "OQP-Studio-0.2.0-windows-x64-with-engine-setup.exe"},
+    ]
+
+    monkeypatch.setattr(engine, "bundled_dir", lambda: None)
+    assert update.pick_asset(assets)["name"].endswith("windows-x64-setup.exe")
+
+    monkeypatch.setattr(engine, "bundled_dir", lambda: object())
+    assert update.pick_asset(assets)["name"].endswith("with-engine-setup.exe")
+
+    # A release that published no all-in-one still updates the app.
+    assert update.pick_asset(assets[:1])["name"].endswith("windows-x64-setup.exe")

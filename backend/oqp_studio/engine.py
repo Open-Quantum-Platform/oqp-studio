@@ -58,10 +58,37 @@ def pick_asset(assets: list[dict]) -> dict | None:
     return None
 
 
-# Where an engine may already be, in the order worth trying: the copy this
-# app installed, then the places a user unpacks an archive by hand.
+def bundled_dir() -> Path | None:
+    """The engine an all-in-one installer shipped inside the app, if any.
+
+    The shell passes its resource directory in OQP_STUDIO_RESOURCES, because
+    that directory is somewhere different on every platform -- beside the
+    executable on Windows, Contents/Resources on macOS, /usr/lib elsewhere.
+    Falling back to the sidecar's own location covers a build that predates
+    the variable, and running the backend straight out of a source tree.
+    """
+    roots: list[Path] = []
+    declared = os.environ.get("OQP_STUDIO_RESOURCES")
+    if declared:
+        roots.append(Path(declared))
+    executable = Path(sys.executable).resolve().parent
+    roots += [executable, executable.parent / "Resources"]
+    for root in roots:
+        candidate = root / "engine"
+        if (candidate / EXECUTABLE).is_file():
+            return candidate
+    return None
+
+
+# Where an engine may already be, in the order worth trying: one the user
+# downloaded through the app (deliberately chosen, so it wins), the copy an
+# all-in-one installer shipped, then the places an archive gets unpacked by
+# hand.
 def search_paths() -> list[Path]:
     candidates = [data_dir()]
+    bundled = bundled_dir()
+    if bundled is not None:
+        candidates.append(bundled)
     home = Path.home()
     candidates += [
         home / "openqp",
@@ -90,11 +117,25 @@ def locate() -> str | None:
     return None
 
 
+def _source(found: str | None) -> str:
+    """Which of the three ways this engine got here, for the UI to show."""
+    if not found:
+        return ""
+    path = Path(found).resolve()
+    if path.parent == data_dir().resolve():
+        return "downloaded by this app"
+    bundled = bundled_dir()
+    if bundled is not None and path.parent == bundled.resolve():
+        return "included with the installer"
+    return "found on this machine"
+
+
 def status() -> dict:
     found = locate()
     return {
         "installed": bool(found),
         "path": found,
+        "source": _source(found),
         "install_dir": str(data_dir()),
         "archive": archive_suffix(),
         "supported": archive_suffix() is not None,

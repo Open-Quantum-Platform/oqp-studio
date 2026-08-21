@@ -37,9 +37,12 @@ docs/       architecture notes and development guides
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-On Windows, OpenQP runs through the WSL adapter until the native Windows
-build of the OpenQP core is available; the GUI itself is native on all
-three platforms.
+The compute engine is native on all three platforms, Windows included. Two
+installers are published for each: the plain one downloads the engine when you
+first ask for it, and the `-with-engine` one carries it, so a single download
+installs an application that computes with no network afterwards. The WSL and
+SSH adapters remain, for running against a cluster or an OpenQP you installed
+yourself.
 
 ## Install with pip
 

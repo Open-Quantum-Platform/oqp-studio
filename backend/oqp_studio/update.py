@@ -25,25 +25,47 @@ from . import network
 APP_NAME = "OQP Studio"
 
 
-def asset_suffix() -> str | None:
-    """The release asset this machine should install."""
+def _platform_asset() -> tuple[str, str] | None:
+    """This machine's release asset, as (platform token, file extension)."""
     if sys.platform == "darwin":
-        return ("macos-apple-silicon.app.tar.gz" if platform.machine() == "arm64"
-                else "macos-intel.app.tar.gz")
+        token = "macos-apple-silicon" if platform.machine() == "arm64" else "macos-intel"
+        return token, ".app.tar.gz"
     if os.name == "nt":
-        return "windows-x64-setup.exe"
+        return "windows-x64", "-setup.exe"
     if sys.platform.startswith("linux"):
-        return "linux-x86_64.AppImage"
+        return "linux-x86_64", ".AppImage"
     return None
 
 
-def pick_asset(assets: list[dict]) -> dict | None:
-    suffix = asset_suffix()
-    if not suffix:
+def asset_suffix(with_engine: bool = False) -> str | None:
+    """The release asset this machine should install."""
+    parts = _platform_asset()
+    if parts is None:
         return None
-    for asset in assets:
-        if str(asset.get("name", "")).endswith(suffix):
-            return asset
+    token, extension = parts
+    return f"{token}-with-engine{extension}" if with_engine else f"{token}{extension}"
+
+
+def pick_asset(assets: list[dict], with_engine: bool | None = None) -> dict | None:
+    """The installer to update with, matching the one already installed.
+
+    Someone who installed the all-in-one has the engine inside the
+    application directory, so updating with the slim installer would replace
+    that directory and take the engine with it -- the app would come back up
+    unable to compute. So the variant is carried across the update, and the
+    slim build is the fallback when no all-in-one was published.
+    """
+    if with_engine is None:
+        from . import engine
+
+        with_engine = engine.bundled_dir() is not None
+    wanted = [asset_suffix(True), asset_suffix(False)] if with_engine else [asset_suffix(False)]
+    for suffix in wanted:
+        if not suffix:
+            continue
+        for asset in assets:
+            if str(asset.get("name", "")).endswith(suffix):
+                return asset
     return None
 
 

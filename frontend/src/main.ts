@@ -1570,7 +1570,10 @@ async function installEngine(): Promise<void> {
   try {
     const current = await (await fetch("/api/engine")).json();
     if (current.installed) {
-      menuNote.textContent = `the engine is already available: ${current.path}`;
+      // An all-in-one installer already put one here; say so, rather than
+      // leaving the user wondering whether they still have to fetch it.
+      const where = current.source ? ` (${current.source})` : "";
+      menuNote.textContent = `the engine is already available${where}: ${current.path}`;
       return;
     }
     const started = await fetch("/api/engine/install", { method: "POST" });
