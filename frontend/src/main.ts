@@ -1027,6 +1027,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
         orbitalSources.set(sourceId, { name: sourceName, index });
         opt.value = sourceId;
         if (o.kind === "dyson") {
+          opt.dataset.kind = "dyson";
           const strength = o.strength == null ? "" : ` strength=${Number(o.strength).toFixed(6)}`;
           const occupation = o.occupation == null ? "" : ` occupation=${Number(o.occupation).toFixed(6)}`;
           opt.textContent = `Dyson ${o.dyson_kind} state ${o.state_index}${strength}${occupation}`;
@@ -1039,6 +1040,11 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       }
       if (scfGroup.children.length) orbitalSel.appendChild(scfGroup);
       if (dysonGroup.children.length) orbitalSel.appendChild(dysonGroup);
+      const hasDyson = dysonGroup.children.length > 0;
+      const dysonMapOption = $<HTMLOptionElement>("dysonMapKind");
+      dysonMapOption.hidden = !hasDyson;
+      dysonMapOption.disabled = !hasDyson;
+      if (!hasDyson && mapKind.value === "dyson") mapKind.value = "mo";
       orbitalCard.style.display = "";
     }
     if (modes?.modes?.length) {
@@ -1092,7 +1098,7 @@ async function openAsStructure(name: string, url: string): Promise<void> {
 // Isovalues that suit each field: orbitals peak near 0.05, the density is
 // conventionally drawn at 0.002, and the MEP is a potential in Hartree/e.
 const MAP_ISO: Record<string, number> = {
-  mo: 0.05, density: 0.002, spin: 0.004, esp: 0.03,
+  mo: 0.05, dyson: 0.05, density: 0.002, spin: 0.004, esp: 0.03,
 };
 
 const mapKind = $<HTMLSelectElement>("mapKind");
@@ -1114,7 +1120,7 @@ function showMoldenStructure(): void {
 }
 
 function mapUrl(base: string, source: OrbitalSource | null): string {
-  return mapKind.value === "mo"
+  return (mapKind.value === "mo" || mapKind.value === "dyson")
     ? `/api/jobs/${currentMolden!.jobId}/molden/${encodeURIComponent(source!.name)}/cube?mo=${source!.index}`
     : `${base}/map?kind=${mapKind.value}`;
 }
@@ -1122,9 +1128,10 @@ function mapUrl(base: string, source: OrbitalSource | null): string {
 function showOrbital(): void {
   if (!currentMolden) return;
   pushOrbitalStyle();
-  $<HTMLDivElement>("orbitalPick").style.display = mapKind.value === "mo" ? "" : "none";
+  const isOrbital = mapKind.value === "mo" || mapKind.value === "dyson";
+  $<HTMLDivElement>("orbitalPick").style.display = isOrbital ? "" : "none";
   const source = selectedOrbitalSource();
-  if (mapKind.value === "mo" && !source) return;
+  if (isOrbital && !source) return;
   const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
   const iso = +isoRange.value;
   // Mol* runs inside an iframe. In the standalone app only this top-level
@@ -1155,6 +1162,10 @@ isoRange.addEventListener("change", showOrbital);
 mapKind.addEventListener("change", () => {
   // Each field has its own natural contour, so move the slider with it.
   isoRange.value = String(MAP_ISO[mapKind.value] ?? 0.05);
+  if (mapKind.value === "dyson") {
+    const firstDyson = [...orbitalSel.options].find((option) => option.dataset.kind === "dyson");
+    if (firstDyson) orbitalSel.value = firstDyson.value;
+  }
   showOrbital();
 });
 
