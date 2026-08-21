@@ -30,6 +30,9 @@
       function sameOriginHref(value) {
         if (!value) return null;
         const url = new URL(value, window.location.href);
+        // The parent creates cube blobs after fetching through Tauri IPC.
+        // They are opaque URLs, but remain private to this same webview.
+        if (url.protocol === "blob:") return url.href;
         return url.origin === window.location.origin ? url.href : null;
       }
 

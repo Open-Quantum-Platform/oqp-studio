@@ -929,6 +929,7 @@ const amplitudeRange = $<HTMLInputElement>("ampRange");
 let currentMolden: { jobId: string; name: string } | null = null;
 type OrbitalSource = { name: string; index: number };
 const orbitalSources = new Map<string, OrbitalSource>();
+let activeCubeUrl: string | null = null;
 let resultFrames: { label: string; atoms: Atom[] }[] = [];
 let resultViewerReady = false;
 let pendingResultMessage: Record<string, unknown> | null = null;
@@ -1054,6 +1055,11 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
     }
     if (!allOrbitals.length && !modes?.modes?.length) {
       await openAsStructure(name, url);
+    } else {
+      // Opening a Molden result must show its molecule before the user picks
+      // an orbital. Reset map already did this, which is why it exposed the
+      // missing initial structure message.
+      showMoldenStructure();
     }
     return;
   }
@@ -1095,6 +1101,18 @@ function selectedOrbitalSource(): OrbitalSource | null {
   return orbitalSources.get(orbitalSel.value) ?? null;
 }
 
+function showMoldenStructure(): void {
+  if (!currentMolden) return;
+  if (activeCubeUrl) {
+    URL.revokeObjectURL(activeCubeUrl);
+    activeCubeUrl = null;
+  }
+  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
+  fetch(`${base}/geom.xyz`)
+    .then((response) => response.text())
+    .then((xyz) => pushToResultViewer({ type: "oqp-structure", xyz }));
+}
+
 function mapUrl(base: string, source: OrbitalSource | null): string {
   return mapKind.value === "mo"
     ? `/api/jobs/${currentMolden!.jobId}/molden/${encodeURIComponent(source!.name)}/cube?mo=${source!.index}`
@@ -1109,25 +1127,29 @@ function showOrbital(): void {
   if (mapKind.value === "mo" && !source) return;
   const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
   const iso = +isoRange.value;
-  fetch(`${base}/geom.xyz`)
-    .then((r) => r.text())
-    .then((xyz) =>
+  // Mol* runs inside an iframe. In the standalone app only this top-level
+  // window's fetch is routed through the sidecar, so pass its cube a local
+  // blob URL instead of leaving the iframe to request /api itself.
+  Promise.all([
+    fetch(`${base}/geom.xyz`).then((response) => response.text()),
+    fetch(mapUrl(base, source)).then((response) => response.text()),
+  ])
+    .then(([xyz, cube]) => {
+      if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
+      activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
       pushToResultViewer({
         type: "oqp-cube",
         xyz,
-        cube: mapUrl(base, source),
+        cube: activeCubeUrl,
         iso,
-      }),
-    );
+      });
+    });
 }
 orbitalSel.addEventListener("change", showOrbital);
 orbitalReset.addEventListener("click", () => {
   if (!currentMolden) return;
   orbitalSel.value = "";
-  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
-  fetch(`${base}/geom.xyz`)
-    .then((response) => response.text())
-    .then((xyz) => pushToResultViewer({ type: "oqp-structure", xyz }));
+  showMoldenStructure();
 });
 isoRange.addEventListener("change", showOrbital);
 mapKind.addEventListener("change", () => {
