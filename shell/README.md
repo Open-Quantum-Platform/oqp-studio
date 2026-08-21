@@ -1,10 +1,8 @@
 # Desktop shell (Tauri 2)
 
-Scaffolded Tauri 2 project wrapping the frontend, targeting native installers:
-
-- Windows: MSI / NSIS
-- macOS: DMG
-- Linux: AppImage / deb
+Tauri 2 shell wrapping the frontend and the frozen backend. It builds the
+published installers: MSI/NSIS on Windows, DMG and `.app` tarball on macOS,
+AppImage and `.deb` on Linux — each in a plain and a `-with-engine` variant.
 
 ## Layout
 
@@ -14,14 +12,14 @@ src-tauri/
   tauri.conf.json    window, dev server (:5173), frontend dist, bundling
   src/main.rs        app entry
   capabilities/      window permission set
-  icons/             placeholder icons (replace with real OQP artwork,
-                     plus icon.ico/icon.icns before Windows/macOS bundling)
+  binaries/          where the frozen backend is staged (empty in git)
+  icons/             placeholder icons (replace with real OQP artwork)
 ```
 
 ## Developing
 
-Requires Rust (stable) and the Tauri 2 Linux prerequisites
-(webkit2gtk-4.1, libappindicator, etc. — see tauri.app docs):
+Requires Rust (stable) and, on Linux, the Tauri 2 prerequisites
+(webkit2gtk-4.1, libappindicator — see the tauri.app docs).
 
 ```bash
 cargo install tauri-cli --version "^2"
@@ -30,16 +28,36 @@ cargo tauri dev      # starts the Vite dev server and opens the window
 cargo tauri build    # bundles installers for the host OS
 ```
 
-The scaffold compiles against the Vite dev server / built dist. Remaining
-Phase 0 shell work, in order:
+`cargo tauri dev` needs a frozen backend staged in `binaries/` first, because
+`externalBin` declares one; the repository ships that directory empty. See
+"Working on the desktop shell" in the top-level README for the one-time build,
+and for why most work does not belong in this loop at all.
 
-1. Sidecar: bundle the PyInstaller-frozen backend and spawn it on startup
-   (tauri-plugin-shell), wait for `/api/health`, then navigate the window to
-   the backend origin so UI + viewer + API share one origin.
-2. Real icons (icon.ico, icon.icns) and file associations
-   (`.oqp`, `.molden`, `.cube`, `.hess.json`).
-3. GitHub Actions release workflow with tauri-action for 3-OS installers.
+Note that `devUrl` matters less here than the name suggests. The window opens
+on the Vite dev server, but `main.rs` navigates it to the backend origin as
+soon as the backend answers, so what you end up looking at is served from
+`frontend/dist` — one origin for UI, viewer and API, which is the layout the
+shipped app relies on.
 
-Note: this scaffold has not yet been compiled in CI (the Linux build needs
-webkit2gtk system packages); it is committed as the starting point for the
-first machine with the Tauri toolchain.
+## What the shell does
+
+1. Spawns the PyInstaller-frozen backend as a sidecar, passing
+   `OQP_STUDIO_RESOURCES` so it can find an engine bundled by the installer —
+   the resource directory sits next to the executable on Windows, in
+   `Contents/Resources` on macOS, and under `/usr/lib` on Linux, and only
+   Tauri knows which.
+2. Skips that spawn when a backend of the *same version* already answers on
+   the port; anything else, and it starts its own on a free one.
+3. Shows a splash with a running counter while it waits, up to 180 seconds,
+   then navigates to the backend origin.
+4. Names `backend.log` on the failure screen, because the message alone gives
+   nobody anything to act on.
+
+## Remaining
+
+- Real icons (`icon.ico`, `icon.icns`) and file associations for `.oqp`,
+  `.molden`, `.cube`, `.hess.json`.
+- Code signing and notarization; see [../docs/code-signing.md](../docs/code-signing.md).
+- The sidecar's output receiver is dropped, so the backend's stderr goes
+  nowhere. Forwarding it to `backend.log` would make startup observable in
+  the field rather than only on a developer's machine.

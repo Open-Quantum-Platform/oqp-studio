@@ -88,7 +88,53 @@ npm install
 npm run dev
 ```
 
-The frontend dev server proxies `/api` to the backend on port 8814.
+Then open <http://localhost:5173>. The Vite dev server proxies `/api` to the
+backend on 8814, so with `uvicorn --reload` running alongside it, an edit to
+either side is live: this is the loop to work in, and it needs neither Rust
+nor a frozen backend.
+
+### Working on the desktop shell
+
+Only the shell itself — the splash, the sidecar spawn, startup timing, window
+behaviour — needs the Tauri loop, and it has one prerequisite the other loop
+does not: `externalBin` in `tauri.conf.json` declares the frozen backend, so
+`cargo tauri dev` will not start until one has been staged where it expects.
+Build it once:
+
+```bash
+cd frontend && npm run build          # build_binary.py embeds frontend/dist
+cd ../backend && pip install -e . pyinstaller && python build_binary.py
+mkdir -p ../shell/src-tauri/binaries
+cp dist/oqp-studio-backend \
+   "../shell/src-tauri/binaries/oqp-studio-backend-$(rustc -Vv | sed -n 's/^host: //p')"
+```
+
+```bash
+cd shell/src-tauri
+cargo tauri dev
+```
+
+You rarely have to repeat the freeze. The shell reuses a backend that is
+already listening on 8814 when it reports a matching version, so leaving
+`uvicorn --reload` running means the window talks to your working tree and
+Python edits stay live. The frontend does not: once the shell navigates to the
+backend origin it is served from `frontend/dist`, so a UI change needs
+`npm run build` — which is the reason to do UI work in the browser loop above
+and come here only for shell behaviour.
+
+### Measuring startup
+
+The frozen backend prints a timing trace to stderr, which nothing captures
+when the app is launched from Finder (`backend.log` is only written when
+startup *raises*). Run it directly instead — this also isolates it from Tauri:
+
+```bash
+time "/Applications/OQP Studio.app/Contents/MacOS/oqp-studio-backend" --port 8899
+```
+
+The delay before the first `startup …s` line is time spent before Python runs
+at all; the gaps between lines are import and setup cost. See
+[docs/handoff.md](docs/handoff.md) for what each answer implies.
 
 ## Releasing
 

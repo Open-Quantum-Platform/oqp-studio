@@ -202,6 +202,20 @@ every other job reads.
 | `.github/workflows/{linux,macos,windows}-bundle.yml` | Engine bundles |
 | `.github/workflows/prune-releases.yml` | Deletes every release but one |
 
+## Working on it
+
+The loop to live in is the browser one: `uvicorn oqp_studio.main:app --reload
+--port 8814` alongside `npm run dev`, open <http://localhost:5173>. Vite
+proxies `/api`, so an edit to either side is live and neither Rust nor a
+frozen backend is involved.
+
+Only shell behaviour needs `cargo tauri dev`, and that needs a frozen backend
+staged in `shell/src-tauri/binaries/` first — the directory ships empty, and
+`externalBin` will not let the dev build start without it. The README's
+"Working on the desktop shell" has the one-time build, and the note that the
+shell reuses a same-version backend already on 8814, which is what keeps
+Python edits live inside the window.
+
 ## Checks
 
     cd backend  && python -m pytest tests/ -q      # 18 tests
