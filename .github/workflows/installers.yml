@@ -34,9 +34,16 @@ jobs:
           # the .msi are the managed-deployment formats, and doubling a 300 MB
           # download to publish a second way of installing the same thing helps
           # nobody.  The all-in-one ships the format a person actually clicks.
+          # The all-in-one is a .deb, not an AppImage: linuxdeploy fails on the
+          # 700 MB engine tree (eleven seconds in, before any compression, and
+          # Tauri swallows its output), while the same AppImage builds fine
+          # without it.  A .deb just packages the files, so it does not run
+          # linuxdeploy at all.  Non-Debian distributions still have the slim
+          # AppImage plus the engine archive, which is the same software in two
+          # downloads instead of one.
           - os: ubuntu-latest
             bundles: deb,appimage
-            bundles_offline: appimage
+            bundles_offline: deb
             engine_artifact: openqp-linux-x86_64-standalone
           - os: macos-latest
             bundles: app,dmg
