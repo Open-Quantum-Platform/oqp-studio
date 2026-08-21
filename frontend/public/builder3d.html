@@ -231,6 +231,82 @@
           }
         }
 
+        function trajectoryDataUrl(xyz) {
+          return `data:text/plain;base64,${btoa(unescape(encodeURIComponent(xyz)))}`;
+        }
+
+        function normalModeSpec(xyz, mode, amplitude, showArrows) {
+          const arrows = showArrows ? (mode.atoms || []).map((atom) => {
+            const start = atom.position;
+            const displacement = atom.displacement || [0, 0, 0];
+            const magnitude = Math.hypot(...displacement);
+            if (magnitude < 1e-6) return null;
+            // The physical trajectory preserves the calculated displacement.
+            // Normalized display vectors stay legible when modes differ greatly
+            // in mass-weighted amplitude.
+            const scale = (1.25 * amplitude) / magnitude;
+            return {
+              kind: "primitive",
+              params: {
+                kind: "arrow",
+                start,
+                end: start.map((value, index) => value + scale * displacement[index]),
+                tube_radius: 0.055,
+                show_end_cap: true,
+                color: "orange",
+              },
+            };
+          }).filter(Boolean) : [];
+          return {
+            kind: "single",
+            metadata: { version: "1.0.0", title: "OQP normal mode" },
+            root: {
+              kind: "root",
+              children: [
+                { kind: "canvas", params: { background_color: "#15191e" } },
+                {
+                  kind: "download",
+                  params: { url: trajectoryDataUrl(xyz) },
+                  children: [{
+                    kind: "parse",
+                    params: { format: "xyz" },
+                    children: [{
+                      kind: "structure",
+                      params: { type: "model" },
+                      children: [
+                        {
+                          kind: "component",
+                          params: { selector: "all" },
+                          children: [{
+                            kind: "representation",
+                            params: { type: "ball_and_stick" },
+                          }],
+                        },
+                        ...(arrows.length ? [{
+                          kind: "primitives",
+                          params: { opacity: 0.95 },
+                          children: arrows,
+                        }] : []),
+                      ],
+                    }],
+                  }],
+                },
+              ],
+            },
+          };
+        }
+
+        async function playNormalMode() {
+          const animation = viewer.plugin.managers.animation.animations.find(
+            (item) => item.name === "built-in.animate-model-index"
+          );
+          if (!animation) return;
+          await viewer.plugin.managers.animation.play(animation, {
+            mode: { name: "palindrome", params: {} },
+            duration: { name: "fixed", params: { durationInS: 2 } },
+          });
+        }
+
         // Orbital appearance, in the spirit of MacMolPlt and IQmol: a phase
         // colour pair, an opacity, and solid or mesh surfaces.
         let orbital = { positive: 0x4f8fdd, negative: 0xdd6a4f, alpha: 0.85, visuals: ["solid"] };
@@ -406,6 +482,20 @@
             report();
             await viewer.plugin.clear();
             await drawStructure(message.xyz);
+          } else if (message.type === "oqp-normal-mode") {
+            picked.length = 0;
+            report();
+            await viewer.plugin.clear();
+            await viewer.loadMvsData(
+              JSON.stringify(normalModeSpec(message.xyz, message.mode, message.amplitude, message.arrows)),
+              "mvsj",
+              { keepCamera: true, doNotReportErrors: false },
+            );
+            if (message.playing) await playNormalMode();
+          } else if (message.type === "oqp-normal-mode-play") {
+            await playNormalMode();
+          } else if (message.type === "oqp-normal-mode-pause") {
+            await viewer.plugin.managers.animation.stop();
           } else if (message.type === "oqp-file") {
             await viewer.plugin.clear();
             await drawStructure(message.text, message.format);

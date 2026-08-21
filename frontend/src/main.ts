@@ -926,6 +926,9 @@ const isoRange = $<HTMLInputElement>("isoRange");
 const modeCard = $<HTMLDivElement>("modeCard");
 const modeSel = $<HTMLSelectElement>("modeSel");
 const amplitudeRange = $<HTMLInputElement>("ampRange");
+const modePlay = $<HTMLButtonElement>("modePlay");
+const modePause = $<HTMLButtonElement>("modePause");
+const modeArrows = $<HTMLInputElement>("modeArrows");
 let currentMolden: { jobId: string; name: string } | null = null;
 type OrbitalSource = { name: string; index: number };
 const orbitalSources = new Map<string, OrbitalSource>();
@@ -1185,15 +1188,31 @@ mapKind.addEventListener("change", () => {
   showOrbital();
 });
 
-function showMode(): void {
+async function showMode(): Promise<void> {
   if (!currentMolden) return;
   const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
-  fetch(`${base}/mode.xyz?mode=${modeSel.value}&amplitude=${amplitudeRange.value}`)
-    .then((r) => r.text())
-    .then((xyz) => pushToResultViewer({ type: "oqp-structure", xyz }));
+  const query = `mode=${modeSel.value}&amplitude=${amplitudeRange.value}`;
+  const [trajectory, vectors] = await Promise.all([
+    fetch(`${base}/mode.xyz?${query}`),
+    fetch(`${base}/mode?mode=${modeSel.value}`),
+  ]);
+  if (!trajectory.ok || !vectors.ok) return;
+  pushToResultViewer({
+    type: "oqp-normal-mode",
+    xyz: await trajectory.text(),
+    mode: await vectors.json(),
+    amplitude: Number(amplitudeRange.value),
+    arrows: modeArrows.checked,
+    playing: true,
+  });
 }
 modeSel.addEventListener("change", showMode);
 amplitudeRange.addEventListener("change", showMode);
+modeArrows.addEventListener("change", showMode);
+modePlay.addEventListener("click", () =>
+  pushToResultViewer({ type: "oqp-normal-mode-play" }));
+modePause.addEventListener("click", () =>
+  pushToResultViewer({ type: "oqp-normal-mode-pause" }));
 
 // ---------- results summary ----------
 type Summary = {

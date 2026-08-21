@@ -518,6 +518,30 @@ def molden_mode_trajectory(job_id: str, name: str, mode: int,
     )
 
 
+@app.get("/api/jobs/{job_id}/molden/{name}/mode")
+def molden_mode_vectors(job_id: str, name: str, mode: int) -> dict:
+    """Equilibrium coordinates and one normal-mode displacement in Angstrom."""
+    from . import molden
+
+    vib = _load_vibrations(job_id, name)
+    if not 1 <= mode <= len(vib.modes):
+        raise HTTPException(status_code=404, detail="mode index out of range")
+    normal_mode = vib.modes[mode - 1]
+    displacements = normal_mode.displacements * molden.BOHR_TO_ANGSTROM
+    return {
+        "index": normal_mode.index,
+        "frequency": normal_mode.frequency,
+        "atoms": [
+            {
+                "element": element,
+                "position": [x, y, z],
+                "displacement": displacement.tolist(),
+            }
+            for (element, x, y, z), displacement in zip(vib.atoms, displacements)
+        ],
+    }
+
+
 _summary_cache: OrderedDict[str, dict] = OrderedDict()
 
 
