@@ -7,6 +7,7 @@ import ssl
 import sys
 import tempfile
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,12 +24,26 @@ from . import __version__, engine, environment, network
 from .jobs import JobInfo, JobRequest, manager
 from .runners import available_runners
 
+# How long each piece of starting up took, on stderr. The shell gives the
+# backend a fixed number of seconds to open its port and this took fourteen to
+# twenty on a healthy machine, which is close enough to the limit that a
+# slower one fails outright. Guessing at which part is slow is what produced
+# the wrong fix last time, so it is measured.
+_STARTED = time.monotonic()
+
+
+def _trace(step: str) -> None:
+    print(f"startup {time.monotonic() - _STARTED:6.2f}s  {step}", file=sys.stderr, flush=True)
+
 
 def _warm_up_rdkit() -> None:
-    """Import RDKit ahead of the first request.
+    """Import RDKit ahead of the first request, but not ahead of the server.
 
     The import costs a second or more in a frozen build, and it would
-    otherwise be charged to whoever first converts a 2D sketch to 3D.
+    otherwise be charged to whoever first converts a 2D sketch to 3D. It runs
+    in a thread, which does not make it free: loading that many C extensions
+    holds the GIL in long stretches, so doing it now competes with the work
+    that opens the port. It waits until the server has had time to start.
     """
 
     def load() -> None:
@@ -36,16 +51,23 @@ def _warm_up_rdkit() -> None:
             from rdkit import Chem  # noqa: F401
             from rdkit.Chem import AllChem  # noqa: F401
         except ImportError:
-            pass
+            return
+        _trace("rdkit ready")
 
-    threading.Thread(target=load, daemon=True).start()
+    timer = threading.Timer(15.0, load)
+    timer.daemon = True
+    timer.start()
 
 
+_trace("imports")
 environment.enrich_path()
+_trace("PATH")
 network.activate()
+_trace("TLS")
 _warm_up_rdkit()
 
 app = FastAPI(title="OQP Studio backend", version=__version__)
+_trace("app built")
 
 
 # FastAPI reads this as the file field; kept module level so it is not a

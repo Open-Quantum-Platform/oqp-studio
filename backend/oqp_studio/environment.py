@@ -46,33 +46,60 @@ def _login_shell_path() -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def enrich_path() -> str:
-    """Extend PATH with the login shell's and the usual install directories."""
-    if os.name == "nt":
-        return os.environ.get("PATH", "")
-
+def _extend(directories: list[str]) -> str:
     entries: list[str] = []
     seen: set[str] = set()
-
-    def add(directory: str) -> None:
+    for directory in directories:
         resolved = os.path.expanduser(directory)
         if resolved and resolved not in seen and Path(resolved).is_dir():
             seen.add(resolved)
             entries.append(resolved)
-
-    for directory in os.environ.get("PATH", "").split(os.pathsep):
-        add(directory)
-    for directory in _login_shell_path().split(os.pathsep):
-        add(directory)
-    for directory in COMMON_BIN_DIRS:
-        add(directory)
-
     os.environ["PATH"] = os.pathsep.join(entries)
     return os.environ["PATH"]
 
 
+def enrich_path() -> str:
+    """Extend PATH with the usual install directories.
+
+    Only the cheap half. Asking the login shell what its PATH is means
+    running the user's shell profile -- conda, nvm, pyenv and whatever else
+    is in there -- and this is on the path to opening the server's port,
+    which the app has a limited time to do. The expensive half happens the
+    first time something actually looks for an executable.
+    """
+    if os.name == "nt":
+        return os.environ.get("PATH", "")
+    return _extend(os.environ.get("PATH", "").split(os.pathsep) + list(COMMON_BIN_DIRS))
+
+
+_login_shell_merged = False
+
+
+def merge_login_shell_path() -> str:
+    """Add what a login shell would have, once, when it is first needed.
+
+    This is what makes a conda or pyenv installation visible: those live in
+    directories only the user's shell profile knows about.
+    """
+    global _login_shell_merged
+
+    if _login_shell_merged or os.name == "nt":
+        return os.environ.get("PATH", "")
+    _login_shell_merged = True
+    extra = _login_shell_path()
+    if not extra:
+        return os.environ.get("PATH", "")
+    return _extend(os.environ.get("PATH", "").split(os.pathsep)
+                   + extra.split(os.pathsep) + list(COMMON_BIN_DIRS))
+
+
 def locate(command: str) -> str | None:
     """Absolute path of `command`, so the UI can show what it found."""
+    found = shutil.which(command)
+    if found:
+        return found
+    # Only now is it worth paying for the user's shell profile.
+    merge_login_shell_path()
     return shutil.which(command)
 
 

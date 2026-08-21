@@ -64,6 +64,33 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
     false
 }
 
+/// Shown until the backend answers. Written as a script rather than a page so
+/// it works whatever the window happens to have loaded, and cleared by the
+/// navigation that replaces it.
+const SPLASH: &str = r#"(function () {
+  var show = function () {
+    document.body.innerHTML =
+      '<div style="position:fixed;inset:0;display:flex;align-items:center;' +
+      'justify-content:center;background:#15161a;color:#e6e7ea;' +
+      'font-family:-apple-system,Segoe UI,sans-serif">' +
+      '<div style="text-align:center;line-height:1.6">' +
+      '<div style="font-size:1.1rem">Starting OQP Studio</div>' +
+      '<div style="opacity:.6;font-size:.9rem;margin-top:.4rem">' +
+      'unpacking the compute environment — <span id="oqp-splash-secs">0s</span>' +
+      '</div></div></div>';
+    var t0 = Date.now();
+    setInterval(function () {
+      var el = document.getElementById('oqp-splash-secs');
+      if (el) { el.textContent = Math.round((Date.now() - t0) / 1000) + 's'; }
+    }, 500);
+  };
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', show);
+  } else {
+    show();
+  }
+})();"#;
+
 /// Where the backend records a startup failure; kept in step with
 /// server_main.log_path() on the Python side.
 fn backend_log() -> std::path::PathBuf {
@@ -128,8 +155,19 @@ fn main() {
             let window = app
                 .get_webview_window("main")
                 .expect("main window missing");
+
+            // Say what is happening while it happens. The backend takes
+            // fourteen to twenty seconds to open its port on a healthy
+            // machine -- it unpacks an interpreter, NumPy, SciPy and RDKit
+            // before it can answer anything -- and a window that is blank for
+            // that long is a window that looks broken.
+            let _ = window.eval(SPLASH);
+
             std::thread::spawn(move || {
-                if wait_for_port(port, Duration::from_secs(30)) {
+                // Generously longer than the twenty seconds this takes when
+                // it is working. The old thirty-second limit was close enough
+                // to that to turn a slow disk into "failed to start".
+                if wait_for_port(port, Duration::from_secs(180)) {
                     // The version query makes the URL unique per release, so an
                     // upgraded app can never be served the previous version's
                     // cached page.
