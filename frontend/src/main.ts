@@ -1418,6 +1418,8 @@ type Summary = {
   scf: { method?: string; energy?: number; iterations?: number; converged?: boolean };
   states: { index: number; total: number; excitation_ev: number;
             excitation_nm: number | null; oscillator: number | null }[];
+  transitions: { from: number; to: number; excitation_ev: number;
+                 oscillator: number | null }[];
   frequencies: { index: number; frequency: number; ir: number | null; raman: number | null }[];
   thermochemistry: Record<string, number>;
   charges: Record<string, number[]>;
@@ -1427,6 +1429,10 @@ type Summary = {
   has_frequencies: boolean;
   has_states: boolean;
   has_oscillators: boolean;
+  ekt: { ip: { index: number; binding_ev: number; strength: number }[];
+         ea: { index: number; binding_ev: number; strength: number }[] };
+  has_ekt_ip: boolean;
+  has_ekt_ea: boolean;
 };
 
 let summary: Summary | null = null;
@@ -1533,6 +1539,27 @@ function renderSummary(data: Summary): void {
         '<div class="hint">the output carries no oscillator strengths</div>'));
   }
 
+  if (data.transitions.length) {
+    const head = "<tr><th>Transition</th><th>ΔE (eV)</th><th>λ (nm)</th><th>f</th></tr>";
+    const body = data.transitions.map((transition) =>
+      `<tr><td class="k">S${transition.from} → S${transition.to}</td>` +
+      `<td class="v">${transition.excitation_ev.toFixed(4)}</td>` +
+      `<td class="v">${(1239.841984 / transition.excitation_ev).toFixed(1)}</td>` +
+      `<td class="v">${transition.oscillator != null ? transition.oscillator.toFixed(4) : "—"}</td></tr>`,
+    ).join("");
+    parts.push(`<div class="sum-title">State-to-state transitions</div><table class="sum">${head}${body}</table>`);
+  }
+
+  for (const [kind, roots] of [["IP", data.ekt.ip], ["EA", data.ekt.ea]] as const) {
+    if (!roots.length) continue;
+    const head = "<tr><th>Dyson root</th><th>Binding energy (eV)</th><th>Strength</th></tr>";
+    const body = roots.map((root) =>
+      `<tr><td class="k">${root.index}</td><td class="v">${root.binding_ev.toFixed(4)}</td>` +
+      `<td class="v">${root.strength.toFixed(6)}</td></tr>`,
+    ).join("");
+    parts.push(`<div class="sum-title">EKT ${kind} Dyson roots</div><table class="sum">${head}${body}</table>`);
+  }
+
   if (data.frequencies.length) {
     const head = `<tr><th>Mode</th><th>cm⁻¹</th><th>IR (${data.units.ir})</th>` +
       `<th>Raman (${data.units.raman})</th></tr>`;
@@ -1571,12 +1598,14 @@ function renderSummary(data: Summary): void {
 }
 
 // ---------- spectra ----------
-const SPECTRA: { value: string; label: string; needs: "freq" | "states" }[] = [
+const SPECTRA: { value: string; label: string; needs: "freq" | "states" | "ip" | "ea" }[] = [
   { value: "ir", label: "IR absorption", needs: "freq" },
   { value: "raman", label: "Raman", needs: "freq" },
   { value: "absorption", label: "Absorption (S0 geometry)", needs: "states" },
   { value: "emission", label: "Emission (excited-state geometry)", needs: "states" },
   { value: "esa", label: "Excited-state absorption (excited-state geometry)", needs: "states" },
+  { value: "photoelectron", label: "Photoelectron spectrum (IP)", needs: "ip" },
+  { value: "inverse_photoelectron", label: "Inverse photoelectron spectrum (EA)", needs: "ea" },
 ];
 
 const specKind = $<HTMLSelectElement>("specKind");
@@ -1586,7 +1615,9 @@ const specState = $<HTMLInputElement>("specState");
 
 function buildSpectrumList(data: Summary): void {
   const usable = SPECTRA.filter((entry) =>
-    entry.needs === "freq" ? data.has_frequencies : data.has_states);
+    entry.needs === "freq" ? data.has_frequencies
+      : entry.needs === "states" ? data.has_states
+        : entry.needs === "ip" ? data.has_ekt_ip : data.has_ekt_ea);
   specKind.innerHTML = "";
   for (const entry of usable) {
     const option = document.createElement("option");
@@ -1595,6 +1626,8 @@ function buildSpectrumList(data: Summary): void {
     specKind.appendChild(option);
   }
   if (data.has_states) specKind.value = "absorption";
+  else if (data.has_ekt_ip) specKind.value = "photoelectron";
+  else if (data.has_ekt_ea) specKind.value = "inverse_photoelectron";
   $<HTMLDivElement>("spectrumCard").style.display = usable.length ? "" : "none";
   if (usable.length) syncSpectrumControls();
 }

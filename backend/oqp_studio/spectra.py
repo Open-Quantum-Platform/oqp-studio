@@ -108,3 +108,27 @@ def electronic_spectrum(energies_ev: list[float], strengths: list[float], *,
             for e, f in pairs
         ],
     }
+
+
+def energy_spectrum(energies_ev: list[float], strengths: list[float], *,
+                    fwhm_ev: float = 0.3, shape: str = "lorentzian",
+                    eta: float = 0.5, points: int = 1400) -> dict:
+    """Broaden sticks on a direct electron-energy (eV) axis.
+
+    EKT IP/EA roots are electron removal/addition energies, not optical
+    transitions.  Keeping this axis in eV avoids the physically misleading
+    wavelength conversion used for UV/Vis spectra.
+    """
+    pairs = [(e, f) for e, f in zip(energies_ev, strengths) if e > 0]
+    if not pairs:
+        return {"x": [], "y": [], "sticks": []}
+    lo = max(0.0, min(e for e, _ in pairs) - 8 * fwhm_ev)
+    hi = max(e for e, _ in pairs) + 8 * fwhm_ev
+    x, y = broaden([e for e, _ in pairs], [f for _, f in pairs],
+                   lo=lo, hi=hi, fwhm=fwhm_ev, shape=shape,
+                   points=points, eta=eta)
+    return {
+        "x": x,
+        "y": y,
+        "sticks": [{"position": e, "intensity": f} for e, f in pairs],
+    }

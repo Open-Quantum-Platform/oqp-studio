@@ -168,6 +168,8 @@ def _from_log(text: str, summary: dict) -> None:
 
     _log_frequencies(lines, summary)
     _log_states(lines, summary)
+    _log_transitions(lines, summary)
+    _log_ekt_roots(lines, summary)
     _log_dipole(lines, summary)
 
 
@@ -183,7 +185,7 @@ def _log_frequencies(lines: list[str], summary: dict) -> None:
     has_raman = "Raman" in lines[header]
     rows = []
     for line in lines[header + 1:]:
-        values = _floats(line)
+        values = _floats(line[match.end():])
         if len(values) < 2 or not line.strip():
             if rows:
                 break
@@ -206,6 +208,8 @@ _STATE_ROW = re.compile(
 
 
 def _log_states(lines: list[str], summary: dict) -> None:
+    if _log_mrsf_state_table(lines, summary):
+        return
     header = next(
         (i for i, ln in enumerate(lines)
          if re.search(r"(excitation energ|excited state)", ln, re.IGNORECASE)
@@ -245,6 +249,114 @@ def _log_states(lines: list[str], summary: dict) -> None:
         summary["states"] = rows
 
 
+_MRSF_STATE_ROW = re.compile(r"^\s*S(\d+)\s+")
+
+
+def _log_mrsf_state_table(lines: list[str], summary: dict) -> bool:
+    """Read the MRSF summary table, whose first column is ``S0``, ``S1`` ….
+
+    The table supplies the state energy, S0-relative optical transition, and
+    oscillator strength even when the JSON export has no ``td_energies``.
+    """
+    header = next(
+        (i for i, line in enumerate(lines)
+         if "transition dipole moment" in line.lower()
+         and "excitation(ev)" in line.lower()),
+        -1,
+    )
+    if header < 0:
+        return False
+    rows = []
+    for line in lines[header + 1: header + 200]:
+        match = _MRSF_STATE_ROW.match(line)
+        if not match:
+            continue
+        values = _floats(line[match.end():])
+        # Energy, excitation relative to REF, excitation relative to S0,
+        # <S^2>, three transition-dipole components, magnitude, oscillator.
+        if len(values) < 9:
+            continue
+        index = int(match.group(1))
+        excitation = values[2]
+        rows.append({
+            "index": index,
+            "total": values[0],
+            "excitation_ev": excitation,
+            "excitation_nm": NM_EV / excitation if excitation > 0 else None,
+            "oscillator": values[8],
+        })
+    if not rows:
+        return False
+    summary["states"] = rows
+    return True
+
+
+_TRANSITION_ROW = re.compile(r"^\s*S(\d+)\s*->\s*S(\d+)\s+")
+
+
+def _log_transitions(lines: list[str], summary: dict) -> None:
+    """Read state-to-state transition moments for absorption and ESA."""
+    header = next(
+        (i for i, line in enumerate(lines)
+         if "transition" in line.lower() and "excitation" in line.lower()
+         and "->" not in line),
+        -1,
+    )
+    if header < 0:
+        return
+    rows = []
+    for line in lines[header + 1: header + 200]:
+        match = _TRANSITION_ROW.match(line)
+        if not match:
+            if rows and not line.strip():
+                break
+            continue
+        values = _floats(line[match.end():])
+        # Excitation eV, three dipole components, magnitude, oscillator.
+        if len(values) < 6:
+            continue
+        rows.append({
+            "from": int(match.group(1)),
+            "to": int(match.group(2)),
+            "excitation_ev": values[0],
+            "oscillator": values[5],
+        })
+    if rows:
+        summary["transitions"] = rows
+
+
+_EKT_ROW = re.compile(
+    r"^\s*(\d+)\s+(" + _NUM + r")\s+(" + _NUM + r")\s+(" + _NUM +
+    r")\s+(" + _NUM + r")\s+(" + _NUM + r")\s*$")
+
+
+def _log_ekt_roots(lines: list[str], summary: dict) -> None:
+    """Read EKT Dyson-root tables emitted by IP and EA calculations."""
+    kind: str | None = None
+    for line in lines:
+        lowered = line.lower()
+        if "mrsf-ekt ionization potentials" in lowered:
+            kind = "ip"
+            continue
+        if "mrsf-ekt electron affin" in lowered:
+            kind = "ea"
+            continue
+        if kind is None:
+            continue
+        match = _EKT_ROW.match(line)
+        if match:
+            summary["ekt"][kind].append({
+                "index": int(match.group(1)),
+                "binding_ev": float(match.group(4)),
+                "strength": float(match.group(6)),
+            })
+            continue
+        # After the first root, a non-data line ends this table.  Resetting
+        # here also makes a following EA table independently detectable.
+        if summary["ekt"][kind] and line.strip() and "dyson" not in lowered:
+            kind = None
+
+
 def _log_dipole(lines: list[str], summary: dict) -> None:
     if summary["dipole"]:
         return
@@ -263,7 +375,8 @@ def _log_dipole(lines: list[str], summary: dict) -> None:
 def summarize(paths: list[Path]) -> dict:
     """Merge every recognisable result file of one job into a summary."""
     summary: dict = {
-        "energy": {}, "scf": {}, "states": [], "frequencies": [],
+        "energy": {}, "scf": {}, "states": [], "frequencies": [], "transitions": [],
+        "ekt": {"ip": [], "ea": []},
         "thermochemistry": {}, "charges": {}, "dipole": None, "symmetry": None,
         "units": {"ir": "km/mol", "raman": "a.u."},
         "sources": [],
@@ -289,6 +402,8 @@ def summarize(paths: list[Path]) -> dict:
     summary["has_states"] = len(summary["states"]) > 1
     summary["has_oscillators"] = any(
         s.get("oscillator") is not None for s in summary["states"])
+    summary["has_ekt_ip"] = bool(summary["ekt"]["ip"])
+    summary["has_ekt_ea"] = bool(summary["ekt"]["ea"])
     return summary
 
 
@@ -296,7 +411,8 @@ def spectrum(summary: dict, kind: str, *, shape: str = "lorentzian",
              fwhm: float | None = None, state: int = 1, eta: float = 0.5) -> dict:
     """Build one broadened spectrum from a summary.
 
-    kind is ir, raman, absorption, emission or esa. Emission follows Kasha's
+    kind is ir, raman, absorption, emission, esa, photoelectron or inverse_photoelectron.
+    Emission follows Kasha's
     rule: the chosen state relaxes to the ground state at this geometry, which
     is why an excited-state optimisation is the calculation that makes it
     meaningful. ESA is the set of transitions upward from that same state.
@@ -328,12 +444,46 @@ def spectrum(summary: dict, kind: str, *, shape: str = "lorentzian",
         })
         return data
 
+    if kind in ("photoelectron", "inverse_photoelectron"):
+        root_kind = "ip" if kind == "photoelectron" else "ea"
+        roots = summary["ekt"][root_kind]
+        if not roots:
+            label = "ionization-potential" if root_kind == "ip" else "electron-affinity"
+            return {"available": False, "reason": f"no {label} Dyson roots in this job"}
+        data = spectra.energy_spectrum(
+            [root["binding_ev"] for root in roots],
+            [root["strength"] for root in roots],
+            fwhm_ev=fwhm or 0.3, shape=shape, eta=eta,
+        )
+        peak = max(data["y"], default=0.0)
+        if peak > 0.0:
+            data["y"] = [value / peak for value in data["y"]]
+        stick_peak = max((stick["intensity"] for stick in data["sticks"]), default=0.0)
+        if stick_peak > 0.0:
+            for stick in data["sticks"]:
+                stick["intensity"] /= stick_peak
+        data.update({
+            "available": True,
+            "title": ("Photoelectron spectrum (IP)" if root_kind == "ip"
+                      else "Inverse photoelectron spectrum (EA)"),
+            "x_label": "Electron binding energy (eV)",
+            "y_label": "Normalized Dyson strength",
+            "reverse_x": False,
+            "fwhm": fwhm or 0.3,
+            "shape": shape,
+            "estimated_intensities": False,
+        })
+        return data
+
     states = summary["states"]
     if len(states) < 2:
         return {"available": False, "reason": "no excited states in this job"}
 
     if kind == "absorption":
-        pairs = [(s["excitation_ev"], s.get("oscillator")) for s in states[1:]]
+        transitions = [t for t in summary["transitions"] if t["from"] == 0]
+        pairs = ([(t["excitation_ev"], t.get("oscillator")) for t in transitions]
+                 if transitions else
+                 [(s["excitation_ev"], s.get("oscillator")) for s in states[1:]])
         title = "Absorption from S0"
     elif kind == "emission":
         chosen = next((s for s in states if s["index"] == state), states[1])
@@ -341,10 +491,12 @@ def spectrum(summary: dict, kind: str, *, shape: str = "lorentzian",
         title = f"Emission from S{chosen['index']}"
     elif kind == "esa":
         base = next((s for s in states if s["index"] == state), states[1])
-        pairs = [
-            (s["excitation_ev"] - base["excitation_ev"], s.get("oscillator"))
-            for s in states if s["index"] > base["index"]
-        ]
+        transitions = [t for t in summary["transitions"] if t["from"] == base["index"]]
+        pairs = ([(t["excitation_ev"], t.get("oscillator")) for t in transitions]
+                 if transitions else [
+                     (s["excitation_ev"] - base["excitation_ev"], s.get("oscillator"))
+                     for s in states if s["index"] > base["index"]
+                 ])
         title = f"Excited-state absorption from state {base['index']}"
         if not pairs:
             return {"available": False,

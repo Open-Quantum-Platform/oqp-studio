@@ -283,6 +283,76 @@ def test_imported_results_analyse_like_a_run_of_our_own(tmp_path, monkeypatch):
     assert client.get(f"/api/jobs/{job_id}/spectrum?kind=ir").json()["x"]
 
 
+def test_ekt_dyson_roots_produce_a_photoelectron_spectrum(tmp_path):
+    """IP roots are electron-removal energies, not optical excited states."""
+    from oqp_studio import analysis
+
+    log = tmp_path / "water.log"
+    log.write_text("""
+MRSF-EKT ionization potentials (Dyson roots)
+Rows index EKT Dyson roots/orbitals, not TDDFT excited states.
+dyson      eig(ha)        eBE(ha)        eBE(eV)       metric       strength
+    1       -0.591801        0.591801       16.1037      1.000000      1.006008
+    2       -0.453861        0.453861       12.3502      1.000000      1.003115
+""")
+
+    summary = analysis.summarize([log])
+    assert not summary["has_states"]
+    assert summary["has_ekt_ip"]
+    assert summary["ekt"]["ip"][0]["binding_ev"] == 16.1037
+    data = analysis.spectrum(summary, "photoelectron", fwhm=0.2)
+    assert data["available"]
+    assert data["x_label"] == "Electron binding energy (eV)"
+    assert max(data["y"]) == 1.0
+
+
+def test_mrsf_state_table_produces_an_optical_absorption_spectrum(tmp_path):
+    """MRSF IP/EA runs print an optical state table before their EKT roots."""
+    from oqp_studio import analysis
+
+    log = tmp_path / "water.log"
+    log.write_text("""
+State      Energy       Excitation   Excitation(eV)  <S^2>         Transition dipole moment, a.u.        Oscillator
+           Hartree           eV        rel. S0                  X          Y          Z        Abs.      strength
+    S0    -76.3600325966    -7.428327     0.000000      0.000     0.0000     0.0000     0.0000     0.0000      0.0000
+   REF    -76.0870465998     0.000000     7.428327        (triplet ROHF/UHF internal working reference)
+    S1    -76.0412293756     1.246750     8.675078      0.000     0.0000    -0.0000     0.2401     0.2401      0.0123
+    S2    -75.9853724356     2.766695    10.195022      0.000    -0.0000     0.0000     0.0001     0.0001      0.0000
+""")
+
+    summary = analysis.summarize([log])
+    assert summary["has_states"]
+    assert summary["states"][1]["excitation_ev"] == 8.675078
+    assert summary["states"][1]["oscillator"] == 0.0123
+    data = analysis.spectrum(summary, "absorption")
+    assert data["available"]
+    assert data["title"] == "Absorption from S0"
+
+
+def test_mrsf_transition_table_uses_the_state_specific_esa_strength(tmp_path):
+    from oqp_studio import analysis
+
+    log = tmp_path / "water.log"
+    log.write_text("""
+State      Energy       Excitation   Excitation(eV)  <S^2>         Transition dipole moment, a.u.        Oscillator
+    S0    -76.3600325966    -7.428327     0.000000      0.000     0.0000     0.0000     0.0000     0.0000      0.0000
+    S1    -76.0412293756     1.246750     8.675078      0.000     0.0000    -0.0000     0.2401     0.2401      0.0123
+    S2    -75.9853724356     2.766695    10.195022      0.000    -0.0000     0.0000     0.0001     0.0001      0.0000
+
+Transition   Excitation         Transition dipole, a.u.                   Oscillator
+                 eV              x          y          z         Abs.       strength
+   S0 -> S1     8.675078        0.0000    -0.0000     0.2401      0.2401       0.0123
+   S0 -> S2    10.195022       -0.0000     0.0000     0.0001      0.0001       0.0000
+   S1 -> S2     1.519945        1.7982    -0.0046    -0.0000      1.7982       0.1204
+""")
+
+    summary = analysis.summarize([log])
+    assert summary["transitions"][-1]["oscillator"] == 0.1204
+    data = analysis.spectrum(summary, "esa", state=1)
+    assert data["available"]
+    assert data["sticks"][0]["position"] == analysis.NM_EV / 1.519945
+
+
 def test_importing_a_folder_takes_the_results_and_leaves_the_rest(tmp_path, monkeypatch):
     from oqp_studio import jobs
 
