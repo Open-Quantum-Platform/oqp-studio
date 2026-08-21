@@ -7,10 +7,6 @@ on:
         description: "Publish a release under this tag (e.g. v0.1.0); leave empty to only build artifacts"
         required: false
         default: ""
-      openqp_windows_ref:
-        description: "OpenQP ref for the Windows engine (default: the PR that adds Windows support)"
-        required: false
-        default: ""
   push:
     tags: ["v*"]
 
@@ -134,14 +130,6 @@ jobs:
     with:
       release_tag: ${{ inputs.release_tag || github.ref_name }}
 
-  # Windows is the platform most of our users are on, so its engine is built
-  # like every other one.  Its support -- Intel ifx/icx with MKL ILP64, the
-  # DFT-D4 DLLs installed beside liboqp.dll instead of an RPATH -- is OpenQP
-  # #359, merged as d452be6 but not yet in a release tag, and the other four
-  # platforms build the latest TAG.  So this job pins that merge commit: on
-  # main's history, immutable, and what the next tag will contain.  The day
-  # OpenQP releases a tag carrying #359, delete the `openqp_ref:` line and this
-  # job is identical to the other four.
   engine-windows:
     if: startsWith(github.ref, 'refs/tags/') || inputs.release_tag != ''
     uses: ./.github/workflows/windows-bundle.yml
@@ -149,4 +137,3 @@ jobs:
       contents: write
     with:
       release_tag: ${{ inputs.release_tag || github.ref_name }}
-      openqp_ref: ${{ inputs.openqp_windows_ref || 'd452be6832d48e34cc07fe3149b3ea515aec9d86' }}
