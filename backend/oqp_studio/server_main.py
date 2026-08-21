@@ -7,6 +7,9 @@ The Tauri shell spawns this binary as a sidecar:
 from __future__ import annotations
 
 import argparse
+import asyncio
+import base64
+import json
 import os
 import sys
 from pathlib import Path
@@ -31,6 +34,42 @@ def log_path() -> Path:
     return base / "backend.log"
 
 
+async def _dispatch(request: dict) -> dict:
+    """Run one API request in-process without opening a TCP listener."""
+    import httpx
+
+    from oqp_studio.main import app
+
+    body = request.get("body")
+    content = base64.b64decode(body) if body else None
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://oqp-studio.internal") as client:
+        response = await client.request(
+            request["method"],
+            request["path"],
+            headers=request.get("headers") or {},
+            content=content,
+        )
+    return {
+        "status": response.status_code,
+        "headers": dict(response.headers),
+        "body": base64.b64encode(response.content).decode("ascii"),
+    }
+
+
+def serve_stdio() -> None:
+    """Serve newline-delimited JSON RPC over the sidecar's stdio streams."""
+    for line in sys.stdin:
+        try:
+            message = json.loads(line)
+            result = asyncio.run(_dispatch(message["request"]))
+            payload = {"id": message["id"], "result": result}
+        except BaseException as exc:  # report a request error without killing the sidecar
+            payload = {"id": message.get("id") if "message" in locals() else None,
+                       "error": str(exc)}
+        print(json.dumps(payload, separators=(",", ":")), flush=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="OQP Studio backend server")
     parser.add_argument(
@@ -39,14 +78,19 @@ def main() -> None:
         default=int(os.environ.get("OQP_STUDIO_PORT", "8814")),
     )
     parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--stdio", action="store_true",
+                        help="serve API requests through stdin/stdout instead of TCP")
     args = parser.parse_args()
 
     try:
-        import uvicorn
+        if args.stdio:
+            serve_stdio()
+        else:
+            import uvicorn
 
-        from oqp_studio.main import app
+            from oqp_studio.main import app
 
-        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+            uvicorn.run(app, host=args.host, port=args.port, log_level="info")
     except BaseException:
         # The shell can only see that the port never opened. Whatever went
         # wrong is written where it can be read afterwards -- guessing at a

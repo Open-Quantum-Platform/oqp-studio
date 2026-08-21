@@ -5,8 +5,10 @@ Run from backend/ with the frontend already built (frontend/dist present):
     pip install -e . pyinstaller
     python build_binary.py
 
-Writes dist/oqp-studio-backend[.exe] bundling the server and the built
-frontend so the single binary serves UI + viewer + API from one origin.
+On macOS, writes dist/oqp-studio-backend/ with the server and its runtime
+libraries. Keeping that runtime unpacked avoids PyInstaller extracting a large
+archive before every launch. Other platforms keep the existing single-file
+sidecar until their installers can stage the runtime directory beside it.
 """
 
 from __future__ import annotations
@@ -37,7 +39,7 @@ def main() -> int:
         "-m",
         "PyInstaller",
         "--noconfirm",
-        "--onefile",
+        "--onedir" if sys.platform == "darwin" else "--onefile",
         "--name",
         "oqp-studio-backend",
         "--add-data",

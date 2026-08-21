@@ -98,8 +98,15 @@ jobs:
           mkdir -p shell/src-tauri/binaries
           EXT=""
           if [ "${{ runner.os }}" = "Windows" ]; then EXT=".exe"; fi
-          cp "backend/dist/oqp-studio-backend${EXT}" \
-             "shell/src-tauri/binaries/oqp-studio-backend-${TRIPLE}${EXT}"
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            cp "backend/dist/oqp-studio-backend/oqp-studio-backend" \
+               "shell/src-tauri/binaries/oqp-studio-backend-${TRIPLE}"
+            cp -R "backend/dist/oqp-studio-backend/_internal" \
+               "shell/src-tauri/binaries/oqp-studio-backend-runtime"
+          else
+            cp "backend/dist/oqp-studio-backend${EXT}" \
+               "shell/src-tauri/binaries/oqp-studio-backend-${TRIPLE}${EXT}"
+          fi
 
       # --- all-in-one only -------------------------------------------------
       # The engine jobs published these earlier in this same run.

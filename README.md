@@ -57,21 +57,13 @@ native window (pywebview) and 2D-sketch-to-3D conversion (RDKit).
 ## Run it as a desktop app (no browser)
 
 After building the frontend once (see below), the backend can open its own
-native window through the OS webview:
-
-```bash
-cd backend
-pip install -e ".[desktop]"
-oqp-studio
-```
-
-This is the interim native experience; the Tauri shell in `shell/` will
-replace it with signed installers. On Linux, pywebview additionally needs
-GTK (`python3-gi` + WebKit2GTK) or Qt (`pip install pywebview[qt]`).
+The published desktop application is the Tauri shell in `shell/`. It bundles
+the frontend and starts the Python backend as a sidecar over standard input
+and output; the installed application does not open a local HTTP port.
 
 ## Development quick start
 
-Backend (requires Python ≥ 3.10; OpenQP/pyoqp optional — mock mode without it):
+Backend API development (requires Python ≥ 3.10; OpenQP/pyoqp optional — mock mode without it):
 
 ```bash
 cd backend
@@ -88,39 +80,41 @@ npm install
 npm run dev
 ```
 
-Then open <http://localhost:5173>. The Vite dev server proxies `/api` to the
-backend on 8814, so with `uvicorn --reload` running alongside it, an edit to
-either side is live: this is the loop to work in, and it needs neither Rust
-nor a frozen backend.
+Then open <http://localhost:5173>. This optional browser-only loop uses the
+Vite proxy; it is not used by the desktop application.
 
 ### Working on the desktop shell
 
-Only the shell itself — the splash, the sidecar spawn, startup timing, window
-behaviour — needs the Tauri loop, and it has one prerequisite the other loop
-does not: `externalBin` in `tauri.conf.json` declares the frozen backend, so
-`cargo tauri dev` will not start until one has been staged where it expects.
+The desktop shell loads the built frontend directly and sends `/api` requests
+to its Python sidecar over stdio. It has one prerequisite: `externalBin` in
+`tauri.conf.json` declares the frozen backend, so stage one before running it.
 Build it once:
 
 ```bash
 cd frontend && npm run build          # build_binary.py embeds frontend/dist
 cd ../backend && pip install -e . pyinstaller && python build_binary.py
 mkdir -p ../shell/src-tauri/binaries
-cp dist/oqp-studio-backend \
-   "../shell/src-tauri/binaries/oqp-studio-backend-$(rustc -Vv | sed -n 's/^host: //p')"
+triple=$(rustc -Vv | sed -n 's/^host: //p')
+if [ "$(uname)" = "Darwin" ]; then
+  cp dist/oqp-studio-backend/oqp-studio-backend \
+     "../shell/src-tauri/binaries/oqp-studio-backend-$triple"
+  cp -R dist/oqp-studio-backend/_internal \
+     ../shell/src-tauri/binaries/oqp-studio-backend-runtime
+else
+  cp dist/oqp-studio-backend \
+     "../shell/src-tauri/binaries/oqp-studio-backend-$triple"
+fi
 ```
 
 ```bash
 cd shell/src-tauri
-cargo tauri dev
+cargo run
 ```
 
-You rarely have to repeat the freeze. The shell reuses a backend that is
-already listening on 8814 when it reports a matching version, so leaving
-`uvicorn --reload` running means the window talks to your working tree and
-Python edits stay live. The frontend does not: once the shell navigates to the
-backend origin it is served from `frontend/dist`, so a UI change needs
-`npm run build` — which is the reason to do UI work in the browser loop above
-and come here only for shell behaviour.
+For a frontend edit, rerun `npm run build` before `cargo run`. For a backend
+edit, rerun `python build_binary.py`, copy the sidecar again, then rerun
+`cargo run`. This checks the same no-network architecture as the packaged
+application without creating a release.
 
 ### Measuring startup
 

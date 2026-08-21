@@ -2,6 +2,10 @@
 // Vanilla TS for now; Phase 1/2 swap the preview canvas for Mol* and add
 // the Ketcher sketcher and keyword-schema forms.
 
+import { installApiFetch } from "./api";
+
+installApiFetch();
+
 type Atom = [string, number, number, number];
 
 // Geometries generated with RDKit ETKDGv3 + MMFF94 (seed 0xF00D).
@@ -617,8 +621,16 @@ async function loadRunners(): Promise<void> {
 }
 
 async function pollJob(jobId: string): Promise<void> {
-  const info = await (await fetch(`/api/jobs/${jobId}`)).json();
-  const tail = await (await fetch(`/api/jobs/${jobId}/log`)).json();
+  const infoResponse = await fetch(`/api/jobs/${jobId}`);
+  if (!infoResponse.ok) {
+    const detail = await infoResponse.json().then((data) => data?.detail).catch(() => null);
+    runStatus.textContent = detail ?? `job lookup failed (${infoResponse.status})`;
+    runLog.textContent = "(job output is unavailable)";
+    return;
+  }
+  const info = await infoResponse.json();
+  const tailResponse = await fetch(`/api/jobs/${jobId}/log`);
+  const tail = tailResponse.ok ? await tailResponse.json() : { log: "" };
   runLog.textContent = tail.log || "(no output yet)";
   runStatus.textContent = info.status + (info.error ? ` — ${info.error}` : "");
   if (info.status === "queued" || info.status === "running") {

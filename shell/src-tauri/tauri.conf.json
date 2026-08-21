@@ -4,9 +4,7 @@
   "version": "0.2.1",
   "identifier": "org.openqp.studio",
   "build": {
-    "devUrl": "http://localhost:5173",
     "frontendDist": "../../frontend/dist",
-    "beforeDevCommand": "npm --prefix ../frontend run dev",
     "beforeBuildCommand": "npm --prefix ../frontend run build"
   },
   "app": {
@@ -23,11 +21,16 @@
       "csp": null
     }
   },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "externalBin": ["binaries/oqp-studio-backend"],
-    "icon": [
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "externalBin": ["binaries/oqp-studio-backend"],
+      "macOS": {
+        "files": {
+          "Frameworks": "binaries/oqp-studio-backend-runtime"
+        }
+      },
+      "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/icon.ico",
