@@ -291,7 +291,7 @@ jobs:
           if (-not (Select-String -Path hf.log -Pattern "-76\.01074651")) {
             throw "energy does not match the reference"
           }
-          Copy-Item openqp\examples\PCM\H2O_RHF-HF_DDPCM_ENERGY_ISPHER.inp C:\oqpsmoke\pcm.inp
+          Copy-Item "$env:GITHUB_WORKSPACE\openqp\examples\PCM\H2O_RHF-HF_DDPCM_ENERGY_ISPHER.inp" C:\oqpsmoke\pcm.inp
           & C:\oqpdist\openqp\openqp.exe pcm.inp --nompi
           if ($LASTEXITCODE -ne 0) { throw "PCM openqp.exe exited $LASTEXITCODE" }
           if (-not (Select-String -Path pcm.log -Pattern "TOTAL energy")) {

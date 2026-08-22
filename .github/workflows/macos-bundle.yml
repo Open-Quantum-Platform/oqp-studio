@@ -289,7 +289,7 @@ jobs:
             /tmp/oqpdist/openqp/openqp hf.inp --nompi
           grep "TOTAL energy" hf.log
           grep -q -- "-76\.01074651" hf.log || { echo "energy does not match the reference"; exit 1; }
-          cp openqp/examples/PCM/H2O_RHF-HF_DDPCM_ENERGY_ISPHER.inp /tmp/oqpsmoke/pcm.inp
+          cp "$GITHUB_WORKSPACE/openqp/examples/PCM/H2O_RHF-HF_DDPCM_ENERGY_ISPHER.inp" /tmp/oqpsmoke/pcm.inp
           env -i PATH=/usr/bin:/bin HOME="$HOME" OMP_NUM_THREADS=2 \
             /tmp/oqpdist/openqp/openqp pcm.inp --nompi
           grep "TOTAL energy" pcm.log
