@@ -117,7 +117,6 @@ def extract_tar(archive: tarfile.TarFile, target: Path) -> None:
             continue
         if member.isdir():
             destination.mkdir(parents=True, exist_ok=True)
-            destination.chmod(member.mode & 0o777)
             continue
         source = archive.extractfile(member)
         if source is None:
@@ -135,3 +134,11 @@ def extract_tar(archive: tarfile.TarFile, target: Path) -> None:
         _link_target(target, destination, link_name)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.symlink_to(link_name)
+
+    # Restrictive directory modes must come last or child extraction can lose
+    # write/traverse access. Deepest-first also handles parents without +x.
+    directories = [(member, destination) for member, destination, _ in members if member.isdir()]
+    for member, destination in sorted(
+        directories, key=lambda item: len(item[1].parts), reverse=True
+    ):
+        destination.chmod(member.mode & 0o777)

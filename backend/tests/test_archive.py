@@ -104,6 +104,27 @@ def test_tar_extracts_regular_files(tmp_path):
     assert (tmp_path / "openqp" / "README.txt").read_text() == "OpenQP"
 
 
+def test_tar_defers_restrictive_directory_modes_until_children_exist(tmp_path):
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w") as archive:
+        directory = tarfile.TarInfo("openqp/lib")
+        directory.type = tarfile.DIRTYPE
+        directory.mode = 0o555
+        archive.addfile(directory)
+        child = tarfile.TarInfo("openqp/lib/library.dat")
+        child.size = len(b"library")
+        archive.addfile(child, io.BytesIO(b"library"))
+    payload.seek(0)
+
+    with tarfile.open(fileobj=payload) as archive:
+        extract_tar(archive, tmp_path)
+
+    directory = tmp_path / "openqp" / "lib"
+    assert (directory / "library.dat").read_bytes() == b"library"
+    if os.name != "nt":
+        assert stat.S_IMODE(directory.stat().st_mode) == 0o555
+
+
 def test_links_are_revalidated_after_archive_root_is_flattened(tmp_path):
     staging = tmp_path / "staging"
     (tmp_path / "settings.json").write_text("outside")
