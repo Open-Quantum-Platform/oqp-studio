@@ -563,9 +563,8 @@ const hessTypeHint = $<HTMLSpanElement>("hessTypeHint");
 function selectWorkflow(wf: Workflow): void {
   const firstSelection = optionsCard.style.display === "none";
   currentWf = wf;
-  document.querySelectorAll<HTMLElement>(".wf-card").forEach((c) => {
-    c.classList.toggle("sel", c.dataset.key === wf.key);
-  });
+  $<HTMLSelectElement>("workflowSel").value = wf.key;
+  $<HTMLDivElement>("workflowDescription").textContent = wf.desc;
   document.querySelectorAll<HTMLElement>(".wf-opt").forEach((row) => {
     row.classList.toggle("on", (row.dataset.for ?? "").split(" ").includes(wf.key));
   });
@@ -584,16 +583,18 @@ function selectWorkflow(wf: Workflow): void {
   updateInpPreview();
 }
 
-function buildWorkflowGrid(): void {
-  const grid = $<HTMLDivElement>("wfGrid");
+function buildWorkflowSelect(): void {
+  const select = $<HTMLSelectElement>("workflowSel");
   for (const wf of WORKFLOWS) {
-    const card = document.createElement("div");
-    card.className = "wf-card";
-    card.dataset.key = wf.key;
-    card.innerHTML = `<div class="wf-title">${wf.title}</div><div class="wf-desc">${wf.desc}</div>`;
-    card.addEventListener("click", () => selectWorkflow(wf));
-    grid.appendChild(card);
+    const option = document.createElement("option");
+    option.value = wf.key;
+    option.textContent = wf.title;
+    select.appendChild(option);
   }
+  select.addEventListener("change", () => {
+    const workflow = WORKFLOWS.find((wf) => wf.key === select.value);
+    if (workflow) selectWorkflow(workflow);
+  });
 }
 
 // The Basis Set Exchange, which the engine reads its basis sets from, knows
@@ -2361,7 +2362,7 @@ setNavWidth(+(localStorage.getItem("oqp.nav.width") ?? NAV_DEFAULT));
 // ---------- boot ----------
 xyzArea.value = atomsToText(SAMPLES.water.atoms);
 buildSampleList();
-buildWorkflowGrid();
+buildWorkflowSelect();
 selectWorkflow(WORKFLOWS[0]);
 $<HTMLSpanElement>("copyright").textContent = COPYRIGHT;
 fetch("/api/health")
