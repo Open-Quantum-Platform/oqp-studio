@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+from shutil import rmtree
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -223,6 +224,22 @@ class JobManager:
     def list(self) -> list[JobInfo]:
         self._ensure()
         return sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)
+
+    def delete(self, job_id: str) -> None:
+        """Remove a completed project's record and its result directory."""
+        self._ensure()
+        with self._lock:
+            info = self._jobs.get(job_id)
+            if info is None:
+                raise KeyError(job_id)
+            if info.status in (JobStatus.queued, JobStatus.running):
+                raise ValueError("a running calculation cannot be deleted")
+            root = JOBS_ROOT.resolve()
+            job_dir = (root / job_id).resolve()
+            if job_dir.parent != root:
+                raise ValueError("invalid project directory")
+            rmtree(job_dir)
+            del self._jobs[job_id]
 
     def files(self, job_id: str) -> list[dict]:
         self._ensure()

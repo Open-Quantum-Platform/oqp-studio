@@ -167,6 +167,20 @@ def get_job(job_id: str) -> JobInfo:
     return info
 
 
+@app.delete("/api/jobs/{job_id}")
+def delete_job(job_id: str) -> dict:
+    """Permanently remove a completed project and all of its files."""
+    try:
+        manager.delete(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="job not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"could not delete project: {exc}") from exc
+    return {"deleted": job_id}
+
+
 @app.get("/api/jobs/{job_id}/log")
 def job_log(job_id: str) -> dict:
     if manager.get(job_id) is None:

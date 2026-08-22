@@ -1250,12 +1250,37 @@ async function refreshJobs(): Promise<void> {
     if (job.id === selectedJob) tr.className = "sel";
     tr.innerHTML =
       `<td>${job.name}</td><td>${job.runner}</td>` +
-      `<td><span class="badge ${job.status}">${job.status}</span></td>`;
+      `<td><span class="badge ${job.status}">${job.status}</span></td>` +
+      `<td><button class="ghost job-delete" type="button" data-job-id="${job.id}" ` +
+      `${job.status === "running" || job.status === "queued" ? "disabled " : ""}` +
+      `title="${job.status === "running" || job.status === "queued" ? "Project is running" : "Delete project and its files"}" ` +
+      `aria-label="Delete ${job.name}">Delete</button></td>`;
     tr.addEventListener("click", () => selectJob(job.id));
+    tr.querySelector<HTMLButtonElement>(".job-delete")!.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void deleteJob(job.id, job.name);
+    });
     body.appendChild(tr);
   }
 }
 $<HTMLButtonElement>("jobsRefresh").addEventListener("click", refreshJobs);
+
+async function deleteJob(jobId: string, name: string): Promise<void> {
+  if (!window.confirm(`Delete project “${name}” and all of its files? This cannot be undone.`)) return;
+  const response = await fetch(`/api/jobs/${jobId}`, { method: "DELETE" });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    importStatus.textContent = `delete failed: ${detail?.detail ?? response.status}`;
+    return;
+  }
+  if (selectedJob === jobId) {
+    selectedJob = "";
+    resetAnalysisProject();
+    $<HTMLUListElement>("resultFiles").innerHTML = '<li class="hint">select a job</li>';
+  }
+  importStatus.textContent = `deleted ${name}`;
+  await refreshJobs();
+}
 
 // Results computed elsewhere — on a cluster, by the standalone command-line
 // engine, or in an earlier session — are copied into a job directory of their

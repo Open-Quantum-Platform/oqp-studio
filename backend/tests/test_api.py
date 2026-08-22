@@ -61,6 +61,19 @@ def test_custom_input_name_is_saved(tmp_path, monkeypatch):
     assert "water.oqp" in names
 
 
+def test_completed_project_can_be_deleted_with_its_result_files(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    adopted = manager.adopt("water", [("water.log", b"TOTAL energy = -76.0\n")])
+
+    manager.delete(adopted.id)
+
+    assert manager.get(adopted.id) is None
+    assert not (tmp_path / adopted.id).exists()
+
+
 def test_qmmm_pdb_asset_is_saved_with_its_input(tmp_path, monkeypatch):
     """The PDB referenced by a QM/MM route must reach the runner's directory."""
     from oqp_studio import jobs
