@@ -136,6 +136,22 @@ To check afterwards what a bundle actually contains: each engine archive has a
 `README.txt` recording `OpenQP commit : <sha>`, and the "Add the data tree and
 a README" build step echoes its last five lines.
 
+## Engine requirement — external ddX until native PCM lands
+
+The current OpenQP source supports PCM through external ddX.  The native ddX
+implementation exists but is not merged, so all three standalone-engine
+workflows must keep `ENABLE_DDX=ON`, add the resulting ddX shared library to
+the PyInstaller payload, and run the DDPCM water example in the clean-room
+smoke test.  The app installer inherits this engine archive, so this is the
+place to enforce it.
+
+Do not remove that external library merely because native ddX appears in a
+branch.  Remove it only after the native implementation is merged into the
+OpenQP revision selected for the engine, and after the same PCM smoke test
+passes using that revision.  This requirement was recorded after a local PCM
+job failed with `PCM (ddX) cavity build failed: OpenQP was built without
+OQP_ENABLE_DDX`.
+
 ## Open problem 3 — report the patch.exe crash upstream
 
 The Windows engine failed twice in the same place, so not a flake:

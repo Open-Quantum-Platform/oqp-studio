@@ -116,6 +116,7 @@ jobs:
             --config-settings=cmake.define.CMAKE_Fortran_COMPILER=gfortran-15 \
             --config-settings=cmake.define.LINALG_LIB=Apple \
             --config-settings=cmake.define.ENABLE_MPI=OFF \
+            --config-settings=cmake.define.ENABLE_DDX=ON \
             --config-settings=cmake.define.USE_LIBINT=OFF \
             --config-settings=cmake.define.ENABLE_OPENTRAH=OFF \
             --config-settings=cmake.define.BUILD_TESTING=OFF
@@ -143,6 +144,19 @@ jobs:
           # deliberately NOT bundled.
           add=()
           for d in "$pkg"/lib/*.dylib; do add+=(--add-binary "$d:oqp/lib"); done
+          # ddX is an external continuum-solvent library until OpenQP's native
+          # implementation is merged.  It may live in the CMake build tree
+          # rather than the installed Python package, so discover it explicitly.
+          ddx=$(find "$pkg/lib" "$PWD/openqp" "$HOME/Library/Caches/openqp/externals" \
+            -type f -name 'libddx*.dylib' -print -quit)
+          if [ -z "$ddx" ]; then
+            echo "external ddX was enabled but libddx was not built"
+            exit 1
+          fi
+          case "$ddx" in
+            "$pkg"/lib/*) ;;
+            *) add+=(--add-binary "$ddx:oqp/lib");;
+          esac
           gccdir=$(brew --prefix gcc@15)/lib/gcc/current
           for name in libgfortran.5.dylib libquadmath.0.dylib libgcc_s.1.1.dylib libstdc++.6.dylib; do
             if [ -f "$gccdir/$name" ]; then add+=(--add-binary "$gccdir/$name:oqp/lib"); else echo "not found: $name"; fi
@@ -165,6 +179,10 @@ jobs:
           echo "OQP_VERSION=$ver" >> "$GITHUB_ENV"
           engine_sha=$(git -C openqp rev-parse HEAD)
           root=/tmp/oqpdist/openqp
+          find "$root" -type f -name 'libddx*.dylib' -print -quit | grep -q . || {
+            echo "frozen bundle is missing external ddX"
+            exit 1
+          }
           pkg=$(python -c "import os, oqp; print(os.path.dirname(oqp.__file__))" | tail -n1)
           cp -R "$pkg/share" "$root/share"
           cp -R openqp/examples "$root/examples"
@@ -183,9 +201,10 @@ jobs:
               OMP_NUM_THREADS=8 ./openqp myjob.inp
 
           Requires macOS 15 or newer.  The bundle carries its own Python, the
-          GCC Fortran runtime and the DFT-D4 libraries; that runtime is built
-          for macOS 15, which sets the floor.  Linear algebra uses Apple
-          Accelerate, part of macOS.
+          GCC Fortran runtime, DFT-D4 and external ddX continuum-solvent
+          libraries; that runtime is built for macOS 15, which sets the floor.
+          ddX remains bundled until OpenQP's native continuum solver is merged.
+          Linear algebra uses Apple Accelerate, part of macOS.
 
           If macOS refuses to run it because it was downloaded from the
           internet, clear the quarantine flag once:
@@ -242,6 +261,11 @@ jobs:
             /tmp/oqpdist/openqp/openqp hf.inp --nompi
           grep "TOTAL energy" hf.log
           grep -q -- "-76\.01074651" hf.log || { echo "energy does not match the reference"; exit 1; }
+          cp openqp/examples/PCM/H2O_RHF-HF_DDPCM_ENERGY_ISPHER.inp /tmp/oqpsmoke/pcm.inp
+          env -i PATH=/usr/bin:/bin HOME="$HOME" OMP_NUM_THREADS=2 \
+            /tmp/oqpdist/openqp/openqp pcm.inp --nompi
+          grep "TOTAL energy" pcm.log
+          ! grep -q "without OQP_ENABLE_DDX" pcm.log
 
       - name: Zip the bundle
         run: |

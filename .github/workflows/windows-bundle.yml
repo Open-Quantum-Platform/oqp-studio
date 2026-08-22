@@ -129,6 +129,7 @@ jobs:
             --config-settings=cmake.define.LINALG_LIB=Intel10_64ilp `
             --config-settings=cmake.define.ENABLE_MPI=OFF `
             --config-settings=cmake.define.ENABLE_OPENMP=ON `
+            --config-settings=cmake.define.ENABLE_DDX=ON `
             --config-settings=cmake.define.USE_LIBINT=OFF `
             --config-settings=cmake.define.ENABLE_OPENTRAH=OFF `
             --config-settings=cmake.define.BUILD_TESTING=OFF
@@ -169,6 +170,12 @@ jobs:
           # between oneAPI releases.
           $dlls = @()
           $dlls += Get-ChildItem "$pkg\lib\*.dll" -ErrorAction SilentlyContinue
+          # ddX is external until OpenQP's native continuum solver is merged.
+          # Its build tree is not guaranteed to be copied into the wheel, so
+          # locate and add it explicitly before freezing the application.
+          $ddx = Get-ChildItem -Path "$pkg\lib", "C:\oqpb", "C:\oqpx" -Filter "*ddx*.dll" -File -Recurse -ErrorAction SilentlyContinue
+          if (-not $ddx) { throw "external ddX was enabled but its DLL was not built" }
+          $dlls += $ddx
           foreach ($pat in 'libifcoremd*.dll','libifportmd*.dll','libmmd*.dll',
                            'libiomp5md*.dll','svml_dispmd*.dll','libirngmd*.dll',
                            'libintlc*.dll','libimalloc*.dll') {
@@ -190,7 +197,7 @@ jobs:
           # Version-agnostic: MKL suffixes its DLLs with a major version that
           # changes between releases (mkl_core.2.dll -> mkl_core.3.dll).
           foreach ($pat in 'liboqp.dll','dftd4.dll','mctc-lib.dll','multicharge.dll',
-                           'mkl_core.*.dll','mkl_intel_thread.*.dll','libifcoremd.dll') {
+                           '*ddx*.dll','mkl_core.*.dll','mkl_intel_thread.*.dll','libifcoremd.dll') {
             if (-not ($dlls.Name | Where-Object { $_ -like $pat })) {
               throw "required DLL missing from the bundle: $pat"
             }
@@ -213,6 +220,9 @@ jobs:
             "`"$entry`""
           ) -join ' '
           Invoke-Expression $cmd
+          if (-not (Get-ChildItem C:\oqpdist\openqp -Filter "*ddx*.dll" -File -Recurse -ErrorAction SilentlyContinue)) {
+            throw "frozen bundle is missing external ddX"
+          }
 
       - name: Add the data tree and a README
         run: |
@@ -250,8 +260,9 @@ jobs:
             '    openqp.exe myjob.inp'
             ''
             'This bundle carries its own Python, Intel Fortran runtime, Intel MKL'
-            'and the DFT-D4 libraries.  It neither reads nor needs any system'
-            'installation of them.'
+            'DFT-D4 and external ddX continuum-solvent libraries.  It neither'
+            'reads nor needs any system installation of them.  ddX remains'
+            'bundled until OpenQP''s native continuum solver is merged.'
             ''
             'Built with Intel oneAPI ifx/icx 2026.1 and Intel MKL (ILP64).'
             ''
@@ -279,6 +290,15 @@ jobs:
           # -76.0107465151 is the reference this example carries.
           if (-not (Select-String -Path hf.log -Pattern "-76\.01074651")) {
             throw "energy does not match the reference"
+          }
+          Copy-Item openqp\examples\PCM\H2O_RHF-HF_DDPCM_ENERGY_ISPHER.inp C:\oqpsmoke\pcm.inp
+          & C:\oqpdist\openqp\openqp.exe pcm.inp --nompi
+          if ($LASTEXITCODE -ne 0) { throw "PCM openqp.exe exited $LASTEXITCODE" }
+          if (-not (Select-String -Path pcm.log -Pattern "TOTAL energy")) {
+            throw "no TOTAL energy in pcm.log"
+          }
+          if (Select-String -Path pcm.log -Pattern "without OQP_ENABLE_DDX") {
+            throw "PCM bundle was built without ddX"
           }
 
       - name: Zip the bundle

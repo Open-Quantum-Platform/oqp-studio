@@ -62,7 +62,7 @@ echo "::group::build OpenQP"
 cd /src
 "$PY" -m pip install --upgrade pip
 "$PY" -m pip install cmake ninja numpy cffi scikit-build-core pyinstaller
-CMAKE_ARGS="-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH -DLINALG_LIB=OpenBLAS -DENABLE_MPI=OFF -DUSE_LIBINT=OFF -DENABLE_OPENTRAH=OFF -DBUILD_TESTING=OFF" \
+CMAKE_ARGS="-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH -DLINALG_LIB=OpenBLAS -DENABLE_MPI=OFF -DENABLE_DDX=ON -DUSE_LIBINT=OFF -DENABLE_OPENTRAH=OFF -DBUILD_TESTING=OFF" \
   "$PY" -m pip install -v . --no-build-isolation
 "$PY" -m pip install scipy "numpy<2.2" basis_set_exchange geometric
 echo "::endgroup::"
@@ -88,6 +88,18 @@ PY_ENTRY
 # the GCC Fortran runtime travel too -- the user has neither.
 add=()
 for so in "$PKG"/lib/*.so*; do add+=(--add-binary "$so:oqp/lib"); done
+# ddX is external until the native continuum solver is merged.  Some OpenQP
+# installs keep its shared object in the CMake build tree, so include it even
+# when it is not copied beside liboqp by pip.
+ddx=$(find "$PKG/lib" /src /host-cache/openqp -type f -name 'libddx*.so*' -print -quit)
+if [ -z "$ddx" ]; then
+  echo "external ddX was enabled but libddx was not built"
+  exit 1
+fi
+case "$ddx" in
+  "$PKG"/lib/*) ;;
+  *) add+=(--add-binary "$ddx:oqp/lib");;
+esac
 for so in "$BLAS"/lib/libopenblas*.so*; do
   [ -L "$so" ] || add+=(--add-binary "$so:oqp/lib")
 done
@@ -109,6 +121,10 @@ printf 'bundling: %s\n' "${add[@]}" | head -40
 echo "::endgroup::"
 
 ROOT=/tmp/oqpdist/openqp
+find "$ROOT" -type f -name 'libddx*.so*' -print -quit | grep -q . || {
+  echo "frozen bundle is missing external ddX"
+  exit 1
+}
 cp -R "$PKG/share" "$ROOT/share"
 cp -R /src/examples "$ROOT/examples"
 
@@ -127,8 +143,9 @@ Threads: set OMP_NUM_THREADS to the number of physical cores, e.g.
     OMP_NUM_THREADS=8 ./openqp myjob.inp
 
 This bundle carries its own Python, an ILP64 OpenBLAS with runtime CPU
-dispatch, the GCC Fortran runtime and the DFT-D4 libraries.  It neither reads
-nor needs any system installation of them.
+dispatch, the GCC Fortran runtime, DFT-D4 and external ddX continuum-solvent
+libraries.  It neither reads nor needs any system installation of them.  ddX
+remains bundled until OpenQP's native continuum solver is merged.
 
 Built inside manylinux_2_28, so it runs on any distribution with glibc 2.28 or
 newer (RHEL/Rocky 8 and later, Ubuntu 18.10 and later).
@@ -150,6 +167,10 @@ cd /tmp/oqpsmoke
 env -i PATH=/usr/bin:/bin HOME=/root OMP_NUM_THREADS=2 "$ROOT/openqp" hf.inp --nompi
 grep "TOTAL energy" hf.log
 grep -q -- "-76\.01074651" hf.log || { echo "energy does not match the reference"; exit 1; }
+cp /src/examples/PCM/H2O_RHF-HF_DDPCM_ENERGY_ISPHER.inp /tmp/oqpsmoke/pcm.inp
+env -i PATH=/usr/bin:/bin HOME=/root OMP_NUM_THREADS=2 "$ROOT/openqp" pcm.inp --nompi
+grep "TOTAL energy" pcm.log
+! grep -q "without OQP_ENABLE_DDX" pcm.log
 echo "::endgroup::"
 
 mkdir -p /out

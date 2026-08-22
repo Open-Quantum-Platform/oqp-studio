@@ -44,6 +44,9 @@ installs an application that computes with no network afterwards. The WSL and
 SSH adapters remain, for running against a cluster or an OpenQP you installed
 yourself.
 
+Until OpenQP's native continuum solver is merged, the bundled engine also
+contains the external ddX library required for PCM calculations.
+
 ## Install with pip
 
 ```bash
