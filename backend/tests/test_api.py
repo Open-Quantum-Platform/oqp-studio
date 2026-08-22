@@ -1562,6 +1562,32 @@ def test_cube_parser_bounds_dataset_identifiers_before_accumulating_them():
         cube.parse(malformed)
 
 
+def test_cube_parser_stops_fixed_header_records_after_the_first_extra_field(monkeypatch):
+    import pytest
+
+    from oqp_studio import cube
+
+    original = cube._tokens
+    seen = 0
+
+    def count_tokens(line):
+        nonlocal seen
+        for token in original(line):
+            seen += 1
+            if seen > 6:
+                raise AssertionError("fixed cube record was consumed without a bound")
+            yield token
+
+    monkeypatch.setattr(cube, "_tokens", count_tokens)
+    malformed = _cube([1.0, 2.0]).replace(
+        "0 0.000000 0.0 0.0", " ".join(["0"] * 10_000), 1,
+    )
+
+    with pytest.raises(ValueError, match="cube header is invalid"):
+        cube.parse(malformed)
+    assert seen == 6
+
+
 def test_cube_parser_rejects_malformed_geometry_records_and_empty_axes():
     import pytest
 
@@ -1721,6 +1747,8 @@ def test_symmetry_rejects_incomplete_or_malformed_coordinate_rows():
         symmetry.analyze("O 0 0 0\nH invalid 1 0\n")
     with pytest.raises(ValueError, match="at most 300"):
         symmetry.analyze("301\ntoo many\n")
+    with pytest.raises(ValueError, match="exact element symbol"):
+        symmetry.analyze("Hx 0.0 0.0 0.0\n")
 
 
 def test_symmetry_rejects_a_structure_containing_only_dummy_sites():

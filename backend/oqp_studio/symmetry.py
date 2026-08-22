@@ -227,6 +227,7 @@ def _strict_xyz(xyz: str) -> list[Atom]:
         if any(line.strip() for line in lines[declared + 2:]):
             raise ValueError("symmetry analysis accepts one XYZ structure at a time")
         source = "\n".join(lines[:declared + 2])
+        coordinate_rows = lines[2:declared + 2]
         frames = parse_xyz(source)
         expected = declared
     else:
@@ -234,7 +235,12 @@ def _strict_xyz(xyz: str) -> list[Atom]:
         if len(rows) > 300:
             raise ValueError("symmetry analysis supports at most 300 atoms")
         frames = parse_xyz("\n".join(rows))
+        coordinate_rows = rows
         expected = len(rows)
+    for row in coordinate_rows:
+        fields = row.split(maxsplit=4)
+        if len(fields) != 4 or fields[0] not in ATOMIC_MASS:
+            raise ValueError("every coordinate row must use an exact element symbol and three numbers")
     if len(frames) != 1 or len(frames[0].atoms) != expected:
         raise ValueError("every coordinate row must contain a valid element and three numbers")
     atoms = frames[0].atoms

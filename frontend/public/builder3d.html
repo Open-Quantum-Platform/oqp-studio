@@ -123,6 +123,7 @@
         let style = { type: "auto", color: "element-symbol", labels: "none" };
         let last = null;   // { data, format }
         let lastCube = null;
+        let lastAtomicProperty = null;
 
         // Mol* labels an element with its atom name, and there is no parameter
         // to make it print an index instead. An XYZ model has no atom names,
@@ -233,12 +234,18 @@
           });
         }
 
-        async function showAtomicProperty(values) {
-          if (!last || last.format !== "xyz") return;
-          const source = { ...last };
+        async function drawAtomicProperty(source, values) {
           await viewer.plugin.clear();
           await drawStructure(source.data, source.format);
           await addAtomicPropertyMap(source.data, values);
+        }
+
+        async function showAtomicProperty(values) {
+          if (!last || last.format !== "xyz") return;
+          const source = { ...last };
+          lastCube = null;
+          lastAtomicProperty = { source, values: [...values] };
+          await drawAtomicProperty(source, values);
         }
 
         async function drawStructure(data, format = "xyz") {
@@ -685,6 +692,7 @@
           try {
           if (message.type === "oqp-structure") {
             lastCube = null;
+            lastAtomicProperty = null;
             picked.length = 0;
             report();
             await viewer.plugin.clear();
@@ -695,6 +703,7 @@
             await showAtomicProperty((message.shielding || []).map((row) => row.total_coupled));
           } else if (message.type === "oqp-normal-mode") {
             lastCube = null;
+            lastAtomicProperty = null;
             picked.length = 0;
             report();
             stopNormalMode();
@@ -716,6 +725,7 @@
             if (resume) await playNormalMode();
           } else if (message.type === "oqp-normal-mode-reset") {
             lastCube = null;
+            lastAtomicProperty = null;
             stopNormalMode();
             normalMode = null;
             picked.length = 0;
@@ -724,6 +734,7 @@
             await drawStructure(message.xyz);
           } else if (message.type === "oqp-file") {
             lastCube = null;
+            lastAtomicProperty = null;
             qmmmAtoms.clear();
             await viewer.plugin.clear();
             await drawStructure(message.text, message.format);
@@ -740,7 +751,9 @@
             setRendering(message.rendering || {});
           } else if (message.type === "oqp-style") {
             style = { ...style, ...message.style };
-            if (lastCube) {
+            if (lastAtomicProperty) {
+              await drawAtomicProperty(lastAtomicProperty.source, lastAtomicProperty.values);
+            } else if (lastCube) {
               await drawCube(lastCube);
             } else if (last) {
               await viewer.plugin.clear();
@@ -761,6 +774,7 @@
             picked.length = 0;
             report();
           } else if (message.type === "oqp-cube") {
+            lastAtomicProperty = null;
             lastCube = { ...message };
             await drawCube(lastCube);
           }

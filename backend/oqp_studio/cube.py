@@ -38,21 +38,30 @@ def _tokens(line: str):
     return (match.group() for match in re.finditer(r"\S+", line))
 
 
+def _record(line: str, lengths: tuple[int, ...]) -> list[str]:
+    """Read a fixed-width record without expanding all fields from malformed input."""
+    maximum = max(lengths)
+    values: list[str] = []
+    for token in _tokens(line):
+        if len(values) >= maximum:
+            raise ValueError("cube record has too many fields")
+        values.append(token)
+    if len(values) not in lengths:
+        raise ValueError("cube record has the wrong number of fields")
+    return values
+
+
 def parse(text: str, *, header_only: bool = False) -> Cube:
     lines = text.splitlines()
     if len(lines) < 6:
         raise ValueError("cube file is incomplete")
     try:
-        origin_record = lines[2].split()
-        if len(origin_record) not in (4, 5):
-            raise ValueError
+        origin_record = _record(lines[2], (4, 5))
         atom_count = int(origin_record[0])
         atoms = abs(atom_count)
         if atoms > MAX_CUBE_ATOMS:
             raise ValueError
-        axis_records = [lines[index].split() for index in (3, 4, 5)]
-        if any(len(record) != 4 for record in axis_records):
-            raise ValueError
+        axis_records = [_record(lines[index], (4,)) for index in (3, 4, 5)]
         voxel_counts = tuple(int(record[0]) for record in axis_records)
         shape = tuple(abs(count) for count in voxel_counts)
         if any(size == 0 for size in shape):
@@ -64,7 +73,10 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
     header_end = 6 + atoms
     if len(lines) < header_end:
         raise ValueError("cube atom header is incomplete")
-    atom_records = [line.split() for line in lines[6:header_end]]
+    try:
+        atom_records = [_record(line, (5,)) for line in lines[6:header_end]]
+    except ValueError as exc:
+        raise ValueError("cube atom header is invalid") from exc
     if any(len(record) != 5 for record in atom_records):
         raise ValueError("cube atom header is invalid")
     datasets = int(origin_record[4]) if len(origin_record) > 4 else 1
@@ -155,7 +167,7 @@ def parse_header(stream: TextIOBase) -> Cube:
     if any(line == "" for line in lines):
         raise ValueError("cube file is incomplete")
     try:
-        atom_count = int(lines[2].split()[0])
+        atom_count = int(_record(lines[2], (4, 5))[0])
     except (IndexError, ValueError) as exc:
         raise ValueError("cube header is invalid") from exc
     atoms = abs(atom_count)
@@ -167,7 +179,7 @@ def parse_header(stream: TextIOBase) -> Cube:
             raise ValueError("cube atom header is incomplete")
         lines.append(line)
     if atom_count < 0:
-        origin = lines[2].split()
+        origin = _record(lines[2], (4, 5))
         origin[0] = str(atoms)
         lines[2] = " ".join(origin) + "\n"
     return parse("".join(lines), header_only=True)
