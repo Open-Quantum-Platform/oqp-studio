@@ -83,7 +83,7 @@ function setArtStructure(atoms: Atom[]): void {
 }
 
 function pushToArt(): void {
-  if (!artScene.atoms.length || !artReady) return;
+  if ((!artScene.atoms.length && !artScene.cube) || !artReady) return;
   artFrame.contentWindow?.postMessage(
     { type: "oqp-art-scene", scene: artScene }, window.location.origin,
   );
@@ -177,7 +177,7 @@ function showTab(name: string): void {
     refreshJobs();
   }
   if (name === "art") {
-    if (!artScene.atoms.length) {
+    if (!artScene.atoms.length && !artScene.cube) {
       const atoms = parseAtoms(xyzArea.value);
       if (atoms.length) {
         artAtoms = atoms;
@@ -2333,9 +2333,9 @@ function pushToResultViewer(message: Record<string, unknown>): void {
   const coordinateText = typeof message.xyz === "string" ? message.xyz
     : type === "oqp-file" && typeof message.text === "string" ? message.text : "";
   const sceneAtoms = coordinateText ? parseAtoms(coordinateText) : [];
-  if (type === "oqp-cube" && sceneAtoms.length && typeof message.cube === "string") {
+  if (type === "oqp-cube" && typeof message.cube === "string") {
     const orbital = currentOrbitalStyle();
-    artAtoms = sceneAtoms;
+    if (sceneAtoms.length) artAtoms = sceneAtoms;
     artScene = {
       atoms: sceneAtoms,
       cube: message.cube,

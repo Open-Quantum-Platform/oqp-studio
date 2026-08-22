@@ -231,7 +231,7 @@ function orbitalStyle(): Required<OrbitalStyle> {
     positive: Number(source.positive ?? 0x4f8fdd),
     negative: Number(source.negative ?? 0xdd6a4f),
     alpha: Number(source.alpha ?? 0.85),
-    sides: String(source.sides ?? lastScene?.sides ?? "both"),
+    sides: String(lastScene?.sides ?? source.sides ?? "both"),
   };
 }
 
@@ -298,7 +298,7 @@ function addMolecule(group: THREE.Group, atoms: Atom[], center: THREE.Vector3): 
 }
 
 async function setArtwork(data: ArtScene): Promise<void> {
-  if (!data.atoms.length) return;
+  if (!data.atoms.length && !data.cube) return;
   const request = ++renderRequest;
   lastScene = data;
   pixelProbeDone = false;
@@ -317,6 +317,7 @@ async function setArtwork(data: ArtScene): Promise<void> {
     }
   }
   if (request !== renderRequest) return;
+  if (!data.atoms.length && !cube) return;
   if (artwork) {
     scene.remove(artwork);
     disposeObject(artwork);
@@ -324,9 +325,16 @@ async function setArtwork(data: ArtScene): Promise<void> {
   artwork = new THREE.Group();
   surfaceMeshes = [];
   const center = new THREE.Vector3();
-  data.atoms.forEach(([, x, y, z]) => center.add(new THREE.Vector3(x, y, z)));
-  center.multiplyScalar(1 / data.atoms.length);
-  addMolecule(artwork, data.atoms, center);
+  if (data.atoms.length) {
+    data.atoms.forEach(([, x, y, z]) => center.add(new THREE.Vector3(x, y, z)));
+    center.multiplyScalar(1 / data.atoms.length);
+    addMolecule(artwork, data.atoms, center);
+  } else if (cube) {
+    center.copy(cube.origin)
+      .addScaledVector(cube.axes[0], (cube.shape[0] - 1) / 2)
+      .addScaledVector(cube.axes[1], (cube.shape[1] - 1) / 2)
+      .addScaledVector(cube.axes[2], (cube.shape[2] - 1) / 2);
+  }
 
   if (cube) {
     progress.textContent = "building positive and negative isosurfaces";
