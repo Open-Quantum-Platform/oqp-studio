@@ -531,7 +531,7 @@ const WORKFLOWS: Workflow[] = [
   { key: "hess", title: "Frequencies (Hessian)", desc: "Vibrational frequencies, IR, and thermochemistry", theories: ["hf", "dft", ...DFT_RESPONSE], defaultTheory: "dft" },
   { key: "prop", title: "Molecular properties", desc: "Population, multipoles, and state properties", theories: ["hf", "dft", "mrsf", "umrsf"], defaultTheory: "dft" },
   { key: "nmr", title: "NMR shielding", desc: "Ground-state NMR properties", theories: ["hf", "dft"], defaultTheory: "dft" },
-  { key: "pcm", title: "PCM solvation", desc: "ddX reference-SCF energy in a dielectric continuum", theories: ["hf", "dft"], defaultTheory: "hf" },
+  { key: "pcm", title: "PCM solvation", desc: "ddX reference-SCF energy in a dielectric continuum", theories: ["hf"], defaultTheory: "hf" },
   { key: "abs", title: "Vertical excited states", desc: "Excitation energies and oscillator strengths at the S0 geometry", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
   { key: "exgrad", title: "Excited-state gradient", desc: "Gradient of a selected electronic state", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
   { key: "exopt", title: "Excited-state optimization", desc: "Optimize a selected excited state", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
@@ -683,6 +683,28 @@ const CI_DEFAULTS: Record<string, string> = {
   nroot: "1", solver: "auto", eig_tol: "1e-10", davidson_maxiter: "100",
 };
 
+const PCM_DEFAULTS: Record<string, string> = {
+  model: "ddpcm", epsilon: "78.3553", radii: "uff",
+};
+
+const PCM_SOLVENT_DIELECTRICS: Record<string, string> = {
+  water: "78.3553",
+  acetonitrile: "35.688",
+  methanol: "32.613",
+  ethanol: "24.852",
+  dimethylsulfoxide: "46.826",
+  dimethylformamide: "36.71",
+  acetone: "20.493",
+  tetrahydrofuran: "7.4257",
+  dichloromethane: "8.93",
+  chloroform: "4.7113",
+  "diethyl-ether": "4.24",
+  toluene: "2.3741",
+  benzene: "2.2706",
+  dioxane: "2.2099",
+  "ethyl-acetate": "6.02",
+};
+
 function withOptions(driver: string, options: string): string {
   if (!options) return driver;
   const opening = driver.indexOf("(");
@@ -699,19 +721,27 @@ function optimisationOptions(): string {
   ]);
 }
 
-function pcmInput(atoms: Atom[], charge: number, mult: number, theory: string, basis: string): string {
-  const reference = fieldValue("pcmReference");
-  const atomicNumber: Record<string, number> = { H: 1, He: 2, Li: 3, Be: 4, B: 5, C: 6, N: 7, O: 8, F: 9, Ne: 10, P: 15, S: 16, Cl: 17, Br: 35, I: 53 };
-  const lines = ["[input]", "system="];
-  for (const [el, x, y, z] of atoms) lines.push(`${atomicNumber[el] ?? el} ${x.toFixed(9)} ${y.toFixed(9)} ${z.toFixed(9)}`);
-  lines.push(`charge=${charge}`, "runtype=energy", `basis=${basis}`, `method=${theory}`, "", "[scf]", `multiplicity=${mult}`, `type=${reference}`);
-  const scfOverrides = optionList([
-    ["maxit", fieldValue("scfMaxit")],
-    ["conv", fieldValue("scfConv")],
-  ], SCF_DEFAULTS);
-  if (scfOverrides) lines.push(...scfOverrides.split(","));
-  lines.push("", "[pcm]", "enabled=true", "backend=ddx", "mode=reference_scf", `model=${fieldValue("pcmModel")}`, `epsilon=${fieldValue("pcmEpsilon")}`);
-  return lines.join("\n") + "\n";
+function pcmModifier(): string {
+  const solvent = fieldValue("pcmSolvent");
+  const customSolvent = fieldValue("pcmSolventCustom") || "custom";
+  const solventArgument = solvent === "__custom__"
+    ? `solvent=${JSON.stringify(customSolvent)}`
+    : solvent;
+  const options = optionList([
+    ["model", fieldValue("pcmModel")],
+    ["epsilon", fieldValue("pcmEpsilon")],
+    ["radii", fieldValue("pcmRadii")],
+  ], PCM_DEFAULTS);
+  return `pcm(${solventArgument}${options ? `,${options}` : ""})`;
+}
+
+function syncPcmSolvent(): void {
+  const custom = fieldValue("pcmSolvent") === "__custom__";
+  const customWrap = $<HTMLElement>("pcmCustomSolventWrap");
+  customWrap.style.display = custom ? "" : "none";
+  if (!custom) {
+    $<HTMLInputElement>("pcmEpsilon").value = PCM_SOLVENT_DIELECTRICS[fieldValue("pcmSolvent")];
+  }
 }
 
 // Generates concise .oqp input: ROUTE, one primary driver, globals, geometry.
@@ -727,7 +757,6 @@ function generateInp(): string {
 
   const qmmmError = qmmmValidation();
   if (qmmmError) return `# ${qmmmError}\n`;
-  if (currentWf.key === "pcm") return pcmInput(atoms, charge, mult, theory, basis);
 
   const routes: Record<string, string> = {
     hf: `hf/${basis}`,
@@ -801,8 +830,11 @@ function generateInp(): string {
     default: driver = "energy";
   }
 
-  const lines: string[] = [pdbSource ? `${routes[theory]} qmmm_flag=true` : routes[theory], driver];
-  const scfOptions = optionList([
+  const route = currentWf.key === "pcm" && fieldValue("pcmReference") === "rohf"
+    ? `rohf/${basis}`
+    : routes[theory];
+  const lines: string[] = [pdbSource ? `${route} qmmm_flag=true` : route, driver];
+  const scfEntries: [string, string][] = [
     ["maxit", fieldValue("scfMaxit")], ["conv", fieldValue("scfConv")],
     ["maxdiis", fieldValue("scfMaxDiis")], ["diis_type", fieldValue("scfDiisType")],
     ["vshift", fieldValue("scfLevelShift")],
@@ -821,8 +853,10 @@ function generateInp(): string {
     ["incremental", fieldValue("scfIncremental")], ["pscreen", fieldValue("scfPrescreen")],
     ["pscreen_k", fieldValue("scfPrescreenK")], ["pscreen_cap", fieldValue("scfPrescreenCap")],
     ["pscreen_tight", fieldValue("scfPrescreenTight")], ["verbose", fieldValue("scfVerbose")],
-  ], SCF_DEFAULTS);
+  ];
+  const scfOptions = optionList(scfEntries, SCF_DEFAULTS);
   if (scfOptions) lines.push(`scf(${scfOptions})`);
+  if (currentWf.key === "pcm") lines.push(pcmModifier());
   if (usesStates) {
     const responseOptions = optionList([
       ["maxit", fieldValue("responseMaxit")], ["conv", fieldValue("responseConv")],
@@ -943,8 +977,8 @@ function syncFieldStates(): void {
 
 for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCustom", "charge", "mult",
                   "nstate", "targetState", "meciA", "meciB", "mecpA", "mecpB", "tciA", "tciB", "tciC",
-                  "couplingA", "couplingB", "nebProduct", "nebImages", "nebSpring", "pcmReference", "pcmModel",
-                  "pcmEpsilon", "ektIp", "ektEa", "hessType", "scfMaxit", "scfConv", "responseMaxit",
+                  "couplingA", "couplingB", "nebProduct", "nebImages", "nebSpring", "pcmReference", "pcmSolvent", "pcmSolventCustom", "pcmModel",
+                  "pcmEpsilon", "pcmRadii", "ektIp", "ektEa", "hessType", "scfMaxit", "scfConv", "responseMaxit",
                   "responseCutoff", "responseConv", "zvectorMaxit", "zvectorConv", "davidsonSubspace", "zvectorSolver", "gmresDim",
                   "scfMaxDiis", "scfDiisType", "scfLevelShift", "scfConverger", "scfFallback", "scfEscalation", "scfStability", "soscfLevelShift",
                   "scfMom", "scfMomSwitch", "scfPfon", "scfPfonTemp", "scfPfonCooling", "trahStability", "trahLineSearch", "trahSolver", "trahRadius",
@@ -957,6 +991,7 @@ for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCus
                   "energyGap", "trustRadius", "crossingAlgorithm"]) {
   $<HTMLElement>(id).addEventListener("input", () => {
     syncFieldStates();
+    if (id === "pcmSolvent") syncPcmSolvent();
     syncWorkflowDetails();
     updateInpPreview();
   });
@@ -2529,6 +2564,7 @@ setNavWidth(+(localStorage.getItem("oqp.nav.width") ?? NAV_DEFAULT));
 xyzArea.value = atomsToText(SAMPLES.water.atoms);
 buildSampleList();
 buildWorkflowSelect();
+syncPcmSolvent();
 selectWorkflow(WORKFLOWS[0]);
 $<HTMLSpanElement>("copyright").textContent = COPYRIGHT;
 fetch("/api/health")

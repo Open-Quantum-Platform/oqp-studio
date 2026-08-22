@@ -671,10 +671,33 @@
                   <select id="pcmReference"><option value="rhf">RHF</option><option value="rohf">ROHF</option></select>
                 </div>
                 <div>
+                  <label>Solvent</label>
+                  <select id="pcmSolvent">
+                    <option value="water">Water</option>
+                    <option value="acetonitrile">Acetonitrile</option>
+                    <option value="methanol">Methanol</option>
+                    <option value="ethanol">Ethanol</option>
+                    <option value="dimethylsulfoxide">Dimethyl sulfoxide</option>
+                    <option value="dimethylformamide">Dimethylformamide</option>
+                    <option value="acetone">Acetone</option>
+                    <option value="tetrahydrofuran">Tetrahydrofuran</option>
+                    <option value="dichloromethane">Dichloromethane</option>
+                    <option value="chloroform">Chloroform</option>
+                    <option value="diethyl-ether">Diethyl ether</option>
+                    <option value="toluene">Toluene</option>
+                    <option value="benzene">Benzene</option>
+                    <option value="dioxane">1,4-Dioxane</option>
+                    <option value="ethyl-acetate">Ethyl acetate</option>
+                    <option value="__custom__">Custom</option>
+                  </select>
+                </div>
+                <div>
                   <label>PCM model</label>
                   <select id="pcmModel"><option value="ddpcm">ddPCM</option><option value="ddcosmo">ddCOSMO</option><option value="ddlpb">ddLPB</option></select>
                 </div>
                 <div><label>Dielectric constant</label><input type="number" id="pcmEpsilon" value="78.3553" min="1" step="0.0001" /></div>
+                <div><label>Cavity radii set</label><input type="text" id="pcmRadii" value="uff" /></div>
+                <div id="pcmCustomSolventWrap" style="display:none"><label>Custom solvent name</label><input type="text" id="pcmSolventCustom" placeholder="solvent" /></div>
               </div>
               <div class="row wf-opt" data-for="ekt">
                 <div><label><input type="checkbox" id="ektIp" checked style="width:auto;margin-right:.4rem" />Ionization (IP)</label></div>
