@@ -1,4 +1,5 @@
 import io
+import os
 import stat
 import tarfile
 import zipfile
@@ -20,7 +21,10 @@ def test_zip_extracts_regular_file_and_preserves_executable_bit(tmp_path):
 
     executable = tmp_path / "openqp" / "openqp"
     assert executable.read_bytes() == b"engine"
-    assert executable.stat().st_mode & stat.S_IXUSR
+    if os.name != "nt":
+        # Windows has no POSIX executable bit; engine.install handles its .exe
+        # directly and only Unix-like platforms need the restored archive mode.
+        assert executable.stat().st_mode & stat.S_IXUSR
 
 
 @pytest.mark.parametrize("name", ["../outside", "/absolute", "C:\\outside", "C:outside"])
