@@ -61,6 +61,25 @@ def test_custom_input_name_is_saved(tmp_path, monkeypatch):
     assert "water.oqp" in names
 
 
+def test_qmmm_pdb_asset_is_saved_with_its_input(tmp_path, monkeypatch):
+    """The PDB referenced by a QM/MM route must reach the runner's directory."""
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    res = client.post(
+        "/api/jobs",
+        json={
+            "input_text": 'hf/sto-3g qmmm_flag=true\ngeom="system.pdb 0"\n',
+            "input_name": "system.oqp",
+            "pdb_name": "system.pdb",
+            "pdb_text": "ATOM      1  O   HOH A   1       0.0 0.0 0.0\nEND\n",
+        },
+    )
+    assert res.status_code == 200
+    job_id = res.json()["id"]
+    assert (tmp_path / job_id / "system.pdb").read_text().endswith("END\n")
+
+
 def test_runners_listed():
     res = client.get("/api/runners")
     assert res.status_code == 200

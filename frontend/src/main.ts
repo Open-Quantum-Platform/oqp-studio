@@ -120,6 +120,7 @@ function parseAtoms(text: string): Atom[] {
 $<HTMLSelectElement>("sample").addEventListener("change", (e) => {
   const key = (e.target as HTMLSelectElement).value;
   if (SAMPLES[key]) {
+    clearPdbSource();
     xyzArea.value = atomsToText(SAMPLES[key].atoms);
     updatePreview();
   }
@@ -128,6 +129,61 @@ $<HTMLSelectElement>("sample").addEventListener("change", (e) => {
 // --- open an existing file: OpenQP inputs/outputs, trajectories, and the
 // common interchange formats. Multi-geometry files become a frame slider. ---
 let loadedFrames: { label: string; atoms: Atom[] }[] = [];
+interface PdbSource {
+  name: string;
+  text: string;
+}
+let pdbSource: PdbSource | null = null;
+const qmAtoms = new Map<number, string>();
+
+function pdbFilename(name: string): string {
+  const stem = name.trim().replace(/^.*[\\/]/, "").replace(/\.(pdb|ent)$/i, "") || "structure";
+  return `${stem.replace(/[^A-Za-z0-9._-]/g, "_")}.pdb`;
+}
+
+function updateQmAtoms(): void {
+  const selected = [...qmAtoms.entries()].sort(([a], [b]) => a - b);
+  $<HTMLSpanElement>("qmSelectionStatus").textContent =
+    `${selected.length} QM atom${selected.length === 1 ? "" : "s"} selected`;
+  $<HTMLSpanElement>("qmAtomList").textContent = selected.length
+    ? selected.slice(0, 12).map(([, label]) => label).join(", ") +
+      (selected.length > 12 ? ` +${selected.length - 12}` : "")
+    : "";
+}
+
+function pushPdbPreview(): void {
+  if (!pdbSource || !viewerReady) return;
+  const target = $<HTMLIFrameElement>("previewFrame").contentWindow;
+  target?.postMessage(
+    { type: "oqp-file", text: pdbSource.text, format: "pdb" }, window.location.origin);
+  target?.postMessage({ type: "oqp-qmmm-mode", enabled: true }, window.location.origin);
+}
+
+function setPdbSource(name: string, text: string): void {
+  pdbSource = { name: pdbFilename(name), text };
+  qmAtoms.clear();
+  $<HTMLDivElement>("qmmmCard").style.display = "";
+  updateQmAtoms();
+  const frame = $<HTMLIFrameElement>("previewFrame");
+  frame.src ||= "/builder3d.html";
+  if (viewerReady) pushPdbPreview();
+}
+
+function clearPdbSource(): void {
+  if (!pdbSource) return;
+  pdbSource = null;
+  qmAtoms.clear();
+  $<HTMLDivElement>("qmmmCard").style.display = "none";
+  $<HTMLIFrameElement>("previewFrame").contentWindow?.postMessage(
+    { type: "oqp-qmmm-mode", enabled: false }, window.location.origin);
+}
+
+function qmmmValidation(): string | null {
+  if (!pdbSource) return null;
+  if (!qmAtoms.size) return "Select at least one QM atom in the PDB viewer before running.";
+  if (currentWf.key === "pcm") return "PCM is not available for a PDB QM/MM calculation.";
+  return null;
+}
 
 function showFrame(index: number): void {
   const frame = loadedFrames[index - 1];
@@ -157,16 +213,13 @@ $<HTMLInputElement>("fileInput").addEventListener("change", async (event) => {
       return;
     }
     const data = await res.json();
-    if (/\.(pdb|ent|cif)$/i.test(file.name)) {
+    if (/\.(pdb|ent)$/i.test(file.name)) {
       // Mol* reads PDB natively; going through plain coordinates would throw
       // away the residues and chains a cartoon needs.
       const text = await file.text();
-      $<HTMLIFrameElement>("previewFrame").src ||= "/builder3d.html";
-      setTimeout(
-        () => $<HTMLIFrameElement>("previewFrame").contentWindow?.postMessage(
-          { type: "oqp-file", text, format: "pdb" }, window.location.origin),
-        viewerReady ? 0 : 800,
-      );
+      setPdbSource(file.name, text);
+    } else {
+      clearPdbSource();
     }
     loadedFrames = data.frames;
     const slider = $<HTMLInputElement>("frameRange");
@@ -194,13 +247,10 @@ $<HTMLButtonElement>("pdbFetch").addEventListener("click", async () => {
     const response = await fetch(`/api/pdb/${encodeURIComponent(code)}`);
     if (!response.ok) throw new Error((await response.json()).detail ?? response.statusText);
     const data = await response.json();
-    const frame = document.getElementById("previewFrame") as HTMLIFrameElement;
-    frame.src ||= "/builder3d.html";
-    const send = () => frame.contentWindow?.postMessage(
-      { type: "oqp-file", text: data.pdb, format: "pdb" }, window.location.origin);
-    setTimeout(send, viewerReady ? 0 : 800);
+    setPdbSource(`${data.code}.pdb`, data.pdb);
 
-    // The coordinate box gets the same structure, so it can be run as input.
+    // Keep coordinates visible for inspection, but PDB runs use the original
+    // topology and a deliberately selected QM region rather than all atoms.
     const body = new FormData();
     body.append("file", new File([data.pdb], `${data.code}.pdb`));
     const parsed = await fetch("/api/structure/open", { method: "POST", body });
@@ -231,6 +281,7 @@ $<HTMLButtonElement>("pubchemFetch").addEventListener("click", async () => {
     const res = await fetch(`/api/pubchem/${encodeURIComponent(name)}`);
     if (!res.ok) throw new Error((await res.json()).detail ?? res.statusText);
     const data = await res.json();
+    clearPdbSource();
     xyzArea.value = atomsToText(data.atoms);
     builderStatus.textContent = `${data.atoms.length} atoms loaded from PubChem`;
     await updatePreview();
@@ -419,11 +470,16 @@ window.addEventListener("message", (event) => {
   if (event.origin === window.location.origin && event.data?.type === "oqp-viewer-ready" &&
       event.source === $<HTMLIFrameElement>("previewFrame").contentWindow) {
     viewerReady = true;
-    updatePreview();
+    if (pdbSource) pushPdbPreview();
+    else updatePreview();
   }
 });
 
 async function updatePreview(): Promise<void> {
+  if (pdbSource) {
+    pushPdbPreview();
+    return;
+  }
   const atoms = parseAtoms(xyzArea.value);
   if (!atoms.length) return;
   const xyz = `${atoms.length}\nOQP Studio preview\n${atomsToText(atoms)}\n`;
@@ -609,6 +665,8 @@ function generateInp(): string {
   const basis = currentBasis();
   const functional = currentFunctional();
 
+  const qmmmError = qmmmValidation();
+  if (qmmmError) return `# ${qmmmError}\n`;
   if (currentWf.key === "pcm") return pcmInput(atoms, charge, mult, theory, basis);
 
   const routes: Record<string, string> = {
@@ -683,7 +741,7 @@ function generateInp(): string {
     default: driver = "energy";
   }
 
-  const lines: string[] = [routes[theory], driver];
+  const lines: string[] = [pdbSource ? `${routes[theory]} qmmm_flag=true` : routes[theory], driver];
   const scfOptions = optionList([["maxit", fieldValue("scfMaxit")], ["conv", fieldValue("scfConv")]]);
   if (scfOptions) lines.push(`scf(${scfOptions})`);
   if (usesStates) {
@@ -708,11 +766,18 @@ function generateInp(): string {
   if (charge !== 0) lines.push(`charge=${charge}`);
   // MRSF selects its high-spin working reference automatically — no mult.
   if (mult !== 1 && theory !== "mrsf") lines.push(`mult=${mult}`);
-  lines.push('geom="""');
-  for (const [el, x, y, z] of atoms) {
-    lines.push(`${el.padEnd(2)} ${x.toFixed(6).padStart(11)} ${y.toFixed(6).padStart(11)} ${z.toFixed(6).padStart(11)}`);
+  if (pdbSource) {
+    const selected = [...qmAtoms.keys()].sort((a, b) => a - b);
+    const forcefield = fieldValue("qmmmForcefield") || "amber14-all.xml";
+    lines.push(`qmmm(pdb_file="${pdbSource.name}",forcefield_files="${forcefield}",qm_atoms="${selected.join(" ")}")`);
+    lines.push(`geom="${pdbSource.name} ${selected.join(" ")}"`);
+  } else {
+    lines.push('geom="""');
+    for (const [el, x, y, z] of atoms) {
+      lines.push(`${el.padEnd(2)} ${x.toFixed(6).padStart(11)} ${y.toFixed(6).padStart(11)} ${z.toFixed(6).padStart(11)}`);
+    }
+    lines.push('"""');
   }
-  lines.push('"""');
   return lines.join("\n") + "\n";
 }
 
@@ -772,6 +837,12 @@ for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCus
 }
 
 $<HTMLButtonElement>("generate").addEventListener("click", () => {
+  const qmmmError = qmmmValidation();
+  if (qmmmError) {
+    builderStatus.textContent = qmmmError;
+    showTab("builder");
+    return;
+  }
   $<HTMLTextAreaElement>("input").value = previewInput();
   const name = projectName.value.trim() || "input";
   $<HTMLInputElement>("inputName").value = `${name}.oqp`;
@@ -947,6 +1018,11 @@ async function pollJob(jobId: string): Promise<void> {
 }
 
 runButton.addEventListener("click", async () => {
+  const qmmmError = qmmmValidation();
+  if (qmmmError) {
+    runStatus.textContent = qmmmError;
+    return;
+  }
   if (!runnerSelect.value) {
     runStatus.textContent = "Choose an OpenQP runner";
     return;
@@ -966,6 +1042,7 @@ runButton.addEventListener("click", async () => {
       name: projectName.value.trim() || "job",
       runner: runnerSelect.value,
       threads: threadCount(),
+      ...(pdbSource ? { pdb_text: pdbSource.text, pdb_name: pdbSource.name } : {}),
     }),
   });
   if (!res.ok) {
@@ -1785,6 +1862,15 @@ $<HTMLButtonElement>("specCsv").addEventListener("click", () => {
 // The viewer reports what the user clicked; both tabs show the read-out.
 window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin) return;
+  if (event.data?.type === "oqp-qmmm-selection") {
+    qmAtoms.clear();
+    for (const atom of event.data.atoms as { index: number; label: string }[]) {
+      if (Number.isInteger(atom.index) && atom.index >= 0) qmAtoms.set(atom.index, atom.label);
+    }
+    updateQmAtoms();
+    updateInpPreview();
+    return;
+  }
   if (event.data?.type !== "oqp-measure") return;
   const { labels, kind, value, unit } = event.data as
     { labels: string[]; kind: string | null; value: number | null; unit: string | null };
@@ -1799,6 +1885,14 @@ window.addEventListener("message", (event) => {
     box.innerHTML = text;
     box.classList.toggle("on", Boolean(text));
   }
+});
+
+$<HTMLButtonElement>("clearQmAtoms").addEventListener("click", () => {
+  qmAtoms.clear();
+  updateQmAtoms();
+  $<HTMLIFrameElement>("previewFrame").contentWindow?.postMessage(
+    { type: "oqp-qmmm-clear" }, window.location.origin);
+  updateInpPreview();
 });
 
 // ---------- menu bar ----------

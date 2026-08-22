@@ -36,6 +36,8 @@ class JobRequest(BaseModel):
     runner: str = "local"
     name: str = "job"
     input_name: str | None = None
+    pdb_text: str | None = None
+    pdb_name: str | None = None
     threads: int = Field(default=1, ge=1)
 
 
@@ -118,6 +120,9 @@ class JobManager:
         job_dir.mkdir(parents=True, exist_ok=True)
         input_name = self._input_name(req)
         (job_dir / input_name).write_text(req.input_text)
+        if req.pdb_text is not None:
+            pdb_name = self._pdb_name(req)
+            (job_dir / pdb_name).write_text(req.pdb_text)
         info = JobInfo(
             id=job_id,
             name=req.name,
@@ -143,6 +148,15 @@ class JobManager:
             raise ValueError("input file name must not contain a path")
         if Path(name).suffix.lower() not in SUPPORTED_INPUT_SUFFIXES:
             raise ValueError("input file name must end in .oqp or .inp")
+        return name
+
+    @staticmethod
+    def _pdb_name(req: JobRequest) -> str:
+        """Validate the optional PDB asset referenced by a QM/MM input."""
+        supplied = (req.pdb_name or "structure.pdb").strip()
+        name = Path(supplied).name
+        if name != supplied or name.startswith(".") or Path(name).suffix.lower() != ".pdb":
+            raise ValueError("PDB file name must be a .pdb file name without a path")
         return name
 
     def adopt(self, name: str, files: list[tuple[str, bytes]]) -> JobInfo:

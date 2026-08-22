@@ -448,6 +448,23 @@
                 <span class="hint" id="builderStatus"></span>
               </div>
             </div>
+            <div class="card" id="qmmmCard" style="display:none">
+              <h3>QM/MM region</h3>
+              <div class="row">
+                <div>
+                  <label>QM atoms</label>
+                  <div class="hint" id="qmSelectionStatus">0 selected</div>
+                </div>
+                <div>
+                  <label>MM force field</label>
+                  <input type="text" id="qmmmForcefield" value="amber14-all.xml" spellcheck="false" />
+                </div>
+              </div>
+              <div class="actions">
+                <button class="ghost" id="clearQmAtoms">Clear QM atoms</button>
+                <span class="hint" id="qmAtomList"></span>
+              </div>
+            </div>
             <div class="card render-card">
               <h3>Rendering</h3>
               <div class="row">

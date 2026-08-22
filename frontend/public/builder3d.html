@@ -428,6 +428,8 @@
         // A fifth click starts a new measurement.
         const S = molstar.lib.structure;
         const picked = [];
+        let qmmmSelection = false;
+        const qmmmAtoms = new Map();
 
         function report(value) {
           window.parent.postMessage({
@@ -446,8 +448,18 @@
           const symbol = atom.type_symbol(location) || atom.label_atom_id(location) || "?";
           return {
             label: `${symbol}${atom.id(location)}`,
+            // Mol*'s atom id is a PDB serial number. OpenQP expects the
+            // zero-based atom position in the PDB file instead.
+            index: location.unit.elements[location.element],
             position: [atom.x(location), atom.y(location), atom.z(location)],
           };
+        }
+
+        function reportQmmm() {
+          window.parent.postMessage({
+            type: "oqp-qmmm-selection",
+            atoms: [...qmmmAtoms.entries()].map(([index, label]) => ({ index, label })),
+          }, window.location.origin);
         }
 
         const sub = (p, q) => [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
@@ -503,6 +515,20 @@
         })();
         viewer.plugin.behaviors.interaction.click.subscribe(({ current, button }) => {
           const loci = current?.loci;
+          if (qmmmSelection) {
+            if (!loci || loci.kind !== "element-loci") return;
+            const atom = atomFromLoci(loci);
+            if (!atom) return;
+            if (qmmmAtoms.has(atom.index)) {
+              qmmmAtoms.delete(atom.index);
+              viewer.plugin.managers.structure.selection.fromLoci("remove", loci, false);
+            } else {
+              qmmmAtoms.set(atom.index, atom.label);
+              viewer.plugin.managers.structure.selection.fromLoci("add", loci, false);
+            }
+            reportQmmm();
+            return;
+          }
           // Clicking empty space clears the current measurement.
           if (!loci || loci.kind !== "element-loci") {
             picked.length = 0;
@@ -550,8 +576,15 @@
             await viewer.plugin.clear();
             await drawStructure(message.xyz);
           } else if (message.type === "oqp-file") {
+            qmmmAtoms.clear();
             await viewer.plugin.clear();
             await drawStructure(message.text, message.format);
+          } else if (message.type === "oqp-qmmm-mode") {
+            qmmmSelection = !!message.enabled;
+          } else if (message.type === "oqp-qmmm-clear") {
+            qmmmAtoms.clear();
+            viewer.plugin.managers.structure.selection.clear();
+            reportQmmm();
           } else if (message.type === "oqp-orbital-style") {
             orbital = { ...orbital, ...message.orbital };
             await applyOrbitalVisuals();
