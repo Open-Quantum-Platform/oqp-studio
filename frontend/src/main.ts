@@ -481,17 +481,19 @@ document.querySelectorAll<HTMLInputElement | HTMLSelectElement>(".render-input")
 });
 
 // Orbital phase colours, opacity and surface kind, as MacMolPlt and IQmol offer.
-function pushOrbitalStyle(): void {
+function currentOrbitalStyle(): Record<string, unknown> {
   const [positive, negative] = $<HTMLSelectElement>("moColors").value.split(",");
-  pushToViewers({
-    type: "oqp-orbital-style",
-    orbital: {
-      positive: parseInt(positive, 16),
-      negative: parseInt(negative, 16),
-      alpha: +$<HTMLInputElement>("moAlpha").value,
-      visuals: $<HTMLSelectElement>("moVisual").value.split(","),
-    },
-  });
+  return {
+    positive: parseInt(positive, 16),
+    negative: parseInt(negative, 16),
+    alpha: +$<HTMLInputElement>("moAlpha").value,
+    visuals: $<HTMLSelectElement>("moVisual").value.split(","),
+    sides: $<HTMLSelectElement>("moSides").value,
+  };
+}
+
+function pushOrbitalStyle(): void {
+  pushToViewers({ type: "oqp-orbital-style", orbital: currentOrbitalStyle() });
 }
 
 // Ready-made orbital looks. "studio" is what the app has always drawn and
@@ -516,14 +518,14 @@ moPreset.addEventListener("change", () => {
   moColors.value = preset.colors;
   moVisual.value = preset.visual;
   moAlpha.value = preset.alpha;
-  showOrbital();                             // colours are baked into the volume
+  redrawActiveVolume();                      // colours are baked into the volume
 });
 
 for (const id of ["moColors", "moVisual", "moAlpha"]) {
   $<HTMLElement>(id).addEventListener("change", () => {
     moPreset.value = "custom";
     // Colours are baked in when the volume loads, so redraw for those.
-    if (id === "moColors") showOrbital();
+    if (id === "moColors") redrawActiveVolume();
     else pushOrbitalStyle();
   });
 }
@@ -552,6 +554,7 @@ window.addEventListener("message", (event) => {
 });
 
 async function updatePreview(): Promise<void> {
+  invalidateSymmetryIfCoordinatesChanged();
   const atoms = parseAtoms(xyzArea.value);
   if (atoms.length) artAtoms = atoms;
   if (pdbSource) {
@@ -572,6 +575,115 @@ async function updatePreview(): Promise<void> {
   );
 }
 $<HTMLButtonElement>("previewBtn").addEventListener("click", updatePreview);
+
+type SymmetryResult = {
+  point_group: string;
+  tolerance_angstrom: number;
+  max_deviation_angstrom: number;
+  operations: string[];
+  operation_count: number;
+  equivalent_atoms: number[][];
+  aligned_atoms: Atom[];
+};
+let symmetryResult: SymmetryResult | null = null;
+let symmetrySource = "";
+let symmetryPendingSource = "";
+let symmetryTolerance: number | null = null;
+let symmetryPendingTolerance: number | null = null;
+let symmetryRequestId = 0;
+
+function invalidateSymmetry(message: string): void {
+  if (!symmetryResult && !symmetryPendingSource) return;
+  symmetryRequestId += 1;
+  symmetryPendingSource = "";
+  symmetryPendingTolerance = null;
+  symmetryResult = null;
+  symmetrySource = "";
+  symmetryTolerance = null;
+  $<HTMLButtonElement>("symmetryAlign").disabled = true;
+  $<HTMLDivElement>("symmetryResult").textContent = message;
+}
+
+function invalidateSymmetryIfCoordinatesChanged(): void {
+  const current = xyzArea.value;
+  if (symmetrySource === current || symmetryPendingSource === current) return;
+  invalidateSymmetry("Coordinates changed; analyze symmetry again.");
+}
+
+xyzArea.addEventListener("input", invalidateSymmetryIfCoordinatesChanged);
+$<HTMLInputElement>("symmetryTolerance").addEventListener("change", () => {
+  const current = +$<HTMLInputElement>("symmetryTolerance").value;
+  if (symmetryTolerance === current || symmetryPendingTolerance === current) return;
+  invalidateSymmetry("Tolerance changed; analyze symmetry again.");
+});
+
+function pointGroupLabel(value: string): string {
+  return value === "Dinfh" ? "D∞h" : value === "Cinfv" ? "C∞v" : value;
+}
+
+$<HTMLButtonElement>("symmetryAnalyze").addEventListener("click", async () => {
+  const status = $<HTMLDivElement>("symmetryResult");
+  const tolerance = +$<HTMLInputElement>("symmetryTolerance").value;
+  const source = xyzArea.value;
+  const requestId = ++symmetryRequestId;
+  symmetryPendingSource = source;
+  symmetryPendingTolerance = tolerance;
+  symmetryResult = null;
+  $<HTMLButtonElement>("symmetryAlign").disabled = true;
+  status.textContent = "Analyzing coordinates…";
+  let response: Response;
+  try {
+    response = await fetch("/api/symmetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ xyz: source, tolerance }),
+    });
+  } catch (error) {
+    if (requestId !== symmetryRequestId || source !== xyzArea.value ||
+        tolerance !== +$<HTMLInputElement>("symmetryTolerance").value) return;
+    symmetryPendingSource = "";
+    symmetryPendingTolerance = null;
+    status.textContent = `symmetry analysis failed: ${error instanceof Error ? error.message : String(error)}`;
+    return;
+  }
+  const payload = await response.json().catch(() => null);
+  if (requestId !== symmetryRequestId || source !== xyzArea.value ||
+      tolerance !== +$<HTMLInputElement>("symmetryTolerance").value) return;
+  symmetryPendingSource = "";
+  symmetryPendingTolerance = null;
+  if (!response.ok) {
+    status.textContent = payload?.detail ?? `symmetry analysis failed (${response.status})`;
+    return;
+  }
+  if (!payload) {
+    status.textContent = "symmetry analysis returned an invalid response";
+    return;
+  }
+  symmetryResult = payload;
+  symmetrySource = source;
+  symmetryTolerance = tolerance;
+  const equivalents = symmetryResult!.equivalent_atoms
+    .filter((group) => group.length > 1)
+    .map((group) => group.join(", "))
+    .join("; ") || "none";
+  status.textContent = `Likely ${pointGroupLabel(symmetryResult!.point_group)} at ` +
+    `${symmetryResult!.tolerance_angstrom.toFixed(4)} Å tolerance; ` +
+    `${symmetryResult!.operation_count} accepted operations, maximum residual ` +
+    `${symmetryResult!.max_deviation_angstrom.toExponential(2)} Å. ` +
+    `Equivalent atoms: ${equivalents}.`;
+  $<HTMLButtonElement>("symmetryAlign").disabled = false;
+});
+
+$<HTMLButtonElement>("symmetryAlign").addEventListener("click", () => {
+  invalidateSymmetryIfCoordinatesChanged();
+  if (!symmetryResult) return;
+  clearPdbSource();
+  const aligned = atomsToText(symmetryResult.aligned_atoms);
+  xyzArea.value = aligned;
+  symmetrySource = aligned;
+  builderStatus.textContent = "centered and aligned to the principal axes";
+  void updatePreview();
+});
 
 function buildSampleList(): void {
   const select = $<HTMLSelectElement>("sample");
@@ -1393,6 +1505,7 @@ runButton.addEventListener("click", async () => {
 // ---------- results ----------
 let selectedJob = "";
 let resultMoldenFiles: string[] = [];
+let resultCubeFiles: string[] = [];
 type ListedJob = { id: string; name: string; runner: string; status: string; error?: string | null };
 let listedJobs: ListedJob[] = [];
 
@@ -1463,32 +1576,54 @@ $<HTMLButtonElement>("jobsRefresh").addEventListener("click", refreshJobs);
 function syncComparisonProjects(): void {
   const select = $<HTMLSelectElement>("comparisonReference");
   const previous = select.value;
+  const current = listedJobs.find((job) => job.id === selectedJob);
+  const currentIsTerminal = !!current && ["done", "not_converged"].includes(current.status);
   const candidates = listedJobs.filter((job) =>
     job.id !== selectedJob && ["done", "not_converged"].includes(job.status));
   select.innerHTML = '<option value="">Choose a reference…</option>' + candidates.map((job) =>
     `<option value="${escapeMarkup(job.id)}">${escapeMarkup(job.name)}</option>`).join("");
   if (candidates.some((job) => job.id === previous)) select.value = previous;
-  $<HTMLDivElement>("comparisonCard").style.display = selectedJob && candidates.length ? "" : "none";
-  $<HTMLButtonElement>("comparisonRun").disabled = !select.value;
+  $<HTMLDivElement>("comparisonCard").style.display = currentIsTerminal && candidates.length ? "" : "none";
+  $<HTMLButtonElement>("comparisonRun").disabled = !currentIsTerminal || !select.value;
 }
 
+let comparisonRequestId = 0;
 $<HTMLSelectElement>("comparisonReference").addEventListener("change", (event) => {
+  comparisonRequestId += 1;
   $<HTMLButtonElement>("comparisonRun").disabled = !(event.target as HTMLSelectElement).value;
 });
 
 $<HTMLButtonElement>("comparisonRun").addEventListener("click", async () => {
   const left = $<HTMLSelectElement>("comparisonReference").value;
-  if (!left || !selectedJob) return;
-  const response = await fetch(
-    `/api/comparison?left=${encodeURIComponent(left)}&right=${encodeURIComponent(selectedJob)}`,
-  );
+  const right = selectedJob;
+  if (!left || !right) return;
+  const requestId = ++comparisonRequestId;
+  const isCurrent = () => requestId === comparisonRequestId && right === selectedJob &&
+    left === $<HTMLSelectElement>("comparisonReference").value;
   const body = $<HTMLDivElement>("comparisonBody");
+  body.innerHTML = '<div class="hint">Comparing projects…</div>';
+  let response: Response;
+  try {
+    response = await fetch(
+      `/api/comparison?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`,
+    );
+  } catch (error) {
+    if (isCurrent()) {
+      body.innerHTML = `<div class="hint">${escapeMarkup(
+        `comparison failed: ${error instanceof Error ? error.message : String(error)}`,
+      )}</div>`;
+    }
+    return;
+  }
+  if (!isCurrent()) return;
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
+    if (!isCurrent()) return;
     body.innerHTML = `<div class="hint">${escapeMarkup(detail?.detail ?? `comparison failed (${response.status})`)}</div>`;
     return;
   }
   const data = await response.json();
+  if (!isCurrent()) return;
   const values: [string, string][] = [];
   if (data.left.energy != null) values.push([escapeMarkup(`${data.left.name} energy (Ha)`), fixed(data.left.energy, 8)]);
   if (data.right.energy != null) values.push([escapeMarkup(`${data.right.name} energy (Ha)`), fixed(data.right.energy, 8)]);
@@ -1620,6 +1755,10 @@ async function selectJob(jobId: string): Promise<void> {
   resultMoldenFiles = files
     .map((file) => file.name)
     .filter((name) => name.toLowerCase().endsWith(".molden"));
+  resultCubeFiles = files
+    .map((file) => file.name)
+    .filter((name) => /\.(?:cube|cub)$/i.test(name));
+  syncSurfaceFiles();
   loadExcitedAnalysis(jobId).catch(() => {});
   const list = $<HTMLUListElement>("resultFiles");
   list.innerHTML = files.length ? "" : '<li class="hint">no files</li>';
@@ -1671,6 +1810,7 @@ function resetAnalysisProject(): void {
   summary = null;
   lastSpectrum = null;
   resultMoldenFiles = [];
+  resultCubeFiles = [];
   resultFrames = [];
   optimizationSteps = [];
   selectedScanGroup = "";
@@ -1703,6 +1843,7 @@ function resetAnalysisProject(): void {
   modeSel.innerHTML = '<option value="">Choose a normal mode…</option>';
   modePlay.disabled = true;
   modePause.disabled = true;
+  modeArrows.disabled = true;
   modeReset.disabled = true;
   $<HTMLDivElement>("resultFrameCard").style.display = "none";
   $<HTMLElement>("optimizationStepControls").style.display = "none";
@@ -1716,7 +1857,20 @@ function resetAnalysisProject(): void {
   $<HTMLDivElement>("atomicPropertyCard").style.display = "none";
   $<HTMLSelectElement>("atomicProperty").innerHTML = "";
   $<HTMLDivElement>("propertyLegend").style.display = "none";
+  $<HTMLDivElement>("propertyStatus").textContent = "";
+  displayedResultAtomCount = 0;
   atomicProperties.clear();
+  $<HTMLDivElement>("surfaceCard").style.display = "none";
+  $<HTMLSelectElement>("surfacePrimary").innerHTML = "";
+  $<HTMLSelectElement>("surfaceSecondary").innerHTML = "";
+  $<HTMLSelectElement>("surfaceOperation").value = "display";
+  $<HTMLDivElement>("surfaceSecondaryWrap").style.display = "none";
+  $<HTMLSelectElement>("surfaceSides").value = "both";
+  $<HTMLInputElement>("surfaceIso").value = "0.05";
+  $<HTMLDivElement>("surfaceStatus").textContent = "";
+  volumetricRequestId += 1;
+  activeMapSource = null;
+  activeDirectCube = null;
 }
 
 // What to open of its own accord, best first: a molden file carries orbitals
@@ -1766,6 +1920,7 @@ const excitedTarget = $<HTMLSelectElement>("excitedTarget");
 const excitedMap = $<HTMLSelectElement>("excitedMap");
 const excitedPair = $<HTMLSelectElement>("excitedPair");
 let excitedAnalysis: ExcitedAnalysis | null = null;
+let excitedAnalysisRequestId = 0;
 
 function stateOptions(states: ExcitedAnalysis["states"]): string {
   return states.map((state) =>
@@ -1801,42 +1956,71 @@ async function loadExcitedAnalysis(jobId: string): Promise<void> {
   const ref = excitedSource.value || "0";
   const target = excitedTarget.value || "1";
   if (ref === target) return;
+  const requestId = ++excitedAnalysisRequestId;
   const response = await fetch(
     `/api/jobs/${jobId}/excited-analysis?ref=${encodeURIComponent(ref)}&target=${encodeURIComponent(target)}`
   );
-  if (!response.ok || jobId !== selectedJob) return;
-  renderExcitedAnalysis(await response.json());
+  if (!response.ok || requestId !== excitedAnalysisRequestId || jobId !== selectedJob ||
+      ref !== excitedSource.value || target !== excitedTarget.value) return;
+  const data = await response.json();
+  if (requestId !== excitedAnalysisRequestId || jobId !== selectedJob ||
+      ref !== excitedSource.value || target !== excitedTarget.value) return;
+  renderExcitedAnalysis(data);
 }
 
 async function showExcitedMap(): Promise<void> {
   if (!selectedJob || !excitedAnalysis?.available) return;
+  const jobId = selectedJob;
+  const requestId = ++volumetricRequestId;
   const kind = excitedMap.value;
+  const ref = excitedSource.value;
+  const target = excitedTarget.value;
+  const rank = excitedPair.value || "0";
+  const moldenFile = excitedAnalysis.molden_file;
+  const selectionIsCurrent = () => jobId === selectedJob && kind === excitedMap.value &&
+    ref === excitedSource.value && target === excitedTarget.value &&
+    rank === (excitedPair.value || "0") && moldenFile === excitedAnalysis?.molden_file;
   const query = new URLSearchParams({
     kind,
-    ref: excitedSource.value,
-    target: excitedTarget.value,
-    rank: excitedPair.value || "0",
+    ref,
+    target,
+    rank,
   });
-  const base = `/api/jobs/${selectedJob}`;
-  const [geometryResponse, cubeResponse] = await Promise.all([
-    fetch(`${base}/molden/${encodeURIComponent(excitedAnalysis.molden_file)}/geom.xyz`),
-    fetch(`${base}/excited-analysis/cube?${query}`),
-  ]);
+  const base = `/api/jobs/${jobId}`;
+  let geometryResponse: Response;
+  let cubeResponse: Response;
+  try {
+    [geometryResponse, cubeResponse] = await Promise.all([
+      fetch(`${base}/molden/${encodeURIComponent(moldenFile)}/geom.xyz`),
+      fetch(`${base}/excited-analysis/cube?${query}`),
+    ]);
+  } catch (error) {
+    if (requestId === volumetricRequestId && selectionIsCurrent()) {
+      $<HTMLDivElement>("excitedMetrics").textContent =
+        `map generation failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    return;
+  }
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   if (!geometryResponse.ok || !cubeResponse.ok) return;
   const [xyz, cube] = await Promise.all([geometryResponse.text(), cubeResponse.text()]);
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
   activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
+  activeMapSource = "excited";
   pushOrbitalStyle();
   pushToResultViewer({
     type: "oqp-cube",
     xyz,
     cube: activeCubeUrl,
     iso: kind.startsWith("nto_") ? 0.05 : 0.002,
+    sides: $<HTMLSelectElement>("moSides").value,
   });
 }
 
 for (const select of [excitedSource, excitedTarget]) {
   select.addEventListener("change", () => {
+    volumetricRequestId += 1;
     if (excitedSource.value === excitedTarget.value) {
       const states = excitedAnalysis?.states ?? [];
       const current = Number(excitedSource.value);
@@ -1848,19 +2032,27 @@ for (const select of [excitedSource, excitedTarget]) {
   });
 }
 excitedMap.addEventListener("change", () => {
+  volumetricRequestId += 1;
   $<HTMLDivElement>("excitedPairWrap").style.display =
     excitedMap.value.startsWith("nto_") ? "" : "none";
 });
+excitedPair.addEventListener("change", () => { volumetricRequestId += 1; });
 $<HTMLButtonElement>("excitedShow").addEventListener("click", () => void showExcitedMap());
 $<HTMLButtonElement>("excitedReset").addEventListener("click", () => {
   if (!excitedAnalysis) return;
+  const requestId = ++volumetricRequestId;
+  activeMapSource = null;
   if (activeCubeUrl) {
     URL.revokeObjectURL(activeCubeUrl);
     activeCubeUrl = null;
   }
   fetch(`/api/jobs/${selectedJob}/molden/${encodeURIComponent(excitedAnalysis.molden_file)}/geom.xyz`)
     .then((response) => response.text())
-    .then((xyz) => pushToResultViewer({ type: "oqp-structure", xyz }));
+    .then((xyz) => {
+      if (requestId === volumetricRequestId) {
+        pushToResultViewer({ type: "oqp-structure", xyz });
+      }
+    });
 });
 
 const resultFrame = $<HTMLIFrameElement>("resultFrame");
@@ -1890,6 +2082,129 @@ let optimizationSteps: OptimizationStep[] = [];
 let selectedScanGroup = "";
 let resultViewerReady = false;
 let pendingResultMessage: Record<string, unknown> | null = null;
+let displayedResultAtomCount = 0;
+let volumetricRequestId = 0;
+let viewerRenderGeneration = 0;
+let activeMapSource: "direct" | "excited" | "orbital" | "surface" | null = null;
+let activeDirectCube: { jobId: string; url: string } | null = null;
+
+async function showDirectCube(jobId: string, url: string): Promise<void> {
+  if (jobId !== selectedJob) return;
+  const requestId = ++volumetricRequestId;
+  activeMapSource = "direct";
+  activeDirectCube = { jobId, url };
+  pushOrbitalStyle();
+  const name = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? "");
+  let response: Response;
+  let geometryResponse: Response;
+  try {
+    [response, geometryResponse] = await Promise.all([
+      fetch(url),
+      fetch(`/api/jobs/${jobId}/cube-geometry?name=${encodeURIComponent(name)}`),
+    ]);
+  } catch (error) {
+    if (requestId === volumetricRequestId && jobId === selectedJob) {
+      $<HTMLDivElement>("surfaceStatus").textContent =
+        `cube display failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    return;
+  }
+  if (requestId !== volumetricRequestId || jobId !== selectedJob || !response.ok) return;
+  const cube = await response.blob();
+  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  const geometry = geometryResponse.ok ? await geometryResponse.json() : null;
+  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
+  activeCubeUrl = URL.createObjectURL(cube);
+  pushToResultViewer({
+    type: "oqp-cube",
+    ...(typeof geometry?.xyz === "string" ? { xyz: geometry.xyz } : {}),
+    cube: activeCubeUrl, iso: 0.05,
+    sides: $<HTMLSelectElement>("moSides").value,
+  });
+}
+
+function syncSurfaceFiles(): void {
+  const options = resultCubeFiles.map((name) =>
+    `<option value="${escapeMarkup(name)}">${escapeMarkup(name)}</option>`).join("");
+  $<HTMLSelectElement>("surfacePrimary").innerHTML = options;
+  $<HTMLSelectElement>("surfaceSecondary").innerHTML = options;
+  if (resultCubeFiles.length > 1) $<HTMLSelectElement>("surfaceSecondary").selectedIndex = 1;
+  $<HTMLDivElement>("surfaceCard").style.display = resultCubeFiles.length ? "" : "none";
+}
+
+function syncSurfaceOperation(): void {
+  const arithmetic = $<HTMLSelectElement>("surfaceOperation").value !== "display";
+  $<HTMLDivElement>("surfaceSecondaryWrap").style.display = arithmetic ? "" : "none";
+}
+
+async function showSurface(): Promise<void> {
+  if (!selectedJob) return;
+  const jobId = selectedJob;
+  const requestId = ++volumetricRequestId;
+  const primary = $<HTMLSelectElement>("surfacePrimary").value;
+  const secondary = $<HTMLSelectElement>("surfaceSecondary").value;
+  const operation = $<HTMLSelectElement>("surfaceOperation").value;
+  const selectionIsCurrent = () => jobId === selectedJob &&
+    primary === $<HTMLSelectElement>("surfacePrimary").value &&
+    secondary === $<HTMLSelectElement>("surfaceSecondary").value &&
+    operation === $<HTMLSelectElement>("surfaceOperation").value;
+  const status = $<HTMLDivElement>("surfaceStatus");
+  if (!primary || (operation !== "display" && !secondary)) return;
+  let cubeUrl = `/api/jobs/${jobId}/files/${encodeURIComponent(primary)}`;
+  status.textContent = operation === "display" ? `Displaying ${primary}` : `Computing ${operation}…`;
+  const query = new URLSearchParams({ left: primary, right: secondary, operation });
+  let response: Response;
+  let geometryResponse: Response;
+  try {
+    [response, geometryResponse] = await Promise.all([
+      fetch(operation === "display" ? cubeUrl : `/api/jobs/${jobId}/cube-combine?${query}`),
+      fetch(`/api/jobs/${jobId}/cube-geometry?name=${encodeURIComponent(primary)}`),
+    ]);
+  } catch (error) {
+    if (requestId === volumetricRequestId && selectionIsCurrent()) {
+      status.textContent = `surface operation failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    return;
+  }
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
+    status.textContent = detail?.detail ?? `surface operation failed (${response.status})`;
+    return;
+  }
+  const cube = await response.blob();
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
+  const geometry = geometryResponse.ok ? await geometryResponse.json() : null;
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
+  if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
+  activeCubeUrl = URL.createObjectURL(cube);
+  cubeUrl = activeCubeUrl;
+  if (operation !== "display") {
+    status.textContent = `${operation}: ${primary} and ${secondary}`;
+  }
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
+  activeMapSource = "surface";
+  pushOrbitalStyle();
+  pushToResultViewer({
+    type: "oqp-cube",
+    ...(typeof geometry?.xyz === "string" ? { xyz: geometry.xyz } : {}),
+    cube: cubeUrl,
+    iso: Math.max(0.0001, Math.abs(+$<HTMLInputElement>("surfaceIso").value) || 0.05),
+    sides: $<HTMLSelectElement>("surfaceSides").value,
+  });
+}
+
+$<HTMLSelectElement>("surfaceOperation").addEventListener("change", () => {
+  volumetricRequestId += 1;
+  syncSurfaceOperation();
+});
+for (const id of ["surfacePrimary", "surfaceSecondary"]) {
+  $<HTMLSelectElement>(id).addEventListener("change", () => { volumetricRequestId += 1; });
+}
+$<HTMLButtonElement>("surfaceShow").addEventListener("click", () => { void showSurface(); });
+$<HTMLSelectElement>("surfaceSides").addEventListener("change", () => { void showSurface(); });
 
 // Everything in Analysis renders through the same Mol* page the Builder uses,
 // so results look like the rest of the app rather than a second program.
@@ -1905,6 +2220,18 @@ window.addEventListener("message", (event) => {
 });
 
 function pushToResultViewer(message: Record<string, unknown>): void {
+  if (["oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-atomic-property"]
+      .includes(String(message.type))) {
+    volumetricRequestId += 1;
+    activeMapSource = null;
+    activeDirectCube = null;
+  }
+  if (typeof message.xyz === "string") {
+    const displayedAtoms = parseAtoms(message.xyz);
+    if (displayedAtoms.length) displayedResultAtomCount = displayedAtoms.length;
+  } else if (message.type === "oqp-cube") {
+    displayedResultAtomCount = 0;
+  }
   if ((message.type === "oqp-structure" || message.type === "oqp-normal-mode") &&
       typeof message.xyz === "string") {
     const atoms = parseAtoms(message.xyz);
@@ -1913,14 +2240,24 @@ function pushToResultViewer(message: Record<string, unknown>): void {
       pushToArt();
     }
   }
-  pendingResultMessage = message;
+  const renderTypes = [
+    "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
+  ];
+  const styledMessage = renderTypes.includes(String(message.type))
+    ? { ...message, style: { ...displayStyle },
+        ...(message.type === "oqp-cube" ? { orbital: currentOrbitalStyle() } : {}) }
+    : message;
+  const outgoing = renderTypes.includes(String(message.type))
+    ? { ...styledMessage, renderGeneration: ++viewerRenderGeneration }
+    : styledMessage;
+  pendingResultMessage = outgoing;
   if (!resultFrame.src) {
     resultViewerReady = false;
     resultFrame.src = "/builder3d.html";
     return;
   }
   if (resultViewerReady) {
-    resultFrame.contentWindow?.postMessage(message, window.location.origin);
+    resultFrame.contentWindow?.postMessage(outgoing, window.location.origin);
     pendingResultMessage = null;
   }
 }
@@ -2094,11 +2431,12 @@ function hideResultPanels(): void {
 
 async function viewResultFile(jobId: string, name: string, url: string): Promise<void> {
   if (jobId !== selectedJob) return;
+  const requestId = ++volumetricRequestId;
   const lower = name.toLowerCase();
   hideResultPanels();
 
   if (lower.endsWith(".cube") || lower.endsWith(".cub")) {
-    pushToResultViewer({ type: "oqp-cube", cube: url, iso: 0.05 });
+    showDirectCube(jobId, url);
     return;
   }
 
@@ -2115,7 +2453,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       })),
       fetch(`${base}/modes`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
-    if (jobId !== selectedJob) return;
+    if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
     const scfFile = orbitalFiles.find((file) =>
       file.data?.orbitals?.some((orbital: { kind?: string }) => orbital.kind === "scf"));
     if (scfFile) currentMolden = { jobId, name: scfFile.name };
@@ -2180,10 +2518,11 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       modeCard.style.display = "";
       modePlay.disabled = true;
       modePause.disabled = true;
+      modeArrows.disabled = true;
       modeReset.disabled = true;
     }
     if (!allOrbitals.length && !modes?.modes?.length) {
-      await openAsStructure(name, url);
+      await openAsStructure(name, url, requestId);
     } else {
       // Opening a Molden result must show its molecule before the user picks
       // an orbital. Reset map already did this, which is why it exposed the
@@ -2193,19 +2532,26 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
     return;
   }
 
-  await openAsStructure(name, url);
+  await openAsStructure(name, url, requestId);
 }
 
 // Reads the file through the same importer the Builder uses, so OpenQP logs,
 // JSON, inputs and trajectories all render as geometry here.
-async function openAsStructure(name: string, url: string): Promise<void> {
+async function openAsStructure(
+  name: string, url: string, requestId = ++volumetricRequestId,
+): Promise<void> {
   try {
-    const blob = await (await fetch(url)).blob();
+    const response = await fetch(url);
+    if (requestId !== volumetricRequestId) return;
+    const blob = await response.blob();
+    if (requestId !== volumetricRequestId) return;
     const body = new FormData();
     body.append("file", new File([blob], name));
     const res = await fetch("/api/structure/open", { method: "POST", body });
+    if (requestId !== volumetricRequestId) return;
     if (!res.ok) return;
     const data = await res.json();
+    if (requestId !== volumetricRequestId) return;
     resultFrames = data.frames;
     const slider = $<HTMLInputElement>("resultFrameRange");
     slider.max = String(resultFrames.length);
@@ -2245,6 +2591,7 @@ function selectedOrbitalSource(): OrbitalSource | null {
 
 function showMoldenStructure(): void {
   if (!currentMolden) return;
+  const requestId = ++volumetricRequestId;
   if (activeCubeUrl) {
     URL.revokeObjectURL(activeCubeUrl);
     activeCubeUrl = null;
@@ -2254,6 +2601,7 @@ function showMoldenStructure(): void {
   fetch(`${base}/geom.xyz`)
     .then((response) => response.text())
     .then((xyz) => {
+      if (requestId !== volumetricRequestId) return;
       if (currentMolden?.jobId !== molden.jobId || currentMolden.name !== molden.name) return;
       pushToResultViewer({ type: "oqp-structure", xyz });
     });
@@ -2267,12 +2615,14 @@ function mapUrl(base: string, source: OrbitalSource | null): string {
 
 function showOrbital(): void {
   if (!currentMolden) return;
+  const molden = currentMolden;
+  const requestId = ++volumetricRequestId;
   pushOrbitalStyle();
   const isOrbital = mapKind.value === "mo" || mapKind.value === "dyson";
   $<HTMLDivElement>("orbitalPick").style.display = isOrbital ? "" : "none";
   const source = selectedOrbitalSource();
   if (isOrbital && !source) return;
-  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
+  const base = `/api/jobs/${molden.jobId}/molden/${encodeURIComponent(molden.name)}`;
   const iso = +isoRange.value;
   // Mol* runs inside an iframe. In the standalone app only this top-level
   // window's fetch is routed through the sidecar, so pass its cube a local
@@ -2282,13 +2632,17 @@ function showOrbital(): void {
     fetch(mapUrl(base, source)).then((response) => response.text()),
   ])
     .then(([xyz, cube]) => {
+      if (requestId !== volumetricRequestId) return;
+      if (currentMolden?.jobId !== molden.jobId || currentMolden.name !== molden.name) return;
       if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
       activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
+      activeMapSource = "orbital";
       pushToResultViewer({
         type: "oqp-cube",
         xyz,
         cube: activeCubeUrl,
         iso,
+        sides: $<HTMLSelectElement>("moSides").value,
       });
     });
 }
@@ -2299,6 +2653,15 @@ orbitalReset.addEventListener("click", () => {
   showMoldenStructure();
 });
 isoRange.addEventListener("change", showOrbital);
+function redrawActiveVolume(): void {
+  if (activeMapSource === "direct" && activeDirectCube) {
+    showDirectCube(activeDirectCube.jobId, activeDirectCube.url);
+  } else if (activeMapSource === "excited") void showExcitedMap();
+  else if (activeMapSource === "surface") void showSurface();
+  else if (activeMapSource === "orbital") showOrbital();
+}
+
+$<HTMLSelectElement>("moSides").addEventListener("change", redrawActiveVolume);
 mapKind.addEventListener("change", () => {
   // Each field has its own natural contour, so move the slider with it.
   isoRange.value = String(MAP_ISO[mapKind.value] ?? 0.05);
@@ -2313,11 +2676,19 @@ function modeEquilibriumXyz(mode: { atoms: { element: string; position: number[]
 }
 
 async function showMode(): Promise<void> {
+  modePlay.disabled = true;
+  modePause.disabled = true;
+  modeArrows.disabled = true;
   if (!currentMolden || !modeSel.value) return;
-  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
-  const vectors = await fetch(`${base}/mode?mode=${modeSel.value}`);
+  const molden = currentMolden;
+  const selectedMode = modeSel.value;
+  const requestId = ++volumetricRequestId;
+  const base = `/api/jobs/${molden.jobId}/molden/${encodeURIComponent(molden.name)}`;
+  const vectors = await fetch(`${base}/mode?mode=${selectedMode}`);
+  if (requestId !== volumetricRequestId || currentMolden !== molden || modeSel.value !== selectedMode) return;
   if (!vectors.ok) return;
   const mode = await vectors.json();
+  if (requestId !== volumetricRequestId || currentMolden !== molden || modeSel.value !== selectedMode) return;
   pushToResultViewer({
     type: "oqp-normal-mode",
     xyz: modeEquilibriumXyz(mode),
@@ -2328,6 +2699,7 @@ async function showMode(): Promise<void> {
   });
   modePlay.disabled = false;
   modePause.disabled = false;
+  modeArrows.disabled = false;
   modeReset.disabled = false;
 }
 
@@ -2341,13 +2713,19 @@ modePause.addEventListener("click", () =>
   pushToResultViewer({ type: "oqp-normal-mode-pause" }));
 modeReset.addEventListener("click", async () => {
   if (!currentMolden) return;
-  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
+  const molden = currentMolden;
+  const requestId = ++volumetricRequestId;
+  const base = `/api/jobs/${molden.jobId}/molden/${encodeURIComponent(molden.name)}`;
   const response = await fetch(`${base}/geom.xyz`);
+  if (requestId !== volumetricRequestId || currentMolden !== molden) return;
   if (!response.ok) return;
-  pushToResultViewer({ type: "oqp-normal-mode-reset", xyz: await response.text() });
+  const xyz = await response.text();
+  if (requestId !== volumetricRequestId || currentMolden !== molden) return;
+  pushToResultViewer({ type: "oqp-normal-mode-reset", xyz });
   modeSel.value = "";
   modePlay.disabled = true;
   modePause.disabled = true;
+  modeArrows.disabled = true;
   modeReset.disabled = true;
 });
 
@@ -2574,6 +2952,19 @@ function renderSummary(data: Summary): void {
 function showAtomicProperty(key = $<HTMLSelectElement>("atomicProperty").value): void {
   const property = atomicProperties.get(key);
   if (!property) return;
+  const status = $<HTMLDivElement>("propertyStatus");
+  if (!displayedResultAtomCount) {
+    status.textContent = "Show a result structure before mapping this property.";
+    $<HTMLDivElement>("propertyLegend").style.display = "none";
+    return;
+  }
+  if (property.values.length !== displayedResultAtomCount) {
+    status.textContent = `This property has ${property.values.length} values, but the displayed ` +
+      `structure has ${displayedResultAtomCount} atoms.`;
+    $<HTMLDivElement>("propertyLegend").style.display = "none";
+    return;
+  }
+  status.textContent = "";
   pushToResultViewer({
     type: "oqp-atomic-property", values: property.values,
     label: property.label, unit: property.unit,
@@ -2885,7 +3276,11 @@ const COMMANDS: Record<string, () => void> = {
     download("molecule.xyz", `${atoms.length}\nOQP Studio\n${atomsToText(atoms)}\n`);
   },
   "save-oqp": () => download("job.oqp", $<HTMLTextAreaElement>("input").value),
-  "clear-geom": () => { xyzArea.value = ""; builderStatus.textContent = "geometry cleared"; },
+  "clear-geom": () => {
+    xyzArea.value = "";
+    invalidateSymmetry("Geometry cleared; analyze symmetry again.");
+    builderStatus.textContent = "geometry cleared";
+  },
   sketch: () => $<HTMLButtonElement>("sketchBtn").click(),
   preview: () => { void updatePreview(); },
   generate: () => $<HTMLButtonElement>("generate").click(),

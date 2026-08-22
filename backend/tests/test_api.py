@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
 from fastapi.testclient import TestClient
 
 from oqp_studio.main import app
@@ -829,6 +830,10 @@ def test_project_comparison_aligns_structures_and_keeps_energy_differences(tmp_p
         )
     monkeypatch.setattr(main, "manager", manager)
     main._summary_cache.clear()
+    main._summary_cache.update({
+        "left": {"energy": {"total": 10.0}},
+        "right": {"energy": {"total": 20.0}},
+    })
 
     response = client.get("/api/comparison?left=left&right=right")
 
@@ -838,6 +843,230 @@ def test_project_comparison_aligns_structures_and_keeps_energy_differences(tmp_p
     assert abs(data["energy_delta_kcal_mol"] - 62.7509474) < 1.0e-9
     assert data["geometry"]["rmsd_angstrom"] < 1.0e-12
     assert data["states"][1]["delta_ev"] > 1.0
+
+
+def test_project_comparison_uses_the_optimized_excited_state_energy():
+    from oqp_studio import main
+
+    summary = {
+        "excited_state_optimized": 1,
+        "energy": {
+            "components": {"total": -76.3},
+            "final_states": {1: -76.05},
+        },
+        "scf": {"energy": -76.3},
+    }
+
+    assert main._summary_energy(summary) == -76.05
+
+
+def test_comparison_geometry_skips_cube_files(tmp_path, monkeypatch):
+    from oqp_studio import main, structure_io
+
+    cube = tmp_path / "density.cube"
+    cube.write_text("cube data that resembles coordinates")
+    monkeypatch.setattr(structure_io, "parse", lambda *_args, **_kwargs: None)
+
+    assert main._comparison_frame([cube]) is None
+
+
+def test_comparison_geometry_includes_supported_import_formats(tmp_path, monkeypatch):
+    from oqp_studio import main, structure_io
+
+    structure = tmp_path / "reference.sdf"
+    structure.write_text("structure")
+    monkeypatch.setattr(
+        structure_io,
+        "parse",
+        lambda *_args, **_kwargs: structure_io.Structure(
+            "sdf", [structure_io.Frame([("C", 0.0, 0.0, 0.0)])],
+        ),
+    )
+
+    assert main._comparison_frame([structure]).atoms[0][0] == "C"
+
+
+def test_comparison_geometry_prefers_openqp_optimization_trajectory(tmp_path, monkeypatch):
+    from oqp_studio import main, structure_io
+
+    trajectory = tmp_path / "opt_geom.xyz"
+    log = tmp_path / "calculation.log"
+    trajectory.write_text("trajectory")
+    log.write_text("log")
+
+    def parse(name, *_args, **_kwargs):
+        x = 2.0 if name == trajectory.name else 1.0
+        return structure_io.Structure("test", [structure_io.Frame([("H", x, 0.0, 0.0)])])
+
+    monkeypatch.setattr(structure_io, "parse", parse)
+
+    assert main._comparison_frame([log, trajectory]).atoms[0][1] == 2.0
+
+
+def test_comparison_geometry_does_not_eagerly_read_packed_trajectories(tmp_path, monkeypatch):
+    from oqp_studio import main, structure_io
+
+    trajectory = tmp_path / "dynamics.namd.trj"
+    trajectory.write_bytes(b"packed trajectory")
+
+    def parse(name, data, path=None):
+        assert name == trajectory.name
+        assert data == b""
+        assert path == str(trajectory)
+        return structure_io.Structure("namd.trj", [
+            structure_io.Frame([("H", 0.0, 0.0, 0.0)]),
+        ])
+
+    monkeypatch.setattr(structure_io, "parse", parse)
+
+    assert main._comparison_frame([trajectory]).atoms[0][0] == "H"
+
+
+def test_comparison_geometry_prefers_an_explicit_result_xyz(tmp_path):
+    import json
+
+    from oqp_studio import main
+
+    input_json = tmp_path / "input.json"
+    input_json.write_text(json.dumps({
+        "elements": ["H"], "coordinates": [0.0, 0.0, 0.0], "unit": "angstrom",
+    }))
+    result_xyz = tmp_path / "result.xyz"
+    result_xyz.write_text("1\nfinal\nH 1.0 2.0 3.0\n")
+
+    assert main._comparison_frame([input_json, result_xyz]).atoms[0][1:] == (1.0, 2.0, 3.0)
+
+
+def test_comparison_geometry_ranks_generic_text_after_molden(tmp_path, monkeypatch):
+    from oqp_studio import main, structure_io
+
+    table = tmp_path / "charges.txt"
+    molden = tmp_path / "result.molden"
+    table.write_text("C 99.0 0.0 0.0\n")
+    molden.write_text("molden")
+
+    def parse(name, *_args, **_kwargs):
+        x = 1.0 if name.endswith(".molden") else 99.0
+        return structure_io.Structure("test", [structure_io.Frame([("C", x, 0.0, 0.0)])])
+
+    monkeypatch.setattr(structure_io, "parse", parse)
+
+    assert main._comparison_frame([table, molden]).atoms[0][1] == 1.0
+
+
+def test_comparison_geometry_promotes_a_verified_openqp_text_log(tmp_path):
+    from oqp_studio import main
+
+    input_file = tmp_path / "input.oqp"
+    input_file.write_text('hf/sto-3g\nenergy\ngeom="""\nH 0.0 0.0 0.0\n"""\n')
+    output_file = tmp_path / "results.txt"
+    output_file.write_text(
+        "Cartesian Coordinate in Angstrom\n"
+        "--------------------------------\n"
+        "1 1.0 2.0 0.0 0.0\n"
+    )
+
+    assert main._comparison_frame([input_file, output_file]).atoms[0][1] == 2.0
+
+
+def test_comparison_geometry_does_not_read_text_when_result_xyz_exists(tmp_path, monkeypatch):
+    from oqp_studio import main
+
+    result_xyz = tmp_path / "result.xyz"
+    result_xyz.write_text("1\nfinal\nH 1.0 2.0 3.0\n")
+    large_text = tmp_path / "results.txt"
+    large_text.write_text("must not be read")
+    original_read_bytes = type(large_text).read_bytes
+
+    def guarded_read(path):
+        if path == large_text:
+            raise AssertionError("lower-priority text was read eagerly")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(type(large_text), "read_bytes", guarded_read)
+    assert main._comparison_frame([large_text, result_xyz]).atoms[0][1] == 1.0
+
+
+@pytest.mark.parametrize("suffix", [".log", ".out", ".txt"])
+def test_comparison_geometry_streams_openqp_logs(tmp_path, monkeypatch, suffix):
+    from oqp_studio import main
+
+    output = tmp_path / f"result{suffix}"
+    output.write_text(
+        "Cartesian Coordinate in Angstrom\n"
+        "--------------------------------\n"
+        "1 1.0 4.0 0.0 0.0\n"
+    )
+    original_read_bytes = type(output).read_bytes
+
+    def guarded_read(path):
+        if path == output:
+            raise AssertionError("OpenQP log was materialized instead of streamed")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(type(output), "read_bytes", guarded_read)
+    assert main._comparison_frame([output]).atoms[0][1] == 4.0
+
+
+def test_comparison_geometry_uses_xyz_content_from_a_text_file(tmp_path):
+    from oqp_studio import main
+
+    structure = tmp_path / "geometry.txt"
+    structure.write_text("1\ngeometry\nH 3.0 2.0 1.0\n")
+
+    assert main._comparison_frame([structure]).atoms[0][1:] == (3.0, 2.0, 1.0)
+
+
+def test_comparison_geometry_discards_oversized_log_blocks(tmp_path, monkeypatch):
+    from oqp_studio import main
+
+    monkeypatch.setattr(main, "MAX_COMPARISON_ATOMS", 2)
+    output = tmp_path / "result.log"
+    output.write_text(
+        "Cartesian Coordinate in Angstrom\n-----\n"
+        "1 1.0 0.0 0.0 0.0\n2 1.0 1.0 0.0 0.0\n3 1.0 2.0 0.0 0.0\n\n"
+        "Cartesian Coordinate in Angstrom\n-----\n1 1.0 7.0 0.0 0.0\n"
+    )
+
+    frame = main._comparison_frame([output])
+    assert len(frame.atoms) == 1
+    assert frame.atoms[0][1] == 7.0
+
+
+def test_comparison_geometry_discards_overlong_log_lines(tmp_path, monkeypatch):
+    from oqp_studio import main
+
+    monkeypatch.setattr(main, "MAX_COMPARISON_LINE", 64)
+    output = tmp_path / "result.log"
+    output.write_text(
+        "x" * 1000 + "\n"
+        "Cartesian Coordinate in Angstrom\n-----\n1 1.0 5.0 0.0 0.0\n"
+    )
+
+    assert main._comparison_frame([output]).atoms[0][1] == 5.0
+
+
+def test_comparison_geometry_uses_unknown_result_suffix_as_a_last_resort(tmp_path):
+    from oqp_studio import main
+
+    structure = tmp_path / "geometry.dat"
+    structure.write_text("1\ngeometry\nH 0.0 0.0 0.0\n")
+
+    assert main._comparison_frame([structure]).atoms[0][0] == "H"
+
+
+def test_comparison_geometry_detects_an_openqp_log_with_an_unknown_suffix(tmp_path):
+    from oqp_studio import main
+
+    output = tmp_path / "result.dat"
+    output.write_text(
+        "Cartesian Coordinate in Angstrom\n"
+        "--------------------------------\n"
+        "1 8.0 4.0 0.0 0.0\n"
+    )
+
+    frame = main._comparison_frame([output])
+    assert frame.atoms == [("O", 4.0, 0.0, 0.0)]
 
 
 def test_project_comparison_rejects_an_active_calculation(monkeypatch):
@@ -1312,3 +1541,715 @@ def test_starting_the_server_touches_no_directory_it_may_be_denied(tmp_path, mon
     monkeypatch.setattr(jobs, "JOBS_ROOT", wanted)
     assert manager._ensure() == wanted.resolve()
     assert wanted.is_dir()
+
+
+def _cube(values: list[float], *, origin: float = 0.0) -> str:
+    return (
+        "test cube\nvalues\n"
+        f"0 {origin:.6f} 0.0 0.0\n"
+        "2 1.0 0.0 0.0\n"
+        "1 0.0 1.0 0.0\n"
+        "1 0.0 0.0 1.0\n"
+        + " ".join(str(value) for value in values) + "\n"
+    )
+
+
+def test_cube_arithmetic_preserves_the_grid_and_combines_values():
+    from oqp_studio import cube
+
+    result = cube.parse(cube.combine(_cube([1.5, -2.0]), _cube([0.5, 3.0]), "difference"))
+
+    assert result.shape == (2, 1, 1)
+    assert result.values == [1.0, -5.0]
+
+
+def test_cube_geometry_is_extracted_in_angstrom():
+    from io import StringIO
+
+    import pytest
+
+    from oqp_studio import cube
+
+    text = (
+        "test cube\nvalues\n"
+        "1 0.0 0.0 0.0\n"
+        "1 1.0 0.0 0.0\n1 0.0 1.0 0.0\n1 0.0 0.0 1.0\n"
+        "8 0.0 1.0 0.0 0.0\n0.0\n"
+    )
+    xyz = cube.geometry_xyz(cube.parse(text))
+
+    assert xyz.startswith("1\ncube geometry\nO ")
+    assert "0.5291772109 0.0000000000 0.0000000000" in xyz
+    assert cube.geometry_xyz(cube.parse_header(StringIO(text[:-4] + "not-grid-data\n"))) == xyz
+    with pytest.raises(ValueError, match="header lines are limited"):
+        cube.parse_header(StringIO("x" * (cube.MAX_HEADER_LINE + 1) + "\n" + text))
+    orbital_header = text.replace("1 0.0 0.0 0.0", "-1 0.0 0.0 0.0 2000000", 1)
+    assert cube.geometry_xyz(cube.parse_header(StringIO(orbital_header))) == xyz
+    fractional = text.replace("8 0.0 1.0 0.0 0.0", "1.6 0.0 1.0 0.0 0.0")
+    with pytest.raises(ValueError, match="nonintegral atomic number"):
+        cube.geometry_xyz(cube.parse(fractional))
+
+
+def test_cube_header_has_an_aggregate_size_limit():
+    from io import StringIO
+
+    import pytest
+
+    from oqp_studio import cube
+
+    atom_line = "1" + " " * (cube.MAX_HEADER_LINE - 16) + "0 0 0 0\n"
+    text = (
+        "cube\nvalues\n"
+        "300 0 0 0\n1 1 0 0\n1 0 1 0\n1 0 0 1\n"
+        + atom_line * 300
+    )
+
+    with pytest.raises(ValueError, match="header is limited to 4 MiB"):
+        cube.parse_header(StringIO(text))
+    with pytest.raises(ValueError, match="header is limited to 4 MiB"):
+        cube.parse(text)
+
+    padded_identifiers = (
+        "cube\nvalues\n"
+        "-1 0 0 0\n1 1 0 0\n1 0 1 0\n1 0 0 1\n"
+        "1 0 0 0 0\n"
+        "1" + " " * cube.MAX_CUBE_HEADER + "7\n0.0\n"
+    )
+    with pytest.raises(ValueError, match="header is limited to 4 MiB"):
+        cube.parse(padded_identifiers)
+
+
+def test_cube_arithmetic_rejects_different_grids():
+    import pytest
+
+    from oqp_studio import cube
+
+    with pytest.raises(ValueError, match="different origins"):
+        cube.combine(_cube([1.0, 2.0]), _cube([1.0, 2.0], origin=0.1), "sum")
+
+
+def test_cube_arithmetic_supports_multiline_datasets_and_fortran_headers():
+    from oqp_studio import cube
+
+    def multi(values):
+        return (
+            "orbital cube\nvalues\n"
+            "-1 0.0D+00 0.0 0.0 2\n"
+            "1 1.0D+00 0.0 0.0\n"
+            "1 0.0 1.0D+00 0.0\n"
+            "1 0.0 0.0 1.0D+00\n"
+            "1 0.0D+00 0.0 0.0 0.0\n"
+            "2 10\n20\n"
+            + " ".join(values) + "\n"
+        )
+
+    result = cube.parse(cube.combine(
+        multi(["1.0D+00", "2.0D+00"]),
+        multi(["0.5D+00", "4.0D+00"]),
+        "difference",
+    ))
+
+    assert result.datasets == 2
+    assert result.dataset_ids == (10, 20)
+    assert result.values == [0.5, -2.0]
+
+    wrapped_differently = multi(["0.5D+00", "4.0D+00"]).replace("2 10\n20\n", "2 10 20\n")
+    result = cube.parse(cube.combine(
+        multi(["1.0D+00", "2.0D+00"]), wrapped_differently, "difference",
+    ))
+    assert result.values == [0.5, -2.0]
+
+
+def test_cube_parser_rejects_non_finite_header_and_grid_values():
+    import pytest
+
+    from oqp_studio import cube
+
+    with pytest.raises(ValueError, match="non-finite"):
+        cube.parse(_cube([float("nan"), 1.0]))
+    with pytest.raises(ValueError, match="non-finite"):
+        cube.combine(
+            _cube([1.0, 2.0]).replace("0.000000 0.0 0.0", "Inf 0.0 0.0", 1),
+            _cube([1.0, 2.0]),
+            "sum",
+        )
+    with pytest.raises(ValueError, match="arithmetic produced a non-finite"):
+        cube.combine(_cube([1.0e308, 1.0]), _cube([1.0e308, 1.0]), "sum")
+
+
+def test_cube_parser_stops_at_the_first_grid_value_beyond_the_declared_shape(monkeypatch):
+    import pytest
+
+    from oqp_studio import cube
+
+    converted = 0
+    original = cube._number
+
+    def count_number(token):
+        nonlocal converted
+        converted += 1
+        return original(token)
+
+    monkeypatch.setattr(cube, "_number", count_number)
+    with pytest.raises(ValueError, match="more than the expected 2"):
+        cube.parse(_cube([1.0, 2.0, *([0.0] * 10_000)]))
+
+    assert converted == 2
+
+
+def test_cube_parser_does_not_materialize_every_grid_line():
+    import pytest
+
+    from oqp_studio import cube
+
+    class NoSplit(str):
+        def splitlines(self, *_args, **_kwargs):
+            raise AssertionError("the complete cube was split into a line list")
+
+    with pytest.raises(ValueError, match="more than the expected 2"):
+        cube.parse(NoSplit(_cube([1.0, 2.0]) + "0\n" * 10_000))
+
+
+def test_symmetry_handles_many_leading_blank_rows():
+    from oqp_studio import symmetry
+
+    assert symmetry.analyze("\n" * 50_000 + "He 0 0 0\n")["point_group"] == "Kh"
+
+
+def test_cube_parser_rejects_a_negative_dataset_count():
+    import pytest
+
+    from oqp_studio import cube
+
+    malformed = _cube([1.0, 2.0]).replace(
+        "0 0.000000 0.0 0.0", "0 0.000000 0.0 0.0 -2", 1,
+    )
+
+    with pytest.raises(ValueError, match="dataset count must be positive"):
+        cube.parse(malformed)
+
+    fractional = _cube([1.0, 2.0]).replace(
+        "0 0.000000 0.0 0.0", "1 0.000000 0.0 0.0", 1,
+    ).replace("1 0.0 0.0 1.0\n", "1 0.0 0.0 1.0\n1.6 0.0 0.0 0.0 0.0\n", 1)
+    with pytest.raises(ValueError, match="nonintegral atomic number"):
+        cube.combine(fractional, fractional, "sum")
+
+
+def test_cube_parser_bounds_dataset_identifiers_before_accumulating_them():
+    import pytest
+
+    from oqp_studio import cube
+
+    malformed = (
+        "orbital cube\nvalues\n"
+        "-1 0.0 0.0 0.0\n"
+        "1 1.0 0.0 0.0\n1 0.0 1.0 0.0\n1 0.0 0.0 1.0\n"
+        "1 0.0 0.0 0.0 0.0\n"
+        "999999999 " + "1 " * 10_000 + "\n0.0\n"
+    )
+
+    with pytest.raises(ValueError, match="identifier count exceeds"):
+        cube.parse(malformed)
+
+
+def test_cube_parser_stops_fixed_header_records_after_the_first_extra_field(monkeypatch):
+    import pytest
+
+    from oqp_studio import cube
+
+    original = cube._tokens
+    seen = 0
+
+    def count_tokens(line):
+        nonlocal seen
+        for token in original(line):
+            seen += 1
+            if seen > 6:
+                raise AssertionError("fixed cube record was consumed without a bound")
+            yield token
+
+    monkeypatch.setattr(cube, "_tokens", count_tokens)
+    malformed = _cube([1.0, 2.0]).replace(
+        "0 0.000000 0.0 0.0", " ".join(["0"] * 10_000), 1,
+    )
+
+    with pytest.raises(ValueError, match="cube header is invalid"):
+        cube.parse(malformed)
+    assert seen == 6
+
+
+def test_cube_parser_rejects_malformed_geometry_records_and_empty_axes():
+    import pytest
+
+    from oqp_studio import cube
+
+    valid = _cube([1.0, 2.0])
+    malformed_atom = valid.replace(
+        "0 0.000000 0.0 0.0", "1 0.000000 0.0 0.0", 1,
+    ).replace(
+        "1 0.0 0.0 1.0\n", "1 0.0 0.0 1.0\n8 0.0 0.0 0.0\n", 1,
+    )
+    malformed = [
+        valid.replace("0 0.000000 0.0 0.0", "0 0.000000 0.0"),
+        valid.replace("2 1.0 0.0 0.0", "2 1.0 0.0"),
+        valid.replace("2 1.0 0.0 0.0", "0 1.0 0.0 0.0"),
+        valid.replace("0 0.000000 0.0 0.0", "0 0.000000 0.0 0.0 1 2"),
+        malformed_atom,
+    ]
+
+    for text in malformed:
+        with pytest.raises(ValueError, match="header is invalid"):
+            cube.parse(text)
+
+
+def test_cube_arithmetic_rejects_excessive_grids_and_mixed_axis_units():
+    import pytest
+
+    from oqp_studio import cube
+
+    oversized = _cube([1.0, 2.0]).replace("2 1.0 0.0 0.0", "2000001 1.0 0.0 0.0")
+    with pytest.raises(ValueError, match="limited to 2,000,000"):
+        cube.parse(oversized)
+    angstrom_cube = (
+        _cube([1.0, 2.0])
+        .replace("2 1.0 0.0 0.0", "-2 1.0 0.0 0.0")
+        .replace("1 0.0 1.0 0.0", "-1 0.0 1.0 0.0")
+        .replace("1 0.0 0.0 1.0", "-1 0.0 0.0 1.0")
+    )
+    with pytest.raises(ValueError, match="different coordinate units"):
+        cube.combine(_cube([1.0, 2.0]), angstrom_cube, "difference")
+    with pytest.raises(ValueError, match="header is invalid"):
+        cube.parse(_cube([1.0, 2.0]).replace("2 1.0 0.0 0.0", "-2 1.0 0.0 0.0"))
+
+
+def test_cube_arithmetic_endpoint_uses_only_job_files(tmp_path, monkeypatch):
+    from oqp_studio import cube, jobs, main
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    job = manager.adopt("cube pair", [
+        ("left.cube", _cube([1.0, 2.0]).encode()),
+        ("right.cube", _cube([0.25, 0.5]).encode()),
+    ])
+    monkeypatch.setattr(main, "manager", manager)
+
+    response = client.get(
+        f"/api/jobs/{job.id}/cube-combine",
+        params={"left": "left.cube", "right": "right.cube", "operation": "sum"},
+    )
+    escaped = client.get(
+        f"/api/jobs/{job.id}/cube-combine",
+        params={"left": "../left.cube", "right": "right.cube"},
+    )
+
+    assert response.status_code == 200
+    assert cube.parse(response.text).values == [1.25, 2.5]
+    assert escaped.status_code == 404
+
+
+def test_cube_arithmetic_endpoint_caps_combined_input_size(tmp_path, monkeypatch):
+    from oqp_studio import jobs, main
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    job = manager.adopt("large cubes", [
+        ("left.cube", _cube([1.0, 2.0]).encode()),
+        ("right.cube", _cube([1.0, 2.0]).encode()),
+    ])
+    for name in ("left.cube", "right.cube"):
+        (tmp_path / job.id / name).open("ab").truncate(33 * 1024 * 1024)
+    monkeypatch.setattr(main, "manager", manager)
+
+    response = client.get(
+        f"/api/jobs/{job.id}/cube-combine",
+        params={"left": "left.cube", "right": "right.cube"},
+    )
+
+    assert response.status_code == 413
+    assert "64 MiB combined" in response.json()["detail"]
+
+
+def test_symmetry_identifies_water_and_equivalent_hydrogens():
+    from oqp_studio import symmetry
+
+    result = symmetry.analyze(
+        "O 0.000000 0.000000 0.117300\n"
+        "H 0.000000 0.757200 -0.469200\n"
+        "H 0.000000 -0.757200 -0.469200\n",
+        tolerance=0.01,
+    )
+
+    assert result["point_group"] == "C2v"
+    assert [2, 3] in result["equivalent_atoms"]
+    assert result["max_deviation_angstrom"] < 1.0e-8
+
+
+def test_symmetry_identifies_linear_centrosymmetric_co2():
+    from oqp_studio import symmetry
+
+    result = symmetry.analyze(
+        "O 0.0 0.0 -1.16\nC 0.0 0.0 0.0\nO 0.0 0.0 1.16\n",
+        tolerance=0.01,
+    )
+
+    assert result["point_group"] == "Dinfh"
+    assert [1, 3] in result["equivalent_atoms"]
+
+
+def test_symmetry_uses_maximum_per_atom_deviation_for_linearity():
+    from oqp_studio import symmetry
+
+    result = symmetry.analyze(
+        "C -2.0 0.04 0.0\nC -1.0 -0.04 0.0\n"
+        "C 1.0 -0.04 0.0\nC 2.0 0.04 0.0\n",
+        tolerance=0.05,
+    )
+
+    assert result["point_group"] in {"Cinfv", "Dinfh"}
+
+
+def test_symmetry_classifies_an_isolated_atom_as_spherical():
+    from oqp_studio import symmetry
+
+    assert symmetry.analyze("He 2.0 -3.0 4.0\n")["point_group"] == "Kh"
+
+
+def test_symmetry_uses_heavy_element_masses_for_principal_axes():
+    import pytest
+
+    from oqp_studio import symmetry
+
+    result = symmetry.analyze("H 0.0 0.0 0.0\nCs 1.0 0.0 0.0\n")
+
+    assert result["center_angstrom"][0] == pytest.approx(132.905 / (132.905 + 1.008))
+
+
+def test_symmetry_rejects_incomplete_or_malformed_coordinate_rows():
+    import pytest
+
+    from oqp_studio import symmetry
+
+    with pytest.raises(ValueError, match="every coordinate row"):
+        symmetry.analyze("3\nwater\nO 0 0 0\nH 0 1 0\nnot-an-atom\n")
+    with pytest.raises(ValueError, match="every coordinate row"):
+        symmetry.analyze("O 0 0 0\nH invalid 1 0\n")
+    with pytest.raises(ValueError, match="at most 300"):
+        symmetry.analyze("301\ntoo many\n")
+    with pytest.raises(ValueError, match="exact element symbol"):
+        symmetry.analyze("Hx 0.0 0.0 0.0\n")
+
+
+def test_symmetry_rejects_a_structure_containing_only_dummy_sites():
+    import pytest
+
+    from oqp_studio import symmetry
+
+    with pytest.raises(ValueError, match="positive mass"):
+        symmetry.analyze("X 0.0 0.0 0.0\nX 1.0 0.0 0.0\n")
+
+
+def test_symmetry_rejects_rotations_indistinguishable_at_the_tolerance():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    coordinates = np.asarray([[1.0, 0.0, 0.0]])
+    almost_identity = symmetry._rotation(np.asarray([0.0, 0.0, 1.0]), 1.0e-6)
+
+    assert not symmetry._moves_coordinates(coordinates, almost_identity, 0.01)
+    high_order = symmetry._rotation(np.asarray([0.0, 0.0, 1.0]), 2 * np.pi / 100)
+    assert not symmetry._moves_coordinates(np.asarray([[7.0, 0.0, 0.0]]), high_order, 0.5)
+
+
+def test_symmetry_retains_atoms_near_an_axis_when_rotation_moves_them():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    coordinates = np.asarray([[0.0, -0.3, 0.0], [0.0, 0.3, 0.0]])
+    orders = symmetry._rotation_orders(
+        ["H", "H"], coordinates, np.asarray([1.0, 0.0, 0.0]), 0.5,
+    )
+
+    assert 2 in orders
+
+
+def test_symmetry_clusters_indistinguishable_polyhedral_axes():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    operation = symmetry.Operation("C5", np.eye(3), [0], 0.0)
+    axes = [
+        np.asarray([0.0, 0.0, 1.0]),
+        np.asarray([0.001, 0.0, 0.9999995]),
+        np.asarray([-0.001, 0.0, 0.9999995]),
+    ]
+    distinct = symmetry._distinct_rotation_axes(
+        [(axis, operation) for axis in axes], np.asarray([[1.0, 0.0, 0.0]]), 0.01,
+    )
+
+    assert len(distinct) == 1
+
+
+def test_symmetry_preserves_exact_polyhedral_axes_when_tolerance_exceeds_radius():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    operation = symmetry.Operation("C3", np.eye(3), [0], 0.0)
+    axes = [
+        np.asarray(values, dtype=float) / np.sqrt(3.0)
+        for values in ((1, 1, 1), (1, -1, -1), (-1, 1, -1), (-1, -1, 1))
+    ]
+    distinct = symmetry._distinct_rotation_axes(
+        [(axis, operation) for axis in axes], np.asarray([[0.4, 0.0, 0.0]]), 0.5,
+    )
+
+    assert len(distinct) == 4
+
+
+def test_symmetry_rejects_oversized_json_before_endpoint_binding():
+    from oqp_studio import main
+
+    response = client.post(
+        "/api/symmetry",
+        content=b"x" * (main.MAX_SYMMETRY_REQUEST_BYTES + 1),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "symmetry request body is too large"
+    assert main.MAX_SYMMETRY_REQUEST_BYTES < len(response.request.content)
+
+
+def test_symmetry_assignment_handles_dense_hall_deficiency_without_backtracking():
+    import numpy as np
+    import pytest
+
+    from oqp_studio import symmetry
+
+    distances = np.zeros((20, 20))
+    distances[:, -1] = 2.0
+
+    assert symmetry._assignment(distances, 1.0) is None
+    with pytest.raises(ValueError, match="work limit"):
+        symmetry._assignment(np.zeros((101, 101)), 1.0)
+
+
+def test_symmetry_stops_before_assignment_work_can_block_the_sidecar(monkeypatch):
+    import pytest
+
+    from oqp_studio import symmetry
+
+    monkeypatch.setattr(symmetry, "MAX_MATCH_WORK", 0)
+    monkeypatch.setattr(symmetry, "_match", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(symmetry, "_rotation_orders", lambda *_args, **_kwargs: list(range(2, 20)))
+    xyz = "\n".join(
+        f"C {index * 0.37:.6f} {(index ** 2) * 0.013:.6f} {(index ** 3) * 0.001:.6f}"
+        for index in range(10)
+    )
+
+    with pytest.raises(ValueError, match="work limit"):
+        symmetry.analyze(xyz, tolerance=0.01)
+
+
+def test_symmetry_budgets_rotation_order_screening(monkeypatch):
+    import pytest
+
+    from oqp_studio import symmetry
+
+    monkeypatch.setattr(symmetry, "MAX_ROTATION_SCREEN_WORK", 0)
+
+    with pytest.raises(ValueError, match="rotation screening exceeded"):
+        symmetry.analyze(
+            "C 1.0 0.0 0.0\nC -1.0 0.0 0.0\nC 0.0 1.0 0.0\n",
+            tolerance=0.001,
+        )
+
+
+def test_symmetry_finds_rotated_ammonia_mirror_planes():
+    from math import cos, pi, sin
+
+    from oqp_studio import symmetry
+
+    angle = 17 * pi / 180
+    rows = ["N 0.0 0.0 0.15"]
+    for index in range(3):
+        theta = angle + index * 2 * pi / 3
+        rows.append(f"H {cos(theta):.12f} {sin(theta):.12f} -0.35")
+
+    result = symmetry.analyze("\n".join(rows), tolerance=0.001)
+
+    assert result["point_group"] == "C3v"
+    assert result["operation_count"] == 6
+
+
+def test_symmetry_uses_the_improper_axis_to_classify_d2d():
+    from oqp_studio import symmetry
+
+    allene = (
+        "C 0.0 0.0 -1.3\nC 0.0 0.0 0.0\nC 0.0 0.0 1.3\n"
+        "H 0.9 0.0 -1.8\nH -0.9 0.0 -1.8\n"
+        "H 0.0 0.9 1.8\nH 0.0 -0.9 1.8\n"
+    )
+
+    assert symmetry.analyze(allene, tolerance=0.001)["point_group"] == "D2d"
+
+
+def test_symmetry_closes_odd_improper_rotations_to_twice_the_order():
+    from math import cos, pi, sin
+
+    from oqp_studio import symmetry
+
+    rows = ["B 0.0 0.0 0.0"] + [
+        f"F {cos(index * 2 * pi / 3):.12f} {sin(index * 2 * pi / 3):.12f} 0.0"
+        for index in range(3)
+    ]
+    result = symmetry.analyze("\n".join(rows), tolerance=0.001)
+
+    assert result["point_group"] == "D3h"
+    assert result["operation_count"] == 12
+
+
+def test_symmetry_rejects_a_generator_when_a_required_power_fails():
+    from math import cos, pi, sin
+
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    coordinates = np.asarray([
+        [cos(angle * pi / 180), sin(angle * pi / 180), 0.0]
+        for angle in (0, 85, 180, 275)
+    ])
+    matrix = symmetry._rotation(np.asarray([0.0, 0.0, 1.0]), pi / 2)
+    matched = symmetry._match(["C"] * 4, coordinates, matrix, 0.1)
+
+    assert matched is not None
+    assert symmetry._operation_powers("C4", matrix, matched, 4, coordinates, 0.1) is None
+
+
+def test_symmetry_searches_rotation_orders_above_eight():
+    from math import cos, pi, sin
+
+    from oqp_studio import symmetry
+
+    ring = "\n".join(
+        f"C {cos(index * pi / 5):.12f} {sin(index * pi / 5):.12f} 0.0"
+        for index in range(10)
+    )
+
+    assert symmetry.analyze(ring, tolerance=0.001)["point_group"] == "D10h"
+
+
+def test_symmetry_detects_a_pure_improper_rotation_group():
+    from math import cos, pi, sin
+
+    from oqp_studio import symmetry
+
+    rows = []
+    for symbol, radius, height, offset in (("C", 1.0, 0.4, 0.0), ("H", 1.4, 0.7, 0.37)):
+        for index in range(4):
+            angle = offset + index * pi / 2
+            z = height if index % 2 == 0 else -height
+            rows.append(f"{symbol} {radius * cos(angle):.12f} {radius * sin(angle):.12f} {z:.12f}")
+
+    assert symmetry.analyze("\n".join(rows), tolerance=0.001)["point_group"] == "S4"
+
+
+def test_symmetry_screens_compact_improper_operations_by_their_full_displacement():
+    from math import cos, pi, sin
+
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    coordinates = []
+    symbols = []
+    for symbol, radius, height, offset in (("C", 0.30, 0.40, 0.0), ("H", 0.34, 0.70, 0.37)):
+        for index in range(4):
+            angle = offset + index * pi / 2
+            z = height if index % 2 == 0 else -height
+            symbols.append(symbol)
+            coordinates.append([radius * cos(angle), radius * sin(angle), z])
+
+    xyz = np.asarray(coordinates)
+    axis = np.asarray([0.0, 0.0, 1.0])
+
+    assert 4 not in symmetry._rotation_orders(symbols, xyz, axis, 0.5)
+    assert 4 in symmetry._improper_orders(symbols, xyz, axis, 0.5)
+
+
+def test_symmetry_improper_screening_allows_mixed_cycle_lengths():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    coordinates = np.asarray([
+        [1.0, 0.0, 0.5], [0.0, 1.0, -0.5], [-1.0, 0.0, 0.5], [0.0, -1.0, -0.5],
+        [0.0, 0.0, 0.8], [0.0, 0.0, -0.8],
+    ])
+
+    assert 4 in symmetry._improper_orders(
+        ["C"] * 6, coordinates, np.asarray([0.0, 0.0, 1.0]), 0.01,
+    )
+
+
+def test_symmetry_distinguishes_an_icosahedral_structure():
+    from oqp_studio import symmetry
+
+    phi = (1 + 5 ** 0.5) / 2
+    vertices = []
+    for first in (-1.0, 1.0):
+        for second in (-phi, phi):
+            vertices.extend([(0.0, first, second), (first, second, 0.0), (second, 0.0, first)])
+    xyz = "\n".join(f"C {x:.12f} {y:.12f} {z:.12f}" for x, y, z in vertices)
+
+    assert symmetry.analyze(xyz, tolerance=0.001)["point_group"] == "Ih"
+
+
+def test_symmetry_finds_face_centered_fivefold_axes_in_c60():
+    from itertools import product
+
+    from oqp_studio import symmetry
+
+    phi = (1 + 5 ** 0.5) / 2
+    seeds = [
+        (0.0, 1.0, 3 * phi),
+        (1.0, 2 + phi, 2 * phi),
+        (phi, 2.0, 2 * phi + 1),
+    ]
+    vertices = set()
+    for seed_index, seed in enumerate(seeds):
+        for signs in product((-1.0, 1.0), repeat=3):
+            signed = tuple(value * sign for value, sign in zip(seed, signs))
+            for shift in range(3):
+                vertex = signed[shift:] + signed[:shift]
+                vertices.add(tuple(round(value, 12) for value in vertex))
+    assert len(vertices) == 60
+    xyz = "\n".join(f"C {x} {y} {z}" for x, y, z in sorted(vertices))
+
+    assert symmetry.analyze(xyz, tolerance=0.001)["point_group"] == "Ih"
+    reversed_xyz = "\n".join(
+        f"C {x} {y} {z}" for x, y, z in sorted(vertices, reverse=True)
+    )
+    assert symmetry.analyze(reversed_xyz, tolerance=0.001)["point_group"] == "Ih"
+
+
+def test_symmetry_falls_back_to_c1_and_centers_aligned_coordinates():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    result = symmetry.analyze(
+        "C 0.1 0.2 0.3\nN 1.0 0.1 -0.2\nO -0.2 1.3 0.4\nH 0.5 -0.4 1.7\n",
+        tolerance=0.001,
+    )
+    aligned = np.asarray([atom[1:] for atom in result["aligned_atoms"]])
+    weights = np.asarray([12.011, 14.007, 15.999, 1.008], dtype=float)
+
+    assert result["point_group"] == "C1"
+    assert np.linalg.norm(np.average(aligned, axis=0, weights=weights)) < 1.0e-10

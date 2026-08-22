@@ -57,6 +57,16 @@ structure RMSD, dipole-magnitude change, and matched excited-state energy
 changes. Atomic results exported by OpenQP are also available as labeled 3D
 maps: Mulliken, Lowdin, and RESP partial charges, plus coupled NMR shielding.
 
+Gaussian cube results can be displayed directly or combined point by point as
+a sum or primary-minus-secondary difference when their grids and atom headers
+match. The surface controls expose the contour value and positive, negative,
+or both signs; incompatible grids are rejected rather than resampled silently.
+
+The Builder's symmetry analysis reports a likely molecular point group, the
+accepted operation count, maximum coordinate residual, and symmetry-equivalent
+atom groups at the displayed tolerance. Principal-axis alignment is a separate
+explicit action, so analysis never changes the coordinates unless requested.
+
 Until OpenQP's native continuum solver is merged, the bundled engine also
 contains the external ddX library required for PCM calculations.
 

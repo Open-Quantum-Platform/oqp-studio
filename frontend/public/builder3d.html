@@ -122,6 +122,8 @@
         // choices are additive.
         let style = { type: "auto", color: "element-symbol", labels: "none" };
         let last = null;   // { data, format }
+        let lastCube = null;
+        let lastAtomicProperty = null;
 
         // Mol* labels an element with its atom name, and there is no parameter
         // to make it print an index instead. An XYZ model has no atom names,
@@ -207,11 +209,11 @@
             const value = finite[i];
             const normalized = maximum === minimum ? 50 : 100 * (value - minimum) / (maximum - minimum);
             const [element, x, y, z] = parts;
-            const label = Math.abs(value) >= 100 ? value.toFixed(0)
-              : Math.abs(value) >= 10 ? value.toFixed(value < 0 ? 0 : 1)
-              : value.toFixed(1);
+            const label = [value.toFixed(1), value.toFixed(0),
+              value.toExponential(0).replace("e+", "e")].find((text) => text.length <= 4);
+            if (!label) return;
             pdb.push("HETATM" + String(i + 1).padStart(5) + " " +
-              label.padStart(4).slice(-4) + " MAP A   1    " +
+              label.padStart(4) + " MAP A   1    " +
               Number(x).toFixed(3).padStart(8) + Number(y).toFixed(3).padStart(8) +
               Number(z).toFixed(3).padStart(8) + "  1.00" + normalized.toFixed(2).padStart(6) +
               "          " + element.toUpperCase().padStart(2));
@@ -232,12 +234,18 @@
           });
         }
 
-        async function showAtomicProperty(values) {
-          if (!last || last.format !== "xyz") return;
-          const source = { ...last };
+        async function drawAtomicProperty(source, values) {
           await viewer.plugin.clear();
           await drawStructure(source.data, source.format);
           await addAtomicPropertyMap(source.data, values);
+        }
+
+        async function showAtomicProperty(values) {
+          if (!last || last.format !== "xyz") return;
+          const source = { ...last };
+          lastCube = null;
+          lastAtomicProperty = { source, values: [...values] };
+          await drawAtomicProperty(source, values);
         }
 
         async function drawStructure(data, format = "xyz") {
@@ -416,12 +424,34 @@
 
         // Orbital appearance, in the spirit of MacMolPlt and IQmol: a phase
         // colour pair, an opacity, and solid or mesh surfaces.
-        let orbital = { positive: 0x4f8fdd, negative: 0xdd6a4f, alpha: 0.85, visuals: ["solid"] };
+        let orbital = { positive: 0x4f8fdd, negative: 0xdd6a4f, alpha: 0.85,
+                        visuals: ["solid"], sides: "both" };
 
-        const isoSurfaces = (iso) => [
-          { type: "absolute", value: iso, color: orbital.positive, alpha: orbital.alpha },
-          { type: "absolute", value: -iso, color: orbital.negative, alpha: orbital.alpha },
-        ];
+        const isoSurfaces = (iso, sides = orbital.sides) => {
+          const surfaces = [];
+          if (sides !== "negative") {
+            surfaces.push({ type: "absolute", value: iso,
+                            color: orbital.positive, alpha: orbital.alpha });
+          }
+          if (sides !== "positive") {
+            surfaces.push({ type: "absolute", value: -iso,
+                            color: orbital.negative, alpha: orbital.alpha });
+          }
+          return surfaces;
+        };
+
+        async function drawCube(message) {
+          await viewer.plugin.clear();
+          if (message.xyz) await drawStructure(message.xyz);
+          else last = null;
+          const url = sameOriginHref(message.cube);
+          if (!url) return;
+          await viewer.loadVolumeFromUrl(
+            { url, format: "cube", isBinary: false },
+            isoSurfaces(Math.abs(message.iso) || 0.05, message.sides || orbital.sides),
+          );
+          await applyOrbitalVisuals();
+        }
 
         // loadVolumeFromUrl sets colour and opacity but not the visual kind, so
         // the created representations are updated in place afterwards.
@@ -629,10 +659,42 @@
           report(measure());
         });
 
+        let renderQueue = Promise.resolve();
+        let newestRenderGeneration = 0;
+
         window.addEventListener("message", async (event) => {
           if (event.origin !== window.location.origin) return;
           const message = event.data || {};
+          if (message.style) style = { ...style, ...message.style };
+          if (message.orbital) orbital = { ...orbital, ...message.orbital };
+          const replacementTypes = new Set([
+            "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
+          ]);
+          const dependentTypes = new Set([
+            "oqp-atomic-property", "oqp-nmr-shielding", "oqp-normal-mode-play",
+            "oqp-normal-mode-pause", "oqp-normal-mode-arrows", "oqp-style",
+          ]);
+          let releaseRender = null;
+          if (replacementTypes.has(message.type) || dependentTypes.has(message.type)) {
+            const supplied = Number(message.renderGeneration);
+            const generation = dependentTypes.has(message.type)
+              ? newestRenderGeneration
+              : (Number.isFinite(supplied) ? supplied : newestRenderGeneration + 1);
+            if (replacementTypes.has(message.type)) {
+              newestRenderGeneration = Math.max(newestRenderGeneration, generation);
+            }
+            const previousRender = renderQueue;
+            renderQueue = new Promise((resolve) => { releaseRender = resolve; });
+            await previousRender;
+            if (generation !== newestRenderGeneration) {
+              releaseRender();
+              return;
+            }
+          }
+          try {
           if (message.type === "oqp-structure") {
+            lastCube = null;
+            lastAtomicProperty = null;
             picked.length = 0;
             report();
             await viewer.plugin.clear();
@@ -642,6 +704,8 @@
           } else if (message.type === "oqp-nmr-shielding") {
             await showAtomicProperty((message.shielding || []).map((row) => row.total_coupled));
           } else if (message.type === "oqp-normal-mode") {
+            lastCube = null;
+            lastAtomicProperty = null;
             picked.length = 0;
             report();
             stopNormalMode();
@@ -662,6 +726,8 @@
             await drawNormalMode();
             if (resume) await playNormalMode();
           } else if (message.type === "oqp-normal-mode-reset") {
+            lastCube = null;
+            lastAtomicProperty = null;
             stopNormalMode();
             normalMode = null;
             picked.length = 0;
@@ -669,6 +735,8 @@
             await viewer.plugin.clear();
             await drawStructure(message.xyz);
           } else if (message.type === "oqp-file") {
+            lastCube = null;
+            lastAtomicProperty = null;
             qmmmAtoms.clear();
             await viewer.plugin.clear();
             await drawStructure(message.text, message.format);
@@ -684,8 +752,11 @@
           } else if (message.type === "oqp-rendering") {
             setRendering(message.rendering || {});
           } else if (message.type === "oqp-style") {
-            style = { ...style, ...message.style };
-            if (last) {
+            if (lastAtomicProperty) {
+              await drawAtomicProperty(lastAtomicProperty.source, lastAtomicProperty.values);
+            } else if (lastCube) {
+              await drawCube(lastCube);
+            } else if (last) {
               await viewer.plugin.clear();
               await drawStructure(last.data, last.format);
             }
@@ -704,16 +775,12 @@
             picked.length = 0;
             report();
           } else if (message.type === "oqp-cube") {
-            await viewer.plugin.clear();
-            if (message.xyz) await drawStructure(message.xyz);
-            const url = sameOriginHref(message.cube);
-            if (url) {
-              await viewer.loadVolumeFromUrl(
-                { url, format: "cube", isBinary: false },
-                isoSurfaces(Math.abs(message.iso) || 0.05),
-              );
-              await applyOrbitalVisuals();
-            }
+            lastAtomicProperty = null;
+            lastCube = { ...message };
+            await drawCube(lastCube);
+          }
+          } finally {
+            if (releaseRender) releaseRender();
           }
         });
         window.parent.postMessage({ type: "oqp-viewer-ready" }, window.location.origin);
@@ -753,7 +820,7 @@
           if (href) {
             await viewer.loadVolumeFromUrl(
               { url: href, format: "cube", isBinary: false },
-              isoSurfaces(iso),
+              isoSurfaces(iso, params.get("sides") || orbital.sides),
             );
             await applyOrbitalVisuals();
           }

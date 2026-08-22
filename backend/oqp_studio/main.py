@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -82,7 +82,63 @@ async def _lifespan(_app: FastAPI):
     yield
 
 
+MAX_SYMMETRY_REQUEST_BYTES = 1_100_000
+
+
+class _SymmetryBodyLimit:
+    """Reject oversized symmetry JSON before FastAPI buffers or binds it."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("path") != "/api/symmetry":
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > MAX_SYMMETRY_REQUEST_BYTES:
+                    await JSONResponse(
+                        {"detail": "symmetry request body is too large"}, status_code=413,
+                    )(scope, receive, send)
+                    return
+            except ValueError:
+                pass
+
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > MAX_SYMMETRY_REQUEST_BYTES:
+                await JSONResponse(
+                    {"detail": "symmetry request body is too large"}, status_code=413,
+                )(scope, receive, send)
+                return
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+
+        body = b"".join(chunks)
+        delivered = False
+
+        async def replay():
+            nonlocal delivered
+            if delivered:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            delivered = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        await self.app(scope, replay, send)
+
+
 app = FastAPI(title="OQP Studio backend", version=__version__, lifespan=_lifespan)
+app.add_middleware(_SymmetryBodyLimit)
 _trace("app built")
 
 # FastAPI reads this as the file field; kept module level so it is not a
@@ -127,6 +183,11 @@ class ResourceRequest(BaseModel):
     threads: int = 1
 
 
+class SymmetryRequest(BaseModel):
+    xyz: str
+    tolerance: float = 0.05
+
+
 @app.get("/api/host")
 def host_status() -> dict:
     return host.snapshot()
@@ -135,6 +196,19 @@ def host_status() -> dict:
 @app.post("/api/host/admission")
 def host_admission(req: ResourceRequest) -> dict:
     return host.admission(req.input_text, req.threads)
+
+
+@app.post("/api/symmetry")
+def molecular_symmetry(req: SymmetryRequest) -> dict:
+    """Likely point group, accepted operations, and a principal-axis frame."""
+    from . import symmetry
+
+    if not 1.0e-4 <= req.tolerance <= 0.5:
+        raise HTTPException(status_code=422, detail="tolerance must be between 0.0001 and 0.5 A")
+    try:
+        return symmetry.analyze(req.xyz, req.tolerance)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/jobs")
@@ -264,6 +338,56 @@ def job_file(job_id: str, name: str) -> FileResponse:
     return FileResponse(path, media_type="text/plain", filename=name)
 
 
+@app.get("/api/jobs/{job_id}/cube-combine")
+def combine_cube_files(job_id: str, left: str, right: str,
+                       operation: str = "difference") -> PlainTextResponse:
+    """Pointwise sum or difference of two compatible Gaussian cube files."""
+    from . import cube
+
+    left_path = manager.file_path(job_id, left)
+    right_path = manager.file_path(job_id, right)
+    if left_path is None or right_path is None:
+        raise HTTPException(status_code=404, detail="cube file not found")
+    if left_path.suffix.lower() not in {".cube", ".cub"} or right_path.suffix.lower() not in {
+        ".cube", ".cub",
+    }:
+        raise HTTPException(status_code=422, detail="cube arithmetic requires .cube or .cub files")
+    try:
+        maximum_bytes = 64 * 1024 * 1024
+        if left_path.stat().st_size + right_path.stat().st_size > maximum_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"cube arithmetic is limited to {maximum_bytes // (1024 * 1024)} MiB combined",
+            )
+        result = cube.combine(
+            left_path.read_text(errors="replace"),
+            right_path.read_text(errors="replace"),
+            operation,
+        )
+    except HTTPException:
+        raise
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return PlainTextResponse(result, media_type="text/plain")
+
+
+@app.get("/api/jobs/{job_id}/cube-geometry")
+def cube_file_geometry(job_id: str, name: str) -> dict:
+    """Atomic geometry embedded in a Gaussian cube, converted to angstrom."""
+    from . import cube
+
+    path = manager.file_path(job_id, name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="cube file not found")
+    if path.suffix.lower() not in {".cube", ".cub"}:
+        raise HTTPException(status_code=422, detail="cube geometry requires a .cube or .cub file")
+    try:
+        with path.open(errors="replace") as stream:
+            return {"xyz": cube.geometry_xyz(cube.parse_header(stream))}
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 class WorkspaceRequest(BaseModel):
     jobs_dir: str
 
@@ -316,6 +440,9 @@ RESULT_SUFFIXES = (
 # Ignore anything larger than this on a folder import: a stray checkpoint is
 # not analysable and copying it would only cost the user disk.
 MAX_IMPORT_BYTES = 512 * 1024 * 1024
+MAX_COMPARISON_TEXT_BYTES = 16 * 1024 * 1024
+MAX_COMPARISON_LINE = 64 * 1024
+MAX_COMPARISON_ATOMS = 100_000
 
 
 class ImportPathRequest(BaseModel):
@@ -685,6 +812,12 @@ def _job_paths(job_id: str) -> list[Path]:
 
 def _summary_energy(summary: dict) -> float | None:
     energy = summary.get("energy", {})
+    optimized_state = summary.get("excited_state_optimized")
+    final_states = energy.get("final_states", {})
+    if optimized_state is not None:
+        value = final_states.get(optimized_state, final_states.get(str(optimized_state)))
+        if value is not None:
+            return float(value)
     value = energy.get("total", energy.get("components", {}).get("total"))
     if value is None:
         value = summary.get("scf", {}).get("energy")
@@ -694,23 +827,154 @@ def _summary_energy(summary: dict) -> float | None:
 def _comparison_frame(paths: list[Path]):
     from . import structure_io
 
-    def rank(path: Path) -> tuple[int, str]:
+    def rank(path: Path) -> tuple[int, str] | None:
         name = path.name.lower()
-        if name == "opt.xyz" or name.endswith((".trj", ".namd.trj")):
+        if name in {"opt.xyz", "opt_geom.xyz"} or name.endswith((".namd.trj", ".trj")):
             return (0, name)
-        if name.endswith((".xyz", ".molden", ".json", ".log", ".out")):
+        if name.endswith(".xyz") and any(word in name for word in ("result", "final", "optimized")):
             return (1, name)
-        if name.endswith((".oqp", ".inp", ".pdb")):
+        if name.endswith((".log", ".out")):
             return (2, name)
-        return (3, name)
+        if name.endswith((".molden", ".freq.molden")):
+            return (3, name)
+        if name.endswith(".xyz"):
+            return (4, name)
+        if name.endswith(".json") and any(word in name for word in ("result", "output", "hess")):
+            return (5, name)
+        if name.endswith(".json"):
+            return (6, name)
+        if name.endswith((
+            ".oqp", ".inp", ".pdb", ".ent", ".mol", ".sdf", ".sd", ".mol2",
+            ".cdxml", ".cdx", ".smi", ".smiles",
+        )):
+            return (7, name)
+        if name.endswith(".txt"):
+            return (8, name)
+        if name.endswith((".cube", ".cub")):
+            return None
+        return (9, name)
 
-    for path in sorted(paths, key=rank):
-        try:
-            structure = structure_io.parse(path.name, path.read_bytes(), path=str(path))
-        except (OSError, ValueError):
-            continue
+    candidates = [(priority, path) for path in paths if (priority := rank(path)) is not None]
+    def parse_path(path: Path):
+        payload = b"" if path.name.lower().endswith((".namd.trj", ".trj")) else path.read_bytes()
+        return structure_io.parse(path.name, payload, path=str(path))
+
+    def usable_frame(structure):
         if structure.frames and structure.frames[-1].atoms:
             return structure.frames[-1]
+        return None
+
+    def openqp_text_frame(path: Path):
+        last = None
+        step = 0
+
+        def bounded_lines(stream):
+            while line := stream.readline(MAX_COMPARISON_LINE + 1):
+                if len(line) <= MAX_COMPARISON_LINE:
+                    yield line
+                    continue
+                while line and not line.endswith("\n"):
+                    line = stream.readline(MAX_COMPARISON_LINE + 1)
+                yield ""
+
+        with path.open(errors="replace") as stream:
+            rows = iter(bounded_lines(stream))
+            for line in rows:
+                marker = re.search(r"Geometry Optimization Step\s+(\d+)", line)
+                if marker:
+                    step = int(marker.group(1))
+                if "Cartesian Coordinate in Angstrom" not in line:
+                    continue
+                for line in rows:
+                    if re.match(r"\s*-{5,}", line):
+                        break
+                atoms = []
+                oversized = False
+                for line in rows:
+                    row = re.match(
+                        r"\s*\d+\s+(\d+(?:\.\d+)?)\s+([-+0-9.Ee]+)\s+"
+                        r"([-+0-9.Ee]+)\s+([-+0-9.Ee]+)",
+                        line,
+                    )
+                    if not row:
+                        break
+                    if oversized or len(atoms) >= MAX_COMPARISON_ATOMS:
+                        atoms = []
+                        oversized = True
+                        continue
+                    atomic_number = int(float(row.group(1)))
+                    if 0 < atomic_number < len(structure_io.SYMBOLS):
+                        atoms.append(
+                            (
+                                structure_io.SYMBOLS[atomic_number],
+                                float(row.group(2)), float(row.group(3)), float(row.group(4)),
+                            )
+                        )
+                if atoms and not oversized:
+                    last = structure_io.Frame(atoms, f"step {step or 1}")
+        return last
+
+    def generic_text_frame(path: Path):
+        with path.open("rb") as stream:
+            data = stream.read(MAX_COMPARISON_TEXT_BYTES + 1)
+        if len(data) > MAX_COMPARISON_TEXT_BYTES:
+            return None
+        text = data.decode(errors="replace")
+        for reader in (structure_io.parse_xyz, structure_io.parse_pdb):
+            frames = reader(text)
+            if frames and frames[-1].atoms:
+                return frames[-1]
+        return None
+
+    for priority in (0, 1):
+        for _rank, path in sorted(item for item in candidates if item[0][0] == priority):
+            try:
+                structure = parse_path(path)
+            except (OSError, ValueError):
+                continue
+            if frame := usable_frame(structure):
+                return frame
+
+    # A .txt file is promoted beside .log/.out only after its contents identify
+    # it as an OpenQP log. Do this only after explicit result geometry tiers fail.
+    log_candidates = [item for item in candidates if item[0][0] == 2]
+    text_candidates = [item for item in candidates if item[0][0] == 8]
+    for _rank, path in sorted([*log_candidates, *text_candidates], key=lambda item: item[1].name):
+        try:
+            frame = openqp_text_frame(path)
+        except (OSError, ValueError):
+            continue
+        if frame:
+            return frame
+
+    for priority in range(3, 8):
+        for _rank, path in sorted(item for item in candidates if item[0][0] == priority):
+            try:
+                structure = parse_path(path)
+            except (OSError, ValueError):
+                continue
+            if frame := usable_frame(structure):
+                return frame
+    for _rank, path in sorted(item for item in candidates if item[0][0] == 8):
+        try:
+            frame = generic_text_frame(path)
+        except OSError:
+            continue
+        if frame:
+            return frame
+    for _rank, path in sorted(item for item in candidates if item[0][0] == 9):
+        try:
+            frame = openqp_text_frame(path)
+        except (OSError, ValueError):
+            continue
+        if frame:
+            return frame
+        try:
+            frame = generic_text_frame(path)
+        except OSError:
+            continue
+        if frame:
+            return frame
     return None
 
 
@@ -755,6 +1019,8 @@ def compare_jobs(left: str, right: str) -> dict:
     terminal = {JobStatus.done, JobStatus.not_converged}
     if left_info.status not in terminal or right_info.status not in terminal:
         raise HTTPException(status_code=409, detail="comparison requires completed projects")
+    _summary_cache.pop(left, None)
+    _summary_cache.pop(right, None)
     left_paths = _job_paths(left)
     right_paths = _job_paths(right)
     left_summary = _job_summary(left)

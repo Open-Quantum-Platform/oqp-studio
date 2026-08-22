@@ -499,6 +499,21 @@
                 <span class="hint" id="builderStatus"></span>
               </div>
             </div>
+            <div class="card">
+              <h3>Symmetry</h3>
+              <div class="row">
+                <div>
+                  <label>Coordinate tolerance (Å)</label>
+                  <input type="number" id="symmetryTolerance" min="0.0001" max="0.5"
+                         step="0.001" value="0.05" />
+                </div>
+              </div>
+              <div class="actions">
+                <button type="button" id="symmetryAnalyze">Analyze</button>
+                <button type="button" class="ghost" id="symmetryAlign" disabled>Align principal axes</button>
+              </div>
+              <div class="hint" id="symmetryResult"></div>
+            </div>
             <div class="card" id="qmmmCard" style="display:none">
               <h3>QM/MM region</h3>
               <div class="row">
@@ -1069,6 +1084,42 @@
                 <div class="property-scale"></div>
                 <div class="property-range"><span id="propertyMinimum"></span><span id="propertyMaximum"></span></div>
               </div>
+              <div class="hint" id="propertyStatus"></div>
+            </div>
+            <div class="card" id="surfaceCard" style="display:none">
+              <h3>Volumetric surfaces</h3>
+              <label>Primary cube</label>
+              <select id="surfacePrimary"></select>
+              <div class="row">
+                <div>
+                  <label>Operation</label>
+                  <select id="surfaceOperation">
+                    <option value="display">Display</option>
+                    <option value="difference">Difference (primary − secondary)</option>
+                    <option value="sum">Sum</option>
+                  </select>
+                </div>
+                <div id="surfaceSecondaryWrap" style="display:none">
+                  <label>Secondary cube</label>
+                  <select id="surfaceSecondary"></select>
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label>Isovalue</label>
+                  <input type="number" id="surfaceIso" min="0.0001" step="0.005" value="0.05" />
+                </div>
+                <div>
+                  <label>Sign</label>
+                  <select id="surfaceSides">
+                    <option value="both">Positive and negative</option>
+                    <option value="positive">Positive only</option>
+                    <option value="negative">Negative only</option>
+                  </select>
+                </div>
+              </div>
+              <div class="actions"><button id="surfaceShow" type="button">Show surface</button></div>
+              <div class="hint" id="surfaceStatus"></div>
             </div>
             <div class="card" id="spectrumCard" style="display:none">
               <h3>Spectrum
@@ -1174,6 +1225,14 @@
                     <option value="solid">Solid</option>
                     <option value="wireframe">Mesh</option>
                     <option value="solid,wireframe">Solid + mesh</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Sign</label>
+                  <select id="moSides">
+                    <option value="both">Positive and negative</option>
+                    <option value="positive">Positive only</option>
+                    <option value="negative">Negative only</option>
                   </select>
                 </div>
               </div>
