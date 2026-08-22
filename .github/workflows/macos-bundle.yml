@@ -5,8 +5,8 @@ name: macOS standalone bundle
 # runtime and the basis-set data.  Meant to be shipped inside the GUI app so an
 # ordinary user gets one download that runs immediately.
 #
-# BLAS is Apple Accelerate, a system framework: nothing to bundle, which is why
-# these archives are a fraction of the Windows one (that has to carry MKL).
+# External ddX links BLAS itself, so this archive carries an ILP64 OpenBLAS
+# rather than Accelerate's interposed ILP64 interface.
 on:
   # Weekly, so a broken engine build surfaces within days rather than at the
   # next app release, and on demand.  A published OQP Studio release rebuilds
@@ -101,10 +101,28 @@ jobs:
       - name: Cache bundled externals
         uses: actions/cache@v4
         with:
-          path: ~/Library/Caches/openqp/externals
-          key: oqp-bundle-externals-macos-${{ matrix.arch }}-${{ hashFiles('openqp/external/CMakeLists.txt', 'openqp/CMakeLists.txt') }}
+          path: |
+            ~/Library/Caches/openqp/externals
+            ~/Library/Caches/openqp/openblas-ilp64
+          key: oqp-bundle-externals-macos-${{ matrix.arch }}-openblas-0.3.30-${{ hashFiles('openqp/external/CMakeLists.txt', 'openqp/CMakeLists.txt') }}
           restore-keys: |
             oqp-bundle-externals-macos-${{ matrix.arch }}-
+
+      - name: Build ILP64 OpenBLAS for ddX
+        run: |
+          set -euo pipefail
+          root="$HOME/Library/Caches/openqp/openblas-ilp64/${{ matrix.arch }}"
+          if [ ! -f "$root/lib/pkgconfig/openblas64.pc" ]; then
+            rm -rf /tmp/OpenBLAS
+            git clone --depth 1 --branch v0.3.30 https://github.com/OpenMathLib/OpenBLAS.git /tmp/OpenBLAS
+            make -C /tmp/OpenBLAS -j"$(sysctl -n hw.ncpu)" \
+              INTERFACE64=1 USE_OPENMP=1 DYNAMIC_ARCH=1 NO_STATIC=1 libs netlib shared
+            make -C /tmp/OpenBLAS PREFIX="$root" INTERFACE64=1 USE_OPENMP=1 \
+              DYNAMIC_ARCH=1 NO_STATIC=1 install
+          fi
+          test -f "$root/lib/pkgconfig/openblas64.pc"
+          echo "OQP_OPENBLAS_ROOT=$root" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$root/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
 
       - name: Build and install OpenQP
         run: |
@@ -114,7 +132,7 @@ jobs:
             --config-settings=cmake.define.CMAKE_C_COMPILER=gcc-15 \
             --config-settings=cmake.define.CMAKE_CXX_COMPILER=g++-15 \
             --config-settings=cmake.define.CMAKE_Fortran_COMPILER=gfortran-15 \
-            --config-settings=cmake.define.LINALG_LIB=Apple \
+            --config-settings=cmake.define.LINALG_LIB=OpenBLAS \
             --config-settings=cmake.define.ENABLE_MPI=OFF \
             --config-settings=cmake.define.ENABLE_DDX=ON \
             --config-settings=cmake.define.USE_LIBINT=OFF \
@@ -139,11 +157,13 @@ jobs:
 
           # liboqp and the DFT-D4 dylibs are opened through cffi at run time and
           # are invisible to PyInstaller's static analysis; add them by name.
-          # The GCC Fortran runtime comes from Homebrew and must travel too --
-          # the user has no Homebrew.  Accelerate is a system framework and is
-          # deliberately NOT bundled.
+          # The GCC Fortran runtime and ILP64 OpenBLAS come from the build
+          # environment and must travel too -- the user has neither.
           add=()
           for d in "$pkg"/lib/*.dylib; do add+=(--add-binary "$d:oqp/lib"); done
+          for d in "$OQP_OPENBLAS_ROOT"/lib/libopenblas*.dylib; do
+            [ -e "$d" ] && add+=(--add-binary "$d:oqp/lib")
+          done
           # ddX is an external continuum-solvent library until OpenQP's native
           # implementation is merged.  It may live in the CMake build tree
           # rather than the installed Python package, so discover it explicitly.
@@ -204,7 +224,7 @@ jobs:
           GCC Fortran runtime, DFT-D4 and external ddX continuum-solvent
           libraries; that runtime is built for macOS 15, which sets the floor.
           ddX remains bundled until OpenQP's native continuum solver is merged.
-          Linear algebra uses Apple Accelerate, part of macOS.
+          Linear algebra uses the bundled ILP64 OpenBLAS runtime.
 
           If macOS refuses to run it because it was downloaded from the
           internet, clear the quarantine flag once:
