@@ -1968,14 +1968,28 @@ let volumetricRequestId = 0;
 let activeMapSource: "direct" | "excited" | "orbital" | "surface" | null = null;
 let activeDirectCube: { jobId: string; url: string } | null = null;
 
-function showDirectCube(jobId: string, url: string): void {
+async function showDirectCube(jobId: string, url: string): Promise<void> {
   if (jobId !== selectedJob) return;
-  volumetricRequestId += 1;
+  const requestId = ++volumetricRequestId;
   activeMapSource = "direct";
   activeDirectCube = { jobId, url };
   pushOrbitalStyle();
+  const name = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? "");
+  const [response, geometryResponse] = await Promise.all([
+    fetch(url),
+    fetch(`/api/jobs/${jobId}/cube-geometry?name=${encodeURIComponent(name)}`),
+  ]);
+  if (requestId !== volumetricRequestId || jobId !== selectedJob || !response.ok) return;
+  const cube = await response.text();
+  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  const geometry = geometryResponse.ok ? await geometryResponse.json() : null;
+  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
+  activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
   pushToResultViewer({
-    type: "oqp-cube", cube: url, iso: 0.05,
+    type: "oqp-cube",
+    ...(typeof geometry?.xyz === "string" ? { xyz: geometry.xyz } : {}),
+    cube: activeCubeUrl, iso: 0.05,
     sides: $<HTMLSelectElement>("moSides").value,
   });
 }
@@ -2006,8 +2020,10 @@ async function showSurface(): Promise<void> {
   let cubeUrl = `/api/jobs/${jobId}/files/${encodeURIComponent(primary)}`;
   status.textContent = operation === "display" ? `Displaying ${primary}` : `Computing ${operation}…`;
   const query = new URLSearchParams({ left: primary, right: secondary, operation });
-  const response = await fetch(operation === "display"
-    ? cubeUrl : `/api/jobs/${jobId}/cube-combine?${query}`);
+  const [response, geometryResponse] = await Promise.all([
+    fetch(operation === "display" ? cubeUrl : `/api/jobs/${jobId}/cube-combine?${query}`),
+    fetch(`/api/jobs/${jobId}/cube-geometry?name=${encodeURIComponent(primary)}`),
+  ]);
   if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
@@ -2016,6 +2032,8 @@ async function showSurface(): Promise<void> {
     return;
   }
   const cube = await response.text();
+  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  const geometry = geometryResponse.ok ? await geometryResponse.json() : null;
   if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
   if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
   activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
@@ -2028,6 +2046,7 @@ async function showSurface(): Promise<void> {
   pushOrbitalStyle();
   pushToResultViewer({
     type: "oqp-cube",
+    ...(typeof geometry?.xyz === "string" ? { xyz: geometry.xyz } : {}),
     cube: cubeUrl,
     iso: Math.max(0.0001, Math.abs(+$<HTMLInputElement>("surfaceIso").value) || 0.05),
     sides: $<HTMLSelectElement>("surfaceSides").value,

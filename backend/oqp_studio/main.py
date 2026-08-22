@@ -315,6 +315,22 @@ def combine_cube_files(job_id: str, left: str, right: str,
     return PlainTextResponse(result, media_type="text/plain")
 
 
+@app.get("/api/jobs/{job_id}/cube-geometry")
+def cube_file_geometry(job_id: str, name: str) -> dict:
+    """Atomic geometry embedded in a Gaussian cube, converted to angstrom."""
+    from . import cube
+
+    path = manager.file_path(job_id, name)
+    if path is None:
+        raise HTTPException(status_code=404, detail="cube file not found")
+    if path.suffix.lower() not in {".cube", ".cub"}:
+        raise HTTPException(status_code=422, detail="cube geometry requires a .cube or .cub file")
+    try:
+        return {"xyz": cube.geometry_xyz(cube.parse(path.read_text(errors="replace")))}
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 class WorkspaceRequest(BaseModel):
     jobs_dir: str
 

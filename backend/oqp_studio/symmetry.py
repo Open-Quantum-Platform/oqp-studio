@@ -251,10 +251,15 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
     if len(atoms) > 300:
         raise ValueError("symmetry analysis supports at most 300 atoms")
     symbols, coordinates, center = _principal_axes(atoms)
-    spread = np.linalg.svd(coordinates, compute_uv=False)
     single_atom = len(atoms) == 1
-    linear = len(atoms) == 2 or (len(atoms) > 2 and len(spread) > 1
-                                 and spread[1] <= tolerance)
+    if len(atoms) > 2:
+        _left, _spread, directions = np.linalg.svd(coordinates, full_matrices=False)
+        principal_line = directions[0]
+        projection = np.outer(coordinates @ principal_line, principal_line)
+        maximum_perpendicular = float(np.max(np.linalg.norm(coordinates - projection, axis=1)))
+    else:
+        maximum_perpendicular = 0.0
+    linear = len(atoms) == 2 or (len(atoms) > 2 and maximum_perpendicular <= tolerance)
 
     seed_axes = [np.eye(3)[index] for index in range(3)]
     atom_axes = _unique_axes([point for point in coordinates])[:80]

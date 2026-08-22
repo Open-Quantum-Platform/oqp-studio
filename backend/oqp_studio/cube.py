@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite, prod
 
+from .molden import BOHR_TO_ANGSTROM, SYMBOLS
+
 MAX_GRID_VALUES = 2_000_000
 
 
@@ -139,3 +141,18 @@ def combine(left_text: str, right_text: str, operation: str) -> str:
     output.extend(" ".join(f"{value:13.5E}" for value in values[index:index + 6])
                   for index in range(0, len(values), 6))
     return "\n".join(output) + "\n"
+
+
+def geometry_xyz(cube: Cube) -> str:
+    atom_records = cube.geometry[4:]
+    if not atom_records:
+        raise ValueError("cube file contains no atomic geometry")
+    factor = 1.0 if all(cube.axis_units) else BOHR_TO_ANGSTROM
+    rows: list[str] = []
+    for record in atom_records:
+        atomic_number = abs(round(record[0]))
+        if atomic_number < 1 or atomic_number >= len(SYMBOLS):
+            raise ValueError(f"cube atom has unsupported atomic number {atomic_number}")
+        x, y, z = (value * factor for value in record[2:5])
+        rows.append(f"{SYMBOLS[atomic_number]} {x:.10f} {y:.10f} {z:.10f}")
+    return f"{len(rows)}\ncube geometry\n" + "\n".join(rows) + "\n"

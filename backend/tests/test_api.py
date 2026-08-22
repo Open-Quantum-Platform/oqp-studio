@@ -1430,6 +1430,21 @@ def test_cube_arithmetic_preserves_the_grid_and_combines_values():
     assert result.values == [1.0, -5.0]
 
 
+def test_cube_geometry_is_extracted_in_angstrom():
+    from oqp_studio import cube
+
+    text = (
+        "test cube\nvalues\n"
+        "1 0.0 0.0 0.0\n"
+        "1 1.0 0.0 0.0\n1 0.0 1.0 0.0\n1 0.0 0.0 1.0\n"
+        "8 0.0 1.0 0.0 0.0\n0.0\n"
+    )
+    xyz = cube.geometry_xyz(cube.parse(text))
+
+    assert xyz.startswith("1\ncube geometry\nO ")
+    assert "0.5291772109 0.0000000000 0.0000000000" in xyz
+
+
 def test_cube_arithmetic_rejects_different_grids():
     import pytest
 
@@ -1602,6 +1617,18 @@ def test_symmetry_identifies_linear_centrosymmetric_co2():
 
     assert result["point_group"] == "Dinfh"
     assert [1, 3] in result["equivalent_atoms"]
+
+
+def test_symmetry_uses_maximum_per_atom_deviation_for_linearity():
+    from oqp_studio import symmetry
+
+    result = symmetry.analyze(
+        "C -2.0 0.04 0.0\nC -1.0 -0.04 0.0\n"
+        "C 1.0 -0.04 0.0\nC 2.0 0.04 0.0\n",
+        tolerance=0.05,
+    )
+
+    assert result["point_group"] in {"Cinfv", "Dinfh"}
 
 
 def test_symmetry_classifies_an_isolated_atom_as_spherical():
