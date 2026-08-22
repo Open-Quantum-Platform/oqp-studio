@@ -531,7 +531,7 @@ const WORKFLOWS: Workflow[] = [
   { key: "hess", title: "Frequencies (Hessian)", desc: "Vibrational frequencies, IR, and thermochemistry", theories: ["hf", "dft", ...DFT_RESPONSE], defaultTheory: "dft" },
   { key: "prop", title: "Molecular properties", desc: "Population, multipoles, and state properties", theories: ["hf", "dft", "mrsf", "umrsf"], defaultTheory: "dft" },
   { key: "nmr", title: "NMR shielding", desc: "Ground-state NMR properties", theories: ["hf", "dft"], defaultTheory: "dft" },
-  { key: "pcm", title: "PCM solvation", desc: "ddX reference-SCF energy in a dielectric continuum", theories: ["hf"], defaultTheory: "hf" },
+  { key: "pcm", title: "PCM solvation", desc: "ddX reference-SCF energy in a dielectric continuum", theories: ["hf", "dft"], defaultTheory: "hf" },
   { key: "abs", title: "Vertical excited states", desc: "Excitation energies and oscillator strengths at the S0 geometry", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
   { key: "exgrad", title: "Excited-state gradient", desc: "Gradient of a selected electronic state", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
   { key: "exopt", title: "Excited-state optimization", desc: "Optimize a selected excited state", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
@@ -590,6 +590,7 @@ function selectWorkflow(wf: Workflow): void {
   $<HTMLSpanElement>("wfLabel").textContent = `— ${wf.title}`;
   optionsCard.style.display = "";
   syncFieldStates();
+  syncPcmReference();
   syncWorkflowOptions();
   syncWorkflowDetails();
   updateInpPreview();
@@ -752,6 +753,13 @@ function syncPcmSolvent(): void {
   }
 }
 
+function syncPcmReference(): void {
+  const rohf = $<HTMLSelectElement>("pcmReference").querySelector<HTMLOptionElement>('option[value="rohf"]');
+  const dftPcm = currentWf.key === "pcm" && theorySel.value === "dft";
+  if (rohf) rohf.disabled = dftPcm;
+  if (dftPcm) $<HTMLSelectElement>("pcmReference").value = "rhf";
+}
+
 // Generates concise .oqp input: ROUTE, one primary driver, globals, geometry.
 function generateInp(): string {
   const atoms = parseAtoms(xyzArea.value);
@@ -838,7 +846,7 @@ function generateInp(): string {
     default: driver = "energy";
   }
 
-  const route = currentWf.key === "pcm" && fieldValue("pcmReference") === "rohf"
+  const route = currentWf.key === "pcm" && theory === "hf" && fieldValue("pcmReference") === "rohf"
     ? `rohf/${basis}`
     : routes[theory];
   const lines: string[] = [pdbSource ? `${route} qmmm_flag=true` : route, driver];
@@ -1000,7 +1008,10 @@ for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCus
   $<HTMLElement>(id).addEventListener("input", () => {
     syncFieldStates();
     if (id === "pcmSolvent") syncPcmSolvent();
-    if (id === "theory") syncWorkflowOptions();
+    if (id === "theory") {
+      syncPcmReference();
+      syncWorkflowOptions();
+    }
     syncWorkflowDetails();
     updateInpPreview();
   });
@@ -2574,6 +2585,7 @@ xyzArea.value = atomsToText(SAMPLES.water.atoms);
 buildSampleList();
 buildWorkflowSelect();
 syncPcmSolvent();
+syncPcmReference();
 selectWorkflow(WORKFLOWS[0]);
 $<HTMLSpanElement>("copyright").textContent = COPYRIGHT;
 fetch("/api/health")
