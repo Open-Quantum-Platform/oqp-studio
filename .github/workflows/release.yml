@@ -148,7 +148,6 @@ jobs:
     with:
       release_tag: ${{ needs.context.outputs.release_tag }}
       openqp_ref: b039efcc9a43e9a4d6c3a1d3990031db4f9bd10c
-      openqp_ref: b039efcc9a43e9a4d6c3a1d3990031db4f9bd10c
 
   engine-macos:
     needs: context
@@ -166,3 +165,4 @@ jobs:
       contents: write
     with:
       release_tag: ${{ needs.context.outputs.release_tag }}
+      openqp_ref: b039efcc9a43e9a4d6c3a1d3990031db4f9bd10c
