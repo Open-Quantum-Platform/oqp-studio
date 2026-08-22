@@ -588,10 +588,16 @@ def test_a_refused_documents_folder_does_not_stop_the_app(tmp_path, monkeypatch)
 
 def test_the_user_chooses_where_results_are_written(tmp_path, monkeypatch):
     """Results are the user's data, so the folder is theirs to pick."""
-    from oqp_studio import jobs, workspace
+    from oqp_studio import jobs, main, workspace
 
     monkeypatch.setenv("OQP_STUDIO_CONFIG", str(tmp_path / "cfg" / "network.json"))
     monkeypatch.delenv("OQP_STUDIO_JOBS", raising=False)
+    # This API-level test must not inherit a real job still running in the
+    # developer's workspace from an earlier test or local server session.
+    isolated_manager = jobs.JobManager()
+    monkeypatch.setattr(jobs, "manager", isolated_manager)
+    monkeypatch.setattr(main, "manager", isolated_manager)
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path / "initial-jobs")
     chosen = tmp_path / "My Calculations"
 
     res = client.post("/api/workspace", json={"jobs_dir": str(chosen)})
@@ -606,6 +612,8 @@ def test_the_user_chooses_where_results_are_written(tmp_path, monkeypatch):
     job = client.post("/api/jobs", json={"input_text": "energy\n", "runner": "local"})
     assert job.status_code == 200, job.text
     assert (chosen / job.json()["id"]).is_dir()
+    # Submission is asynchronous; this test only needs to prove placement.
+    isolated_manager.get(job.json()["id"]).status = jobs.JobStatus.done
 
     # A directory that cannot be written is refused with the reason, not a 500.
     blocked = tmp_path / "blocked"

@@ -46,6 +46,7 @@ jobs:
     secrets: inherit
     with:
       release_tag: ${{ needs.context.outputs.release_tag }}
+      openqp_ref: b039efcc9a43e9a4d6c3a1d3990031db4f9bd10c
 
   # The same installer with the engine inside it, so one download installs an
   # application that computes -- no second step, and nothing fetched at run
@@ -61,6 +62,7 @@ jobs:
     secrets: inherit
     with:
       release_tag: ${{ needs.context.outputs.release_tag }}
+      openqp_ref: b039efcc9a43e9a4d6c3a1d3990031db4f9bd10c
       with_engine: true
 
   # `pip install oqp-studio` — the distribution channel that matches this
@@ -147,6 +149,7 @@ jobs:
       contents: write
     with:
       release_tag: ${{ needs.context.outputs.release_tag }}
+      openqp_ref: b039efcc9a43e9a4d6c3a1d3990031db4f9bd10c
 
   engine-macos:
     needs: context
