@@ -719,14 +719,11 @@ function withOptions(driver: string, options: string): string {
 }
 
 function optimisationOptions(): string {
-  // Geometry workflows use OpenQP's native optimizer on every platform.
-  const backend = "oqp";
+  // Concise .oqp geometry drivers select OpenQP's native optimizer automatically.
+  // ``lib`` belongs only to the legacy [optimize] section and is rejected here.
   const options: [string, string][] = [
     // Concise .oqp accepts the active optimizer controls on the driver.  The
     // old optimizer/step_size keys selected a retired SciPy path.
-    ["lib", backend],
-    ["coordsys", fieldValue("geomCoordsys") || "dlc"],
-    ["trust", fieldValue("geomTrust")],
     ["maxit", fieldValue("geomMaxit")],
     ["rmsd_grad", fieldValue("rmsdGrad")],
     ["max_grad", fieldValue("maxGrad")],
@@ -734,6 +731,16 @@ function optimisationOptions(): string {
     ["max_step", fieldValue("maxStep")],
   ];
   return optionList(options);
+}
+
+function nativeOptimiserOptions(): string {
+  // Native optimizer controls are an exact [oqp] section call in concise input,
+  // never arguments of ts(...), opt(...), or the other geometry drivers.
+  return optionList([
+    ["coordsys", fieldValue("geomCoordsys") || "dlc"],
+    ["trust", fieldValue("geomTrust")],
+    ["trust_max", fieldValue("geomTrustMax")],
+  ]);
 }
 
 function pcmModifier(): string {
@@ -928,6 +935,10 @@ function generateInp(): string {
     const algorithm = fieldValue("crossingAlgorithm");
     const key = currentWf.key === "meci" ? "algorithm" : currentWf.key === "mecp" ? "mecp_search" : "algorithm";
     lines[1] = withOptions(driver, `${key}=${algorithm}${crossing ? `,${crossing}` : ""}`);
+  }
+  if (["opt", "exopt", "ts", "meci", "mecp", "tci"].includes(currentWf.key)) {
+    const nativeOptions = nativeOptimiserOptions();
+    if (nativeOptions) lines.push(`oqp(${nativeOptions})`);
   }
   if (charge !== 0) lines.push(`charge=${charge}`);
   // MRSF selects its high-spin working reference automatically — no mult.
