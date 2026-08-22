@@ -580,8 +580,10 @@ type SymmetryResult = {
 };
 let symmetryResult: SymmetryResult | null = null;
 let symmetrySource = "";
+let symmetryRequestId = 0;
 
 function invalidateSymmetryIfCoordinatesChanged(): void {
+  symmetryRequestId += 1;
   if (!symmetryResult || symmetrySource === xyzArea.value) return;
   symmetryResult = null;
   symmetrySource = "";
@@ -598,21 +600,29 @@ function pointGroupLabel(value: string): string {
 $<HTMLButtonElement>("symmetryAnalyze").addEventListener("click", async () => {
   const status = $<HTMLDivElement>("symmetryResult");
   const tolerance = +$<HTMLInputElement>("symmetryTolerance").value;
+  const source = xyzArea.value;
+  const requestId = ++symmetryRequestId;
   symmetryResult = null;
   $<HTMLButtonElement>("symmetryAlign").disabled = true;
   status.textContent = "Analyzing coordinates…";
   const response = await fetch("/api/symmetry", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ xyz: xyzArea.value, tolerance }),
+    body: JSON.stringify({ xyz: source, tolerance }),
   });
+  if (requestId !== symmetryRequestId || source !== xyzArea.value) return;
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
+    if (requestId !== symmetryRequestId || source !== xyzArea.value) return;
     status.textContent = detail?.detail ?? `symmetry analysis failed (${response.status})`;
     return;
   }
   symmetryResult = await response.json();
-  symmetrySource = xyzArea.value;
+  if (requestId !== symmetryRequestId || source !== xyzArea.value) {
+    symmetryResult = null;
+    return;
+  }
+  symmetrySource = source;
   const equivalents = symmetryResult!.equivalent_atoms
     .filter((group) => group.length > 1)
     .map((group) => group.join(", "))
@@ -1760,6 +1770,9 @@ function resetAnalysisProject(): void {
   $<HTMLSelectElement>("surfaceSides").value = "both";
   $<HTMLInputElement>("surfaceIso").value = "0.05";
   $<HTMLDivElement>("surfaceStatus").textContent = "";
+  surfaceRequestId += 1;
+  excitedMapRequestId += 1;
+  activeMapSource = null;
 }
 
 // What to open of its own accord, best first: a molden file carries orbitals
@@ -1809,6 +1822,7 @@ const excitedTarget = $<HTMLSelectElement>("excitedTarget");
 const excitedMap = $<HTMLSelectElement>("excitedMap");
 const excitedPair = $<HTMLSelectElement>("excitedPair");
 let excitedAnalysis: ExcitedAnalysis | null = null;
+let excitedMapRequestId = 0;
 
 function stateOptions(states: ExcitedAnalysis["states"]): string {
   return states.map((state) =>
@@ -1853,6 +1867,8 @@ async function loadExcitedAnalysis(jobId: string): Promise<void> {
 
 async function showExcitedMap(): Promise<void> {
   if (!selectedJob || !excitedAnalysis?.available) return;
+  const jobId = selectedJob;
+  const requestId = ++excitedMapRequestId;
   const kind = excitedMap.value;
   const query = new URLSearchParams({
     kind,
@@ -1860,15 +1876,17 @@ async function showExcitedMap(): Promise<void> {
     target: excitedTarget.value,
     rank: excitedPair.value || "0",
   });
-  const base = `/api/jobs/${selectedJob}`;
+  const base = `/api/jobs/${jobId}`;
   const [geometryResponse, cubeResponse] = await Promise.all([
     fetch(`${base}/molden/${encodeURIComponent(excitedAnalysis.molden_file)}/geom.xyz`),
     fetch(`${base}/excited-analysis/cube?${query}`),
   ]);
   if (!geometryResponse.ok || !cubeResponse.ok) return;
   const [xyz, cube] = await Promise.all([geometryResponse.text(), cubeResponse.text()]);
+  if (requestId !== excitedMapRequestId || jobId !== selectedJob) return;
   if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
   activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
+  activeMapSource = "excited";
   pushOrbitalStyle();
   pushToResultViewer({
     type: "oqp-cube",
@@ -1898,6 +1916,8 @@ excitedMap.addEventListener("change", () => {
 $<HTMLButtonElement>("excitedShow").addEventListener("click", () => void showExcitedMap());
 $<HTMLButtonElement>("excitedReset").addEventListener("click", () => {
   if (!excitedAnalysis) return;
+  excitedMapRequestId += 1;
+  activeMapSource = null;
   if (activeCubeUrl) {
     URL.revokeObjectURL(activeCubeUrl);
     activeCubeUrl = null;
@@ -1935,6 +1955,8 @@ let selectedScanGroup = "";
 let resultViewerReady = false;
 let pendingResultMessage: Record<string, unknown> | null = null;
 let displayedResultAtomCount = 0;
+let surfaceRequestId = 0;
+let activeMapSource: "excited" | "orbital" | "surface" | null = null;
 
 function syncSurfaceFiles(): void {
   const options = resultCubeFiles.map((name) =>
@@ -1952,12 +1974,14 @@ function syncSurfaceOperation(): void {
 
 async function showSurface(): Promise<void> {
   if (!selectedJob) return;
+  const jobId = selectedJob;
+  const requestId = ++surfaceRequestId;
   const primary = $<HTMLSelectElement>("surfacePrimary").value;
   const secondary = $<HTMLSelectElement>("surfaceSecondary").value;
   const operation = $<HTMLSelectElement>("surfaceOperation").value;
   const status = $<HTMLDivElement>("surfaceStatus");
   if (!primary || (operation !== "display" && !secondary)) return;
-  let cubeUrl = `/api/jobs/${selectedJob}/files/${encodeURIComponent(primary)}`;
+  let cubeUrl = `/api/jobs/${jobId}/files/${encodeURIComponent(primary)}`;
   status.textContent = operation === "display" ? `Displaying ${primary}` : `Computing ${operation}…`;
   if (operation === "display" && activeCubeUrl) {
     URL.revokeObjectURL(activeCubeUrl);
@@ -1965,18 +1989,23 @@ async function showSurface(): Promise<void> {
   }
   if (operation !== "display") {
     const query = new URLSearchParams({ left: primary, right: secondary, operation });
-    const response = await fetch(`/api/jobs/${selectedJob}/cube-combine?${query}`);
+    const response = await fetch(`/api/jobs/${jobId}/cube-combine?${query}`);
+    if (requestId !== surfaceRequestId || jobId !== selectedJob) return;
     if (!response.ok) {
       const detail = await response.json().catch(() => null);
+      if (requestId !== surfaceRequestId || jobId !== selectedJob) return;
       status.textContent = detail?.detail ?? `surface operation failed (${response.status})`;
       return;
     }
     const cube = await response.text();
+    if (requestId !== surfaceRequestId || jobId !== selectedJob) return;
     if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
     activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
     cubeUrl = activeCubeUrl;
     status.textContent = `${operation}: ${primary} and ${secondary}`;
   }
+  if (requestId !== surfaceRequestId || jobId !== selectedJob) return;
+  activeMapSource = "surface";
   pushOrbitalStyle();
   pushToResultViewer({
     type: "oqp-cube",
@@ -2004,6 +2033,9 @@ window.addEventListener("message", (event) => {
 });
 
 function pushToResultViewer(message: Record<string, unknown>): void {
+  if (["oqp-structure", "oqp-normal-mode", "oqp-atomic-property"].includes(String(message.type))) {
+    activeMapSource = null;
+  }
   if (typeof message.xyz === "string") {
     const displayedAtoms = parseAtoms(message.xyz);
     if (displayedAtoms.length) displayedResultAtomCount = displayedAtoms.length;
@@ -2369,12 +2401,13 @@ function mapUrl(base: string, source: OrbitalSource | null): string {
 
 function showOrbital(): void {
   if (!currentMolden) return;
+  const molden = currentMolden;
   pushOrbitalStyle();
   const isOrbital = mapKind.value === "mo" || mapKind.value === "dyson";
   $<HTMLDivElement>("orbitalPick").style.display = isOrbital ? "" : "none";
   const source = selectedOrbitalSource();
   if (isOrbital && !source) return;
-  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
+  const base = `/api/jobs/${molden.jobId}/molden/${encodeURIComponent(molden.name)}`;
   const iso = +isoRange.value;
   // Mol* runs inside an iframe. In the standalone app only this top-level
   // window's fetch is routed through the sidecar, so pass its cube a local
@@ -2384,8 +2417,10 @@ function showOrbital(): void {
     fetch(mapUrl(base, source)).then((response) => response.text()),
   ])
     .then(([xyz, cube]) => {
+      if (currentMolden?.jobId !== molden.jobId || currentMolden.name !== molden.name) return;
       if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
       activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
+      activeMapSource = "orbital";
       pushToResultViewer({
         type: "oqp-cube",
         xyz,
@@ -2402,7 +2437,11 @@ orbitalReset.addEventListener("click", () => {
   showMoldenStructure();
 });
 isoRange.addEventListener("change", showOrbital);
-$<HTMLSelectElement>("moSides").addEventListener("change", showOrbital);
+$<HTMLSelectElement>("moSides").addEventListener("change", () => {
+  if (activeMapSource === "excited") void showExcitedMap();
+  else if (activeMapSource === "surface") void showSurface();
+  else showOrbital();
+});
 mapKind.addEventListener("change", () => {
   // Each field has its own natural contour, so move the slider with it.
   isoRange.value = String(MAP_ISO[mapKind.value] ?? 0.05);

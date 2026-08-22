@@ -297,11 +297,19 @@ def combine_cube_files(job_id: str, left: str, right: str,
     }:
         raise HTTPException(status_code=422, detail="cube arithmetic requires .cube or .cub files")
     try:
+        maximum_bytes = 64 * 1024 * 1024
+        if left_path.stat().st_size + right_path.stat().st_size > maximum_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"cube arithmetic is limited to {maximum_bytes // (1024 * 1024)} MiB combined",
+            )
         result = cube.combine(
             left_path.read_text(errors="replace"),
             right_path.read_text(errors="replace"),
             operation,
         )
+    except HTTPException:
+        raise
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return PlainTextResponse(result, media_type="text/plain")

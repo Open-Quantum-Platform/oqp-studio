@@ -1406,6 +1406,31 @@ def test_cube_arithmetic_rejects_different_grids():
         cube.combine(_cube([1.0, 2.0]), _cube([1.0, 2.0], origin=0.1), "sum")
 
 
+def test_cube_arithmetic_supports_multiline_datasets_and_fortran_headers():
+    from oqp_studio import cube
+
+    def multi(values):
+        return (
+            "orbital cube\nvalues\n"
+            "-1 0.0D+00 0.0 0.0 2\n"
+            "1 1.0D+00 0.0 0.0\n"
+            "1 0.0 1.0D+00 0.0\n"
+            "1 0.0 0.0 1.0D+00\n"
+            "1 0.0D+00 0.0 0.0 0.0\n"
+            "2 10\n20\n"
+            + " ".join(values) + "\n"
+        )
+
+    result = cube.parse(cube.combine(
+        multi(["1.0D+00", "2.0D+00"]),
+        multi(["0.5D+00", "4.0D+00"]),
+        "difference",
+    ))
+
+    assert result.datasets == 2
+    assert result.values == [0.5, -2.0]
+
+
 def test_cube_arithmetic_endpoint_uses_only_job_files(tmp_path, monkeypatch):
     from oqp_studio import cube, jobs, main
 
@@ -1430,6 +1455,29 @@ def test_cube_arithmetic_endpoint_uses_only_job_files(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert cube.parse(response.text).values == [1.25, 2.5]
     assert escaped.status_code == 404
+
+
+def test_cube_arithmetic_endpoint_caps_combined_input_size(tmp_path, monkeypatch):
+    from oqp_studio import jobs, main
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    job = manager.adopt("large cubes", [
+        ("left.cube", _cube([1.0, 2.0]).encode()),
+        ("right.cube", _cube([1.0, 2.0]).encode()),
+    ])
+    for name in ("left.cube", "right.cube"):
+        (tmp_path / job.id / name).open("ab").truncate(33 * 1024 * 1024)
+    monkeypatch.setattr(main, "manager", manager)
+
+    response = client.get(
+        f"/api/jobs/{job.id}/cube-combine",
+        params={"left": "left.cube", "right": "right.cube"},
+    )
+
+    assert response.status_code == 413
+    assert "64 MiB combined" in response.json()["detail"]
 
 
 def test_symmetry_identifies_water_and_equivalent_hydrogens():
@@ -1457,6 +1505,48 @@ def test_symmetry_identifies_linear_centrosymmetric_co2():
 
     assert result["point_group"] == "Dinfh"
     assert [1, 3] in result["equivalent_atoms"]
+
+
+def test_symmetry_finds_rotated_ammonia_mirror_planes():
+    from math import cos, pi, sin
+
+    from oqp_studio import symmetry
+
+    angle = 17 * pi / 180
+    rows = ["N 0.0 0.0 0.15"]
+    for index in range(3):
+        theta = angle + index * 2 * pi / 3
+        rows.append(f"H {cos(theta):.12f} {sin(theta):.12f} -0.35")
+
+    result = symmetry.analyze("\n".join(rows), tolerance=0.001)
+
+    assert result["point_group"] == "C3v"
+
+
+def test_symmetry_searches_rotation_orders_above_eight():
+    from math import cos, pi, sin
+
+    from oqp_studio import symmetry
+
+    ring = "\n".join(
+        f"C {cos(index * pi / 5):.12f} {sin(index * pi / 5):.12f} 0.0"
+        for index in range(10)
+    )
+
+    assert symmetry.analyze(ring, tolerance=0.001)["point_group"] == "D10h"
+
+
+def test_symmetry_distinguishes_an_icosahedral_structure():
+    from oqp_studio import symmetry
+
+    phi = (1 + 5 ** 0.5) / 2
+    vertices = []
+    for first in (-1.0, 1.0):
+        for second in (-phi, phi):
+            vertices.extend([(0.0, first, second), (first, second, 0.0), (second, 0.0, first)])
+    xyz = "\n".join(f"C {x:.12f} {y:.12f} {z:.12f}" for x, y, z in vertices)
+
+    assert symmetry.analyze(xyz, tolerance=0.001)["point_group"] == "Ih"
 
 
 def test_symmetry_falls_back_to_c1_and_centers_aligned_coordinates():

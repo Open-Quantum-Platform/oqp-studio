@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from itertools import combinations
-from math import cos, pi, sin
+from math import cos, gcd, pi, sin
 
 import numpy as np
 
@@ -50,6 +51,19 @@ def _rotation(axis: np.ndarray, angle: float) -> np.ndarray:
     x, y, z = axis
     skew = np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
     return np.eye(3) * cos(angle) + (1 - cos(angle)) * np.outer(axis, axis) + sin(angle) * skew
+
+
+def _rotation_orders(symbols: list[str], coordinates: np.ndarray, axis: np.ndarray,
+                     tolerance: float) -> list[int]:
+    """Orders compatible with every same-element orbit away from this axis."""
+    counts = Counter(
+        symbol for symbol, point in zip(symbols, coordinates)
+        if np.linalg.norm(point - float(np.dot(point, axis)) * axis) > tolerance
+    )
+    multiplicity = 0
+    for count in counts.values():
+        multiplicity = gcd(multiplicity, count)
+    return [order for order in range(2, multiplicity + 1) if multiplicity % order == 0]
 
 
 def _assignment(distances: np.ndarray, tolerance: float) -> list[int] | None:
@@ -148,10 +162,16 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
 
     seed_axes = [np.eye(3)[index] for index in range(3)]
     atom_axes = _unique_axes([point for point in coordinates])[:80]
+    basis_axes = _unique_axes([*seed_axes, *atom_axes])
     cross_axes = _unique_axes([
-        np.cross(a, b) for a, b in combinations(atom_axes[:40], 2)
-    ])[:120]
-    axes = _unique_axes([*seed_axes, *atom_axes, *cross_axes])
+        np.cross(a, b) for a, b in combinations(basis_axes[:43], 2)
+    ])[:160]
+    bisector_axes = _unique_axes([
+        vector
+        for a, b in combinations(atom_axes[:40], 2)
+        for vector in (a + b, a - b)
+    ])[:160]
+    axes = _unique_axes([*basis_axes, *cross_axes, *bisector_axes])
 
     identity = Operation("E", np.eye(3), list(range(len(atoms))), 0.0)
     operations = [identity]
@@ -161,8 +181,8 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
         operations.append(Operation("i", -np.eye(3), *inversion_match))
 
     rotations: dict[int, list[tuple[np.ndarray, Operation]]] = {}
-    for order in range(2, 9):
-        for axis in axes:
+    for axis in axes:
+        for order in _rotation_orders(symbols, coordinates, axis, tolerance):
             matrix = _rotation(axis, 2 * pi / order)
             matched = _match(symbols, coordinates, matrix, tolerance)
             if matched:
@@ -181,8 +201,12 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
 
     if linear:
         point_group = "Dinfh" if inversion else "Cinfv"
+    elif len(rotations.get(5, [])) >= 6:
+        point_group = "Ih" if inversion else "I"
+    elif len(rotations.get(4, [])) >= 3:
+        point_group = "Oh" if inversion else "O"
     elif len(rotations.get(3, [])) >= 4 and len(rotations.get(2, [])) >= 3:
-        point_group = "Oh" if inversion and len(rotations.get(4, [])) >= 3 else "Td"
+        point_group = "Th" if inversion else "Td" if mirrors else "T"
     else:
         principal_order = max(rotations, default=1)
         if principal_order == 1:
