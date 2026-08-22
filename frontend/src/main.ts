@@ -484,6 +484,7 @@ function pushOrbitalStyle(): void {
       negative: parseInt(negative, 16),
       alpha: +$<HTMLInputElement>("moAlpha").value,
       visuals: $<HTMLSelectElement>("moVisual").value.split(","),
+      sides: $<HTMLSelectElement>("moSides").value,
     },
   });
 }
@@ -546,6 +547,7 @@ window.addEventListener("message", (event) => {
 });
 
 async function updatePreview(): Promise<void> {
+  invalidateSymmetryIfCoordinatesChanged();
   const atoms = parseAtoms(xyzArea.value);
   if (atoms.length) artAtoms = atoms;
   if (pdbSource) {
@@ -566,6 +568,70 @@ async function updatePreview(): Promise<void> {
   );
 }
 $<HTMLButtonElement>("previewBtn").addEventListener("click", updatePreview);
+
+type SymmetryResult = {
+  point_group: string;
+  tolerance_angstrom: number;
+  max_deviation_angstrom: number;
+  operations: string[];
+  operation_count: number;
+  equivalent_atoms: number[][];
+  aligned_atoms: Atom[];
+};
+let symmetryResult: SymmetryResult | null = null;
+let symmetrySource = "";
+
+function invalidateSymmetryIfCoordinatesChanged(): void {
+  if (!symmetryResult || symmetrySource === xyzArea.value) return;
+  symmetryResult = null;
+  symmetrySource = "";
+  $<HTMLButtonElement>("symmetryAlign").disabled = true;
+  $<HTMLDivElement>("symmetryResult").textContent = "Coordinates changed; analyze symmetry again.";
+}
+
+xyzArea.addEventListener("input", invalidateSymmetryIfCoordinatesChanged);
+
+function pointGroupLabel(value: string): string {
+  return value === "Dinfh" ? "D∞h" : value === "Cinfv" ? "C∞v" : value;
+}
+
+$<HTMLButtonElement>("symmetryAnalyze").addEventListener("click", async () => {
+  const status = $<HTMLDivElement>("symmetryResult");
+  const tolerance = +$<HTMLInputElement>("symmetryTolerance").value;
+  symmetryResult = null;
+  $<HTMLButtonElement>("symmetryAlign").disabled = true;
+  status.textContent = "Analyzing coordinates…";
+  const response = await fetch("/api/symmetry", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ xyz: xyzArea.value, tolerance }),
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    status.textContent = detail?.detail ?? `symmetry analysis failed (${response.status})`;
+    return;
+  }
+  symmetryResult = await response.json();
+  symmetrySource = xyzArea.value;
+  const equivalents = symmetryResult!.equivalent_atoms
+    .filter((group) => group.length > 1)
+    .map((group) => group.join(", "))
+    .join("; ") || "none";
+  status.textContent = `Likely ${pointGroupLabel(symmetryResult!.point_group)} at ` +
+    `${symmetryResult!.tolerance_angstrom.toFixed(4)} Å tolerance; ` +
+    `${symmetryResult!.operation_count} accepted operations, maximum residual ` +
+    `${symmetryResult!.max_deviation_angstrom.toExponential(2)} Å. ` +
+    `Equivalent atoms: ${equivalents}.`;
+  $<HTMLButtonElement>("symmetryAlign").disabled = false;
+});
+
+$<HTMLButtonElement>("symmetryAlign").addEventListener("click", () => {
+  invalidateSymmetryIfCoordinatesChanged();
+  if (!symmetryResult) return;
+  xyzArea.value = atomsToText(symmetryResult.aligned_atoms);
+  builderStatus.textContent = "centered and aligned to the principal axes";
+  void updatePreview();
+});
 
 function buildSampleList(): void {
   const select = $<HTMLSelectElement>("sample");
@@ -1383,6 +1449,7 @@ runButton.addEventListener("click", async () => {
 // ---------- results ----------
 let selectedJob = "";
 let resultMoldenFiles: string[] = [];
+let resultCubeFiles: string[] = [];
 type ListedJob = { id: string; name: string; runner: string; status: string; error?: string | null };
 let listedJobs: ListedJob[] = [];
 
@@ -1589,6 +1656,10 @@ async function selectJob(jobId: string): Promise<void> {
   resultMoldenFiles = files
     .map((file) => file.name)
     .filter((name) => name.toLowerCase().endsWith(".molden"));
+  resultCubeFiles = files
+    .map((file) => file.name)
+    .filter((name) => /\.(?:cube|cub)$/i.test(name));
+  syncSurfaceFiles();
   loadExcitedAnalysis(jobId).catch(() => {});
   const list = $<HTMLUListElement>("resultFiles");
   list.innerHTML = files.length ? "" : '<li class="hint">no files</li>';
@@ -1626,6 +1697,7 @@ function resetAnalysisProject(): void {
   summary = null;
   lastSpectrum = null;
   resultMoldenFiles = [];
+  resultCubeFiles = [];
   resultFrames = [];
   optimizationSteps = [];
   selectedScanGroup = "";
@@ -1672,6 +1744,14 @@ function resetAnalysisProject(): void {
   $<HTMLSelectElement>("atomicProperty").innerHTML = "";
   $<HTMLDivElement>("propertyLegend").style.display = "none";
   atomicProperties.clear();
+  $<HTMLDivElement>("surfaceCard").style.display = "none";
+  $<HTMLSelectElement>("surfacePrimary").innerHTML = "";
+  $<HTMLSelectElement>("surfaceSecondary").innerHTML = "";
+  $<HTMLSelectElement>("surfaceOperation").value = "display";
+  $<HTMLDivElement>("surfaceSecondaryWrap").style.display = "none";
+  $<HTMLSelectElement>("surfaceSides").value = "both";
+  $<HTMLInputElement>("surfaceIso").value = "0.05";
+  $<HTMLDivElement>("surfaceStatus").textContent = "";
 }
 
 // What to open of its own accord, best first: a molden file carries orbitals
@@ -1787,6 +1867,7 @@ async function showExcitedMap(): Promise<void> {
     xyz,
     cube: activeCubeUrl,
     iso: kind.startsWith("nto_") ? 0.05 : 0.002,
+    sides: $<HTMLSelectElement>("moSides").value,
   });
 }
 
@@ -1845,6 +1926,60 @@ let optimizationSteps: OptimizationStep[] = [];
 let selectedScanGroup = "";
 let resultViewerReady = false;
 let pendingResultMessage: Record<string, unknown> | null = null;
+
+function syncSurfaceFiles(): void {
+  const options = resultCubeFiles.map((name) =>
+    `<option value="${escapeMarkup(name)}">${escapeMarkup(name)}</option>`).join("");
+  $<HTMLSelectElement>("surfacePrimary").innerHTML = options;
+  $<HTMLSelectElement>("surfaceSecondary").innerHTML = options;
+  if (resultCubeFiles.length > 1) $<HTMLSelectElement>("surfaceSecondary").selectedIndex = 1;
+  $<HTMLDivElement>("surfaceCard").style.display = resultCubeFiles.length ? "" : "none";
+}
+
+function syncSurfaceOperation(): void {
+  const arithmetic = $<HTMLSelectElement>("surfaceOperation").value !== "display";
+  $<HTMLDivElement>("surfaceSecondaryWrap").style.display = arithmetic ? "" : "none";
+}
+
+async function showSurface(): Promise<void> {
+  if (!selectedJob) return;
+  const primary = $<HTMLSelectElement>("surfacePrimary").value;
+  const secondary = $<HTMLSelectElement>("surfaceSecondary").value;
+  const operation = $<HTMLSelectElement>("surfaceOperation").value;
+  const status = $<HTMLDivElement>("surfaceStatus");
+  if (!primary || (operation !== "display" && !secondary)) return;
+  let cubeUrl = `/api/jobs/${selectedJob}/files/${encodeURIComponent(primary)}`;
+  status.textContent = operation === "display" ? `Displaying ${primary}` : `Computing ${operation}…`;
+  if (operation === "display" && activeCubeUrl) {
+    URL.revokeObjectURL(activeCubeUrl);
+    activeCubeUrl = null;
+  }
+  if (operation !== "display") {
+    const query = new URLSearchParams({ left: primary, right: secondary, operation });
+    const response = await fetch(`/api/jobs/${selectedJob}/cube-combine?${query}`);
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null);
+      status.textContent = detail?.detail ?? `surface operation failed (${response.status})`;
+      return;
+    }
+    const cube = await response.text();
+    if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
+    activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
+    cubeUrl = activeCubeUrl;
+    status.textContent = `${operation}: ${primary} and ${secondary}`;
+  }
+  pushOrbitalStyle();
+  pushToResultViewer({
+    type: "oqp-cube",
+    cube: cubeUrl,
+    iso: Math.max(0.0001, Math.abs(+$<HTMLInputElement>("surfaceIso").value) || 0.05),
+    sides: $<HTMLSelectElement>("surfaceSides").value,
+  });
+}
+
+$<HTMLSelectElement>("surfaceOperation").addEventListener("change", syncSurfaceOperation);
+$<HTMLButtonElement>("surfaceShow").addEventListener("click", () => { void showSurface(); });
+$<HTMLSelectElement>("surfaceSides").addEventListener("change", () => { void showSurface(); });
 
 // Everything in Analysis renders through the same Mol* page the Builder uses,
 // so results look like the rest of the app rather than a second program.
@@ -2049,7 +2184,10 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
   hideResultPanels();
 
   if (lower.endsWith(".cube") || lower.endsWith(".cub")) {
-    pushToResultViewer({ type: "oqp-cube", cube: url, iso: 0.05 });
+    pushToResultViewer({
+      type: "oqp-cube", cube: url, iso: 0.05,
+      sides: $<HTMLSelectElement>("moSides").value,
+    });
     return;
   }
 
@@ -2240,6 +2378,7 @@ function showOrbital(): void {
         xyz,
         cube: activeCubeUrl,
         iso,
+        sides: $<HTMLSelectElement>("moSides").value,
       });
     });
 }
@@ -2250,6 +2389,7 @@ orbitalReset.addEventListener("click", () => {
   showMoldenStructure();
 });
 isoRange.addEventListener("change", showOrbital);
+$<HTMLSelectElement>("moSides").addEventListener("change", showOrbital);
 mapKind.addEventListener("change", () => {
   // Each field has its own natural contour, so move the slider with it.
   isoRange.value = String(MAP_ISO[mapKind.value] ?? 0.05);

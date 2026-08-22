@@ -127,6 +127,11 @@ class ResourceRequest(BaseModel):
     threads: int = 1
 
 
+class SymmetryRequest(BaseModel):
+    xyz: str
+    tolerance: float = 0.05
+
+
 @app.get("/api/host")
 def host_status() -> dict:
     return host.snapshot()
@@ -135,6 +140,19 @@ def host_status() -> dict:
 @app.post("/api/host/admission")
 def host_admission(req: ResourceRequest) -> dict:
     return host.admission(req.input_text, req.threads)
+
+
+@app.post("/api/symmetry")
+def molecular_symmetry(req: SymmetryRequest) -> dict:
+    """Likely point group, accepted operations, and a principal-axis frame."""
+    from . import symmetry
+
+    if not 1.0e-4 <= req.tolerance <= 0.5:
+        raise HTTPException(status_code=422, detail="tolerance must be between 0.0001 and 0.5 A")
+    try:
+        return symmetry.analyze(req.xyz, req.tolerance)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/jobs")
@@ -262,6 +280,31 @@ def job_file(job_id: str, name: str) -> FileResponse:
     if path is None:
         raise HTTPException(status_code=404, detail="file not found")
     return FileResponse(path, media_type="text/plain", filename=name)
+
+
+@app.get("/api/jobs/{job_id}/cube-combine")
+def combine_cube_files(job_id: str, left: str, right: str,
+                       operation: str = "difference") -> PlainTextResponse:
+    """Pointwise sum or difference of two compatible Gaussian cube files."""
+    from . import cube
+
+    left_path = manager.file_path(job_id, left)
+    right_path = manager.file_path(job_id, right)
+    if left_path is None or right_path is None:
+        raise HTTPException(status_code=404, detail="cube file not found")
+    if left_path.suffix.lower() not in {".cube", ".cub"} or right_path.suffix.lower() not in {
+        ".cube", ".cub",
+    }:
+        raise HTTPException(status_code=422, detail="cube arithmetic requires .cube or .cub files")
+    try:
+        result = cube.combine(
+            left_path.read_text(errors="replace"),
+            right_path.read_text(errors="replace"),
+            operation,
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return PlainTextResponse(result, media_type="text/plain")
 
 
 class WorkspaceRequest(BaseModel):

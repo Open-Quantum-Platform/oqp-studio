@@ -1312,3 +1312,101 @@ def test_starting_the_server_touches_no_directory_it_may_be_denied(tmp_path, mon
     monkeypatch.setattr(jobs, "JOBS_ROOT", wanted)
     assert manager._ensure() == wanted.resolve()
     assert wanted.is_dir()
+
+
+def _cube(values: list[float], *, origin: float = 0.0) -> str:
+    return (
+        "test cube\nvalues\n"
+        f"0 {origin:.6f} 0.0 0.0\n"
+        "2 1.0 0.0 0.0\n"
+        "1 0.0 1.0 0.0\n"
+        "1 0.0 0.0 1.0\n"
+        + " ".join(str(value) for value in values) + "\n"
+    )
+
+
+def test_cube_arithmetic_preserves_the_grid_and_combines_values():
+    from oqp_studio import cube
+
+    result = cube.parse(cube.combine(_cube([1.5, -2.0]), _cube([0.5, 3.0]), "difference"))
+
+    assert result.shape == (2, 1, 1)
+    assert result.values == [1.0, -5.0]
+
+
+def test_cube_arithmetic_rejects_different_grids():
+    import pytest
+
+    from oqp_studio import cube
+
+    with pytest.raises(ValueError, match="different origins"):
+        cube.combine(_cube([1.0, 2.0]), _cube([1.0, 2.0], origin=0.1), "sum")
+
+
+def test_cube_arithmetic_endpoint_uses_only_job_files(tmp_path, monkeypatch):
+    from oqp_studio import cube, jobs, main
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    job = manager.adopt("cube pair", [
+        ("left.cube", _cube([1.0, 2.0]).encode()),
+        ("right.cube", _cube([0.25, 0.5]).encode()),
+    ])
+    monkeypatch.setattr(main, "manager", manager)
+
+    response = client.get(
+        f"/api/jobs/{job.id}/cube-combine",
+        params={"left": "left.cube", "right": "right.cube", "operation": "sum"},
+    )
+    escaped = client.get(
+        f"/api/jobs/{job.id}/cube-combine",
+        params={"left": "../left.cube", "right": "right.cube"},
+    )
+
+    assert response.status_code == 200
+    assert cube.parse(response.text).values == [1.25, 2.5]
+    assert escaped.status_code == 404
+
+
+def test_symmetry_identifies_water_and_equivalent_hydrogens():
+    from oqp_studio import symmetry
+
+    result = symmetry.analyze(
+        "O 0.000000 0.000000 0.117300\n"
+        "H 0.000000 0.757200 -0.469200\n"
+        "H 0.000000 -0.757200 -0.469200\n",
+        tolerance=0.01,
+    )
+
+    assert result["point_group"] == "C2v"
+    assert [2, 3] in result["equivalent_atoms"]
+    assert result["max_deviation_angstrom"] < 1.0e-8
+
+
+def test_symmetry_identifies_linear_centrosymmetric_co2():
+    from oqp_studio import symmetry
+
+    result = symmetry.analyze(
+        "O 0.0 0.0 -1.16\nC 0.0 0.0 0.0\nO 0.0 0.0 1.16\n",
+        tolerance=0.01,
+    )
+
+    assert result["point_group"] == "Dinfh"
+    assert [1, 3] in result["equivalent_atoms"]
+
+
+def test_symmetry_falls_back_to_c1_and_centers_aligned_coordinates():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    result = symmetry.analyze(
+        "C 0.1 0.2 0.3\nN 1.0 0.1 -0.2\nO -0.2 1.3 0.4\nH 0.5 -0.4 1.7\n",
+        tolerance=0.001,
+    )
+    aligned = np.asarray([atom[1:] for atom in result["aligned_atoms"]])
+    weights = np.asarray([12.011, 14.007, 15.999, 1.008], dtype=float)
+
+    assert result["point_group"] == "C1"
+    assert np.linalg.norm(np.average(aligned, axis=0, weights=weights)) < 1.0e-10

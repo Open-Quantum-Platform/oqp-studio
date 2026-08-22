@@ -416,12 +416,21 @@
 
         // Orbital appearance, in the spirit of MacMolPlt and IQmol: a phase
         // colour pair, an opacity, and solid or mesh surfaces.
-        let orbital = { positive: 0x4f8fdd, negative: 0xdd6a4f, alpha: 0.85, visuals: ["solid"] };
+        let orbital = { positive: 0x4f8fdd, negative: 0xdd6a4f, alpha: 0.85,
+                        visuals: ["solid"], sides: "both" };
 
-        const isoSurfaces = (iso) => [
-          { type: "absolute", value: iso, color: orbital.positive, alpha: orbital.alpha },
-          { type: "absolute", value: -iso, color: orbital.negative, alpha: orbital.alpha },
-        ];
+        const isoSurfaces = (iso, sides = orbital.sides) => {
+          const surfaces = [];
+          if (sides !== "negative") {
+            surfaces.push({ type: "absolute", value: iso,
+                            color: orbital.positive, alpha: orbital.alpha });
+          }
+          if (sides !== "positive") {
+            surfaces.push({ type: "absolute", value: -iso,
+                            color: orbital.negative, alpha: orbital.alpha });
+          }
+          return surfaces;
+        };
 
         // loadVolumeFromUrl sets colour and opacity but not the visual kind, so
         // the created representations are updated in place afterwards.
@@ -710,7 +719,7 @@
             if (url) {
               await viewer.loadVolumeFromUrl(
                 { url, format: "cube", isBinary: false },
-                isoSurfaces(Math.abs(message.iso) || 0.05),
+                isoSurfaces(Math.abs(message.iso) || 0.05, message.sides || orbital.sides),
               );
               await applyOrbitalVisuals();
             }
@@ -753,7 +762,7 @@
           if (href) {
             await viewer.loadVolumeFromUrl(
               { url: href, format: "cube", isBinary: false },
-              isoSurfaces(iso),
+              isoSurfaces(iso, params.get("sides") || orbital.sides),
             );
             await applyOrbitalVisuals();
           }

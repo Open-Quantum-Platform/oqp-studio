@@ -1,0 +1,225 @@
+"""Tolerance-aware molecular point-group analysis and principal-axis alignment."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from itertools import combinations
+from math import cos, pi, sin
+
+import numpy as np
+
+from .molden import ATOMIC_NUMBER, SYMBOLS
+from .structure_io import Atom, parse_xyz
+
+_MASSES = [
+    0.0, 1.008, 4.0026, 6.94, 9.0122, 10.81, 12.011, 14.007, 15.999,
+    18.998, 20.180, 22.990, 24.305, 26.982, 28.085, 30.974, 32.06,
+    35.45, 39.948, 39.0983, 40.078, 44.956, 47.867, 50.942, 51.996,
+    54.938, 55.845, 58.933, 58.693, 63.546, 65.38, 69.723, 72.630,
+    74.922, 78.971, 79.904, 83.798, 85.468, 87.62, 88.906, 91.224,
+    92.906, 95.95, 98.0, 101.07, 102.906, 106.42, 107.868, 112.414,
+    114.818, 118.710, 121.760, 127.60, 126.904, 131.293,
+]
+ATOMIC_MASS = dict(zip(SYMBOLS, _MASSES))
+
+
+@dataclass
+class Operation:
+    label: str
+    matrix: np.ndarray
+    mapping: list[int]
+    residual: float
+
+
+def _unit(vector: np.ndarray) -> np.ndarray | None:
+    length = float(np.linalg.norm(vector))
+    return vector / length if length > 1.0e-10 else None
+
+
+def _unique_axes(vectors: list[np.ndarray]) -> list[np.ndarray]:
+    axes: list[np.ndarray] = []
+    for vector in vectors:
+        axis = _unit(vector)
+        if axis is None or any(abs(float(np.dot(axis, other))) > 1 - 1.0e-6 for other in axes):
+            continue
+        axes.append(axis)
+    return axes
+
+
+def _rotation(axis: np.ndarray, angle: float) -> np.ndarray:
+    x, y, z = axis
+    skew = np.array([[0.0, -z, y], [z, 0.0, -x], [-y, x, 0.0]])
+    return np.eye(3) * cos(angle) + (1 - cos(angle)) * np.outer(axis, axis) + sin(angle) * skew
+
+
+def _assignment(distances: np.ndarray, tolerance: float) -> list[int] | None:
+    """Find a same-element one-to-one assignment within the stated tolerance."""
+    choices = [list(np.flatnonzero(row <= tolerance)) for row in distances]
+    order = sorted(range(len(choices)), key=lambda index: len(choices[index]))
+    if any(not choices[index] for index in order):
+        return None
+    mapping = [-1] * len(choices)
+    used: set[int] = set()
+
+    def visit(position: int) -> bool:
+        if position == len(order):
+            return True
+        source = order[position]
+        for target in sorted(choices[source], key=lambda index: distances[source, index]):
+            if target in used:
+                continue
+            used.add(target)
+            mapping[source] = target
+            if visit(position + 1):
+                return True
+            used.remove(target)
+        return False
+
+    return mapping if visit(0) else None
+
+
+def _match(symbols: list[str], coordinates: np.ndarray, matrix: np.ndarray,
+           tolerance: float) -> tuple[list[int], float] | None:
+    transformed = coordinates @ matrix.T
+    mapping = [-1] * len(symbols)
+    residual = 0.0
+    for symbol in sorted(set(symbols)):
+        indices = [index for index, value in enumerate(symbols) if value == symbol]
+        source = transformed[indices]
+        target = coordinates[indices]
+        distances = np.linalg.norm(source[:, None, :] - target[None, :, :], axis=2)
+        local = _assignment(distances, tolerance)
+        if local is None:
+            return None
+        for row, column in enumerate(local):
+            mapping[indices[row]] = indices[column]
+            residual = max(residual, float(distances[row, column]))
+    return mapping, residual
+
+
+def _principal_axes(atoms: list[Atom]) -> tuple[list[str], np.ndarray, np.ndarray]:
+    symbols = [atom[0] for atom in atoms]
+    coordinates = np.asarray([atom[1:] for atom in atoms], dtype=float)
+    weights = np.asarray([
+        ATOMIC_MASS.get(symbol, float(ATOMIC_NUMBER.get(symbol, 1))) for symbol in symbols
+    ])
+    center = np.average(coordinates, axis=0, weights=weights)
+    centered = coordinates - center
+    inertia = sum(
+        weight * (float(np.dot(point, point)) * np.eye(3) - np.outer(point, point))
+        for weight, point in zip(weights, centered)
+    )
+    _, axes = np.linalg.eigh(inertia)
+    if np.linalg.det(axes) < 0:
+        axes[:, -1] *= -1
+    return symbols, centered @ axes, center
+
+
+def _equivalent_atoms(size: int, operations: list[Operation]) -> list[list[int]]:
+    parent = list(range(size))
+
+    def root(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    for operation in operations:
+        for source, target in enumerate(operation.mapping):
+            a, b = root(source), root(target)
+            if a != b:
+                parent[b] = a
+    groups: dict[int, list[int]] = {}
+    for index in range(size):
+        groups.setdefault(root(index), []).append(index + 1)
+    return sorted(groups.values(), key=lambda group: group[0])
+
+
+def analyze(xyz: str, tolerance: float = 0.05) -> dict:
+    frames = parse_xyz(xyz)
+    if not frames or not frames[0].atoms:
+        raise ValueError("no Cartesian coordinates were found")
+    atoms = frames[0].atoms
+    if len(atoms) > 300:
+        raise ValueError("symmetry analysis supports at most 300 atoms")
+    symbols, coordinates, center = _principal_axes(atoms)
+    spread = np.linalg.svd(coordinates, compute_uv=False)
+    linear = len(atoms) <= 2 or (len(spread) > 1 and spread[1] <= tolerance)
+
+    seed_axes = [np.eye(3)[index] for index in range(3)]
+    atom_axes = _unique_axes([point for point in coordinates])[:80]
+    cross_axes = _unique_axes([
+        np.cross(a, b) for a, b in combinations(atom_axes[:40], 2)
+    ])[:120]
+    axes = _unique_axes([*seed_axes, *atom_axes, *cross_axes])
+
+    identity = Operation("E", np.eye(3), list(range(len(atoms))), 0.0)
+    operations = [identity]
+    inversion_match = _match(symbols, coordinates, -np.eye(3), tolerance)
+    inversion = inversion_match is not None
+    if inversion_match:
+        operations.append(Operation("i", -np.eye(3), *inversion_match))
+
+    rotations: dict[int, list[tuple[np.ndarray, Operation]]] = {}
+    for order in range(2, 9):
+        for axis in axes:
+            matrix = _rotation(axis, 2 * pi / order)
+            matched = _match(symbols, coordinates, matrix, tolerance)
+            if matched:
+                operation = Operation(f"C{order}", matrix, *matched)
+                rotations.setdefault(order, []).append((axis, operation))
+                operations.append(operation)
+
+    mirrors: list[tuple[np.ndarray, Operation]] = []
+    for normal in axes:
+        matrix = np.eye(3) - 2 * np.outer(normal, normal)
+        matched = _match(symbols, coordinates, matrix, tolerance)
+        if matched:
+            operation = Operation("sigma", matrix, *matched)
+            mirrors.append((normal, operation))
+            operations.append(operation)
+
+    if linear:
+        point_group = "Dinfh" if inversion else "Cinfv"
+    elif len(rotations.get(3, [])) >= 4 and len(rotations.get(2, [])) >= 3:
+        point_group = "Oh" if inversion and len(rotations.get(4, [])) >= 3 else "Td"
+    else:
+        principal_order = max(rotations, default=1)
+        if principal_order == 1:
+            point_group = "Ci" if inversion else "Cs" if mirrors else "C1"
+        else:
+            principal_axis = rotations[principal_order][0][0]
+            perpendicular_c2 = any(
+                abs(float(np.dot(axis, principal_axis))) < 0.2
+                for axis, _operation in rotations.get(2, [])
+            )
+            horizontal = any(
+                abs(float(np.dot(normal, principal_axis))) > 0.98
+                for normal, _operation in mirrors
+            )
+            vertical = any(
+                abs(float(np.dot(normal, principal_axis))) < 0.2
+                for normal, _operation in mirrors
+            )
+            family = "D" if perpendicular_c2 else "C"
+            suffix = "h" if horizontal else "d" if perpendicular_c2 and vertical else "v" if vertical else ""
+            point_group = f"{family}{principal_order}{suffix}"
+
+    unique_operations: dict[bytes, Operation] = {}
+    for operation in operations:
+        unique_operations.setdefault(np.round(operation.matrix, 7).tobytes(), operation)
+    accepted = list(unique_operations.values())
+    aligned = [
+        [symbol, float(x), float(y), float(z)]
+        for symbol, (x, y, z) in zip(symbols, coordinates)
+    ]
+    return {
+        "point_group": point_group,
+        "tolerance_angstrom": tolerance,
+        "center_angstrom": center.tolist(),
+        "max_deviation_angstrom": max(operation.residual for operation in accepted),
+        "operations": sorted({operation.label for operation in accepted}),
+        "operation_count": len(accepted),
+        "equivalent_atoms": _equivalent_atoms(len(atoms), accepted),
+        "aligned_atoms": aligned,
+    }
