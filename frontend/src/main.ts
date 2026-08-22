@@ -101,9 +101,11 @@ function artSources(): { sources: ArtSource[]; selected: string } {
         label: `${prefix}: ${option.textContent ?? option.value}`,
       });
     }
-    for (const option of [...mapKind.options]) {
-      if (option.hidden || option.value === "mo" || option.value === "dyson") continue;
-      sources.push({ value: `orbital:${option.value}`, label: option.textContent ?? option.value });
+    if (orbitalSources.size) {
+      for (const option of [...mapKind.options]) {
+        if (option.hidden || option.value === "mo" || option.value === "dyson") continue;
+        sources.push({ value: `orbital:${option.value}`, label: option.textContent ?? option.value });
+      }
     }
   }
   if (excitedAnalysis?.available) {
@@ -2189,8 +2191,9 @@ async function showDirectCube(jobId: string, url: string): Promise<void> {
   const requestId = ++volumetricRequestId;
   activeMapSource = "direct";
   activeDirectCube = { jobId, url };
-  pushOrbitalStyle();
   const name = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? "");
+  if (resultCubeFiles.includes(name)) $<HTMLSelectElement>("surfacePrimary").value = name;
+  pushOrbitalStyle();
   let response: Response;
   let geometryResponse: Response;
   try {
@@ -2789,6 +2792,7 @@ function showArtSource(value: string): void {
     if (!option?.dataset.kind || !orbitalSources.has(orbitalValue)) return;
     orbitalSel.value = orbitalValue;
     mapKind.value = option.dataset.kind === "dyson" ? "dyson" : "mo";
+    selectOrbitalClass(mapKind.value);
     isoRange.value = String(MAP_ISO[mapKind.value]);
     showOrbital();
   } else if (category === "orbital" && currentMolden && [...mapKind.options]
