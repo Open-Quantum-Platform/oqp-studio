@@ -683,9 +683,9 @@
               <details class="wf-detail" data-for="*" style="margin-top:1rem">
                 <summary>SCF convergence and stability</summary>
                 <div class="row" style="margin-top:.8rem">
-                  <div><label>SCF max iterations</label><input type="number" id="scfMaxit" value="100" min="1" /></div>
-                  <div><label>SCF convergence</label><input type="text" id="scfConv" value="1e-8" /></div>
-                  <div><label>DIIS subspace</label><input type="number" id="scfMaxDiis" value="8" min="1" /></div>
+                  <div><label>SCF max iterations</label><input type="number" id="scfMaxit" value="30" min="1" /></div>
+                  <div><label>SCF convergence</label><input type="text" id="scfConv" value="1e-6" /></div>
+                  <div><label>DIIS subspace</label><input type="number" id="scfMaxDiis" value="7" min="1" /></div>
                   <div><label>DIIS type</label><select id="scfDiisType"><option value="cdiis">CDIIS</option><option value="ediis">EDIIS</option></select></div>
                   <div><label>Level shift</label><input type="text" id="scfLevelShift" value="0" /></div>
                 </div>
@@ -757,10 +757,10 @@
               <details class="wf-detail" data-for="energy grad opt hess prop abs exgrad exopt meci mecp tci nac nacme soc ekt namd" data-theories="tddft tda sf mrsf umrsf" style="margin-top:1rem">
                 <summary>Excited-state response and Z-vector</summary>
                 <div class="row" style="margin-top:.8rem">
-                  <div><label>Response max iterations</label><input type="number" id="responseMaxit" value="30" min="1" /></div>
-                  <div><label>Response cutoff</label><input type="text" id="responseCutoff" value="1e-8" /></div>
+                  <div><label>Response max iterations</label><input type="number" id="responseMaxit" value="50" min="1" /></div>
+                  <div><label>Response cutoff</label><input type="text" id="responseCutoff" value="auto" /></div>
                   <div><label>Response convergence</label><input type="text" id="responseConv" value="1e-6" /></div>
-                  <div><label>Z-vector max iterations</label><input type="number" id="zvectorMaxit" value="30" min="1" /></div>
+                  <div><label>Z-vector max iterations</label><input type="number" id="zvectorMaxit" value="50" min="1" /></div>
                   <div><label>Z-vector convergence</label><input type="text" id="zvectorConv" value="1e-6" /></div>
                   <div><label>Davidson subspace</label><input type="number" id="davidsonSubspace" value="50" min="1" /></div>
                 </div>

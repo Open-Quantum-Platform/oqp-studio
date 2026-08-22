@@ -639,9 +639,49 @@ function fieldValue(id: string): string {
   return $<HTMLInputElement | HTMLSelectElement>(id).value.trim();
 }
 
-function optionList(entries: [string, string][]): string {
-  return entries.filter(([, value]) => value !== "").map(([key, value]) => `${key}=${value}`).join(",");
+function optionList(entries: [string, string][], defaults: Record<string, string> = {}): string {
+  return entries
+    .filter(([key, value]) => value !== "" && value !== defaults[key])
+    .map(([key, value]) => `${key}=${value}`)
+    .join(",");
 }
+
+const SCF_DEFAULTS: Record<string, string> = {
+  maxit: "30", conv: "1e-6", maxdiis: "7", diis_type: "cdiis", vshift: "0",
+  converger_type: "diis", alternative_scf: "trah", escalation: "diis,soscf,trah",
+  stability: "false", soscf_lvl_shift: "0", mom: "false", mom_switch: "0.003",
+  pfon: "false", pfon_start_temp: "2000", pfon_cooling_rate: "50",
+  trh_stab: "false", trh_ls: "false", trh_sub_solver: "davidson", trh_r0: "0.4",
+  trh_nmic: "50", trh_nrtv: "1", trh_jd_start: "30", trh_gred: "0.001",
+  trh_lred: "0.0001", trh_impl: "auto", init_scf: "no", init_it: "15",
+  init_conv: "0.001", rstctmo: "false", incremental: "true", pscreen: "false",
+  pscreen_k: "1e-2", pscreen_cap: "1e-8", pscreen_tight: "1e-4", verbose: "1",
+};
+
+const RESPONSE_DEFAULTS: Record<string, string> = {
+  maxit: "50", conv: "1e-6", maxit_zv: "50", zvconv: "1e-6", nvdav: "50",
+  z_solver: "0", gmres_dim: "50", resp_cutoff: "auto",
+};
+
+const HESS_DEFAULTS: Record<string, string> = {
+  dx: "0.01", nproc: "1", temperature: "298.15", symmetry_unique: "false",
+};
+
+const NAC_DEFAULTS: Record<string, string> = {
+  type: "numerical", dx: "1e-4", nproc: "1", bp: "false",
+};
+
+const OPTIMIZER_DEFAULTS: Record<string, string> = {
+  optimizer: "bfgs", step_size: "0.1", trust: "0.2",
+};
+
+const CAS_DEFAULTS: Record<string, string> = {
+  active_electrons: "0", active_orbitals: "0", frozen_core: "0",
+};
+
+const CI_DEFAULTS: Record<string, string> = {
+  nroot: "1", solver: "auto", eig_tol: "1e-10", davidson_maxiter: "100",
+};
 
 function withOptions(driver: string, options: string): string {
   if (!options) return driver;
@@ -664,7 +704,13 @@ function pcmInput(atoms: Atom[], charge: number, mult: number, theory: string, b
   const atomicNumber: Record<string, number> = { H: 1, He: 2, Li: 3, Be: 4, B: 5, C: 6, N: 7, O: 8, F: 9, Ne: 10, P: 15, S: 16, Cl: 17, Br: 35, I: 53 };
   const lines = ["[input]", "system="];
   for (const [el, x, y, z] of atoms) lines.push(`${atomicNumber[el] ?? el} ${x.toFixed(9)} ${y.toFixed(9)} ${z.toFixed(9)}`);
-  lines.push(`charge=${charge}`, "runtype=energy", `basis=${basis}`, `method=${theory}`, "", "[scf]", `multiplicity=${mult}`, `type=${reference}`, `maxit=${fieldValue("scfMaxit")}`, `conv=${fieldValue("scfConv")}`, "", "[pcm]", "enabled=true", "backend=ddx", "mode=reference_scf", `model=${fieldValue("pcmModel")}`, `epsilon=${fieldValue("pcmEpsilon")}`);
+  lines.push(`charge=${charge}`, "runtype=energy", `basis=${basis}`, `method=${theory}`, "", "[scf]", `multiplicity=${mult}`, `type=${reference}`);
+  const scfOverrides = optionList([
+    ["maxit", fieldValue("scfMaxit")],
+    ["conv", fieldValue("scfConv")],
+  ], SCF_DEFAULTS);
+  if (scfOverrides) lines.push(...scfOverrides.split(","));
+  lines.push("", "[pcm]", "enabled=true", "backend=ddx", "mode=reference_scf", `model=${fieldValue("pcmModel")}`, `epsilon=${fieldValue("pcmEpsilon")}`);
   return lines.join("\n") + "\n";
 }
 
@@ -775,7 +821,7 @@ function generateInp(): string {
     ["incremental", fieldValue("scfIncremental")], ["pscreen", fieldValue("scfPrescreen")],
     ["pscreen_k", fieldValue("scfPrescreenK")], ["pscreen_cap", fieldValue("scfPrescreenCap")],
     ["pscreen_tight", fieldValue("scfPrescreenTight")], ["verbose", fieldValue("scfVerbose")],
-  ]);
+  ], SCF_DEFAULTS);
   if (scfOptions) lines.push(`scf(${scfOptions})`);
   if (usesStates) {
     const responseOptions = optionList([
@@ -783,40 +829,40 @@ function generateInp(): string {
       ["maxit_zv", fieldValue("zvectorMaxit")], ["zvconv", fieldValue("zvectorConv")],
       ["nvdav", fieldValue("davidsonSubspace")], ["z_solver", fieldValue("zvectorSolver")],
       ["gmres_dim", fieldValue("gmresDim")], ["resp_cutoff", fieldValue("responseCutoff")],
-    ]);
+    ], RESPONSE_DEFAULTS);
     if (responseOptions) lines.push(`tdhf(${responseOptions})`);
   }
   if (currentWf.key === "hess") {
     const hessOptions = optionList([
       ["dx", fieldValue("hessDx")], ["nproc", fieldValue("hessNproc")],
       ["temperature", fieldValue("hessTemperature")], ["symmetry_unique", fieldValue("hessSymmetry")],
-    ]);
+    ], HESS_DEFAULTS);
     if (hessOptions) lines.push(`hess(${hessOptions})`);
   }
   if (["nac", "nacme"].includes(currentWf.key)) {
     const nacOptions = optionList([
       ["type", fieldValue("nacType")], ["dx", fieldValue("nacDx")],
       ["nproc", fieldValue("nacNproc")], ["bp", fieldValue("nacBp")],
-    ]);
+    ], NAC_DEFAULTS);
     if (nacOptions) lines.push(`nac(${nacOptions})`);
   }
   if (["opt", "exopt", "ts", "irc", "mep", "neb", "meci", "mecp", "tci"].includes(currentWf.key)) {
     const optimizerOptions = optionList([
       ["optimizer", fieldValue("geomOptimizer")], ["step_size", fieldValue("geomStepSize")],
       ["trust", fieldValue("geomTrust")],
-    ]);
+    ], OPTIMIZER_DEFAULTS);
     if (optimizerOptions) lines.push(`optimize(${optimizerOptions})`);
   }
   if (["fci", "casci", "casscf", "sa-casscf", "caspt2", "ms-caspt2", "xms-caspt2", "nevpt2", "sc-nevpt2", "mrmp2", "mcqdpt2", "xmcqdpt2"].includes(theory)) {
     const casOptions = optionList([
       ["active_electrons", fieldValue("activeElectrons")], ["active_orbitals", fieldValue("activeOrbitals")],
       ["frozen_core", fieldValue("frozenCore")],
-    ]);
+    ], CAS_DEFAULTS);
     if (casOptions) lines.push(`cas(${casOptions})`);
     const ciOptions = optionList([
       ["nroot", fieldValue("ciRoots")], ["solver", fieldValue("ciSolver")],
       ["eig_tol", fieldValue("ciTolerance")], ["davidson_maxiter", fieldValue("ciMaxit")],
-    ]);
+    ], CI_DEFAULTS);
     if (ciOptions) lines.push(`ci(${ciOptions})`);
   }
   if (["opt", "exopt", "ts", "mep"].includes(currentWf.key)) {
