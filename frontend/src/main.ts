@@ -1777,6 +1777,7 @@ function resetAnalysisProject(): void {
   modeSel.innerHTML = '<option value="">Choose a normal mode…</option>';
   modePlay.disabled = true;
   modePause.disabled = true;
+  modeArrows.disabled = true;
   modeReset.disabled = true;
   $<HTMLDivElement>("resultFrameCard").style.display = "none";
   $<HTMLElement>("optimizationStepControls").style.display = "none";
@@ -2397,6 +2398,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       modeCard.style.display = "";
       modePlay.disabled = true;
       modePause.disabled = true;
+      modeArrows.disabled = true;
       modeReset.disabled = true;
     }
     if (!allOrbitals.length && !modes?.modes?.length) {
@@ -2554,6 +2556,9 @@ function modeEquilibriumXyz(mode: { atoms: { element: string; position: number[]
 }
 
 async function showMode(): Promise<void> {
+  modePlay.disabled = true;
+  modePause.disabled = true;
+  modeArrows.disabled = true;
   if (!currentMolden || !modeSel.value) return;
   const molden = currentMolden;
   const selectedMode = modeSel.value;
@@ -2574,6 +2579,7 @@ async function showMode(): Promise<void> {
   });
   modePlay.disabled = false;
   modePause.disabled = false;
+  modeArrows.disabled = false;
   modeReset.disabled = false;
 }
 
@@ -2599,6 +2605,7 @@ modeReset.addEventListener("click", async () => {
   modeSel.value = "";
   modePlay.disabled = true;
   modePause.disabled = true;
+  modeArrows.disabled = true;
   modeReset.disabled = true;
 });
 

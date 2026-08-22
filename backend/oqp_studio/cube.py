@@ -60,7 +60,7 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
     atom_records = [line.split() for line in lines[6:header_end]]
     if any(len(record) != 5 for record in atom_records):
         raise ValueError("cube atom header is invalid")
-    datasets = abs(int(origin_record[4])) if len(origin_record) > 4 else 1
+    datasets = int(origin_record[4]) if len(origin_record) > 4 else 1
     if datasets < 1:
         raise ValueError("cube dataset count must be positive")
     dataset_id_values: tuple[int, ...] = ()
@@ -96,10 +96,15 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
         if expected > MAX_GRID_VALUES:
             raise ValueError(f"cube grid is limited to {MAX_GRID_VALUES:,} values")
         try:
-            values = [_number(token)
-                      for line in lines[header_end:] for token in line.split()]
+            for line in lines[header_end:]:
+                for token in line.split():
+                    if len(values) >= expected:
+                        raise ValueError(
+                            f"cube grid has more than the expected {expected} values"
+                        )
+                    values.append(_number(token))
         except ValueError as exc:
-            if "non-finite" in str(exc):
+            if "non-finite" in str(exc) or "more than the expected" in str(exc):
                 raise
             raise ValueError("cube grid contains a nonnumeric value") from exc
         if len(values) != expected:

@@ -1512,6 +1512,39 @@ def test_cube_parser_rejects_non_finite_header_and_grid_values():
         cube.combine(_cube([1.0e308, 1.0]), _cube([1.0e308, 1.0]), "sum")
 
 
+def test_cube_parser_stops_at_the_first_grid_value_beyond_the_declared_shape(monkeypatch):
+    import pytest
+
+    from oqp_studio import cube
+
+    converted = 0
+    original = cube._number
+
+    def count_number(token):
+        nonlocal converted
+        converted += 1
+        return original(token)
+
+    monkeypatch.setattr(cube, "_number", count_number)
+    with pytest.raises(ValueError, match="more than the expected 2"):
+        cube.parse(_cube([1.0, 2.0, *([0.0] * 10_000)]))
+
+    assert converted == 2
+
+
+def test_cube_parser_rejects_a_negative_dataset_count():
+    import pytest
+
+    from oqp_studio import cube
+
+    malformed = _cube([1.0, 2.0]).replace(
+        "0 0.000000 0.0 0.0", "0 0.000000 0.0 0.0 -2", 1,
+    )
+
+    with pytest.raises(ValueError, match="dataset count must be positive"):
+        cube.parse(malformed)
+
+
 def test_cube_parser_rejects_malformed_geometry_records_and_empty_axes():
     import pytest
 
