@@ -18,6 +18,7 @@ type ArtScene = {
   orbital?: OrbitalStyle;
   label?: string;
 };
+type ArtSource = { value: string; label: string; disabled?: boolean; reason?: string };
 type CubeGrid = {
   shape: [number, number, number];
   origin: THREE.Vector3;
@@ -43,6 +44,7 @@ const ELEMENTS: Record<string, { color: number; covalent: number; display: numbe
 const stage = document.getElementById("stage")!;
 const progress = document.getElementById("progress")!;
 const empty = document.getElementById("empty")!;
+const contentSelect = document.getElementById("content") as HTMLSelectElement;
 const surfaceMaterialSelect = document.getElementById("surfaceMaterial") as HTMLSelectElement;
 const surfaceOpacity = document.getElementById("surfaceOpacity") as HTMLInputElement;
 const surfacePhases = document.getElementById("surfacePhases") as HTMLSelectElement;
@@ -418,6 +420,12 @@ document.getElementById("exposure")!.addEventListener("input", (event) => {
   tracer.reset();
 });
 backgroundSelect.addEventListener("change", setBackground);
+contentSelect.addEventListener("change", () => {
+  progress.textContent = `loading ${contentSelect.selectedOptions[0]?.textContent ?? "content"}`;
+  window.parent.postMessage(
+    { type: "oqp-art-source-request", value: contentSelect.value }, window.location.origin,
+  );
+});
 document.getElementById("dof")!.addEventListener("change", (event) => {
   const strength = +(event.target as HTMLSelectElement).value;
   camera.fStop = strength === 0 ? 1000 : strength === 1 ? 14 : 5.6;
@@ -448,6 +456,17 @@ window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin) return;
   if (event.data?.type === "oqp-art-scene") {
     void setArtwork(event.data.scene as ArtScene);
+  } else if (event.data?.type === "oqp-art-sources") {
+    const sources = event.data.sources as ArtSource[];
+    contentSelect.replaceChildren(...sources.map((source) => {
+      const option = document.createElement("option");
+      option.value = source.value;
+      option.textContent = source.label;
+      option.disabled = Boolean(source.disabled);
+      if (source.reason) option.title = source.reason;
+      return option;
+    }));
+    contentSelect.value = String(event.data.selected ?? "molecule");
   } else if (event.data?.type === "oqp-art-style") {
     if (!lastScene) return;
     lastScene = { ...lastScene, orbital: event.data.orbital as OrbitalStyle };
