@@ -218,7 +218,13 @@ class JobManager:
         )
         with self._lock:
             self._jobs[job_id] = info
-        self._write_metadata(job_dir, info)
+        try:
+            self._write_metadata(job_dir, info)
+        except Exception:
+            with self._lock:
+                self._jobs.pop(job_id, None)
+            rmtree(job_dir, ignore_errors=True)
+            raise
         return info
 
     def submit(self, req: JobRequest) -> JobInfo:
@@ -328,9 +334,9 @@ class JobManager:
                 info.error = "Cancelled by user"
                 self._write_metadata(JOBS_ROOT / job_id, info)
                 return
-        info.status = JobStatus.running
-        self._write_metadata(JOBS_ROOT / job_id, info)
         try:
+            info.status = JobStatus.running
+            self._write_metadata(JOBS_ROOT / job_id, info)
             exit_code = get_runner(info.runner).run(
                 JOBS_ROOT / job_id, info.threads,
                 on_start=lambda process: self._register_process(job_id, process),
@@ -350,7 +356,12 @@ class JobManager:
             info.error = str(exc)
             info.status = JobStatus.failed
         finally:
-            self._write_metadata(JOBS_ROOT / job_id, info)
+            try:
+                self._write_metadata(JOBS_ROOT / job_id, info)
+            except OSError:
+                # The in-memory terminal state must remain usable even when a
+                # full or read-only results volume cannot persist it.
+                pass
             with self._lock:
                 self._processes.pop(job_id, None)
 

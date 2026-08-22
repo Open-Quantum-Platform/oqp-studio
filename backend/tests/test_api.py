@@ -275,6 +275,59 @@ def test_batch_preparation_failure_removes_earlier_points(tmp_path, monkeypatch)
     assert list(tmp_path.iterdir()) == []
 
 
+def test_prepare_rolls_back_the_current_point_when_metadata_write_fails(tmp_path, monkeypatch):
+    import pytest
+
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    def fail_write(_path, _info):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(manager, "_write_metadata", fail_write)
+
+    with pytest.raises(OSError, match="disk full"):
+        manager._prepare(jobs.JobRequest(input_text="hf/sto-3g\nenergy\n"))
+
+    assert manager.list() == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_running_metadata_failure_leaves_a_terminal_failed_job(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    job_dir = tmp_path / "metadata-failure"
+    job_dir.mkdir()
+    manager._jobs["metadata-failure"] = jobs.JobInfo(
+        id="metadata-failure", name="metadata failure", status=jobs.JobStatus.queued,
+        runner="local", created_at="2026-08-22T00:00:00+00:00",
+    )
+    runner_called = False
+
+    class Runner:
+        def run(self, *_args, **_kwargs):
+            nonlocal runner_called
+            runner_called = True
+            return 0
+
+    monkeypatch.setattr(jobs, "get_runner", lambda _name: Runner())
+    def fail_write(_path, _info):
+        raise OSError("read only")
+
+    monkeypatch.setattr(manager, "_write_metadata", fail_write)
+
+    manager._run("metadata-failure")
+
+    assert not runner_called
+    assert manager.get("metadata-failure").status == jobs.JobStatus.failed
+    assert manager.get("metadata-failure").error == "read only"
+
+
 def test_recovery_does_not_mark_an_unstarted_scan_point_done(tmp_path, monkeypatch):
     from oqp_studio import jobs
 
