@@ -61,6 +61,12 @@ def validate_links(root: Path) -> None:
                 _link_target(root, candidate, os.readlink(candidate))
 
 
+def _create_link(destination: Path, link_name: str) -> None:
+    """Create an archive link with the correct Windows link type when known."""
+    target = destination.parent / Path(*PurePosixPath(link_name).parts)
+    destination.symlink_to(link_name, target_is_directory=target.is_dir())
+
+
 def extract_zip(archive: zipfile.ZipFile, target: Path) -> None:
     """Extract files, directories, and safe relative links from a ZIP archive."""
     members: list[tuple[zipfile.ZipInfo, Path, str | None]] = []
@@ -95,7 +101,7 @@ def extract_zip(archive: zipfile.ZipFile, target: Path) -> None:
         destination = _destination(target, member.filename)
         _link_target(target, destination, link_name)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.symlink_to(link_name)
+        _create_link(destination, link_name)
 
     validate_links(target)
 
@@ -135,7 +141,7 @@ def extract_tar(archive: tarfile.TarFile, target: Path) -> None:
         destination = _destination(target, member.name)
         _link_target(target, destination, link_name)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.symlink_to(link_name)
+        _create_link(destination, link_name)
 
     validate_links(target)
 
