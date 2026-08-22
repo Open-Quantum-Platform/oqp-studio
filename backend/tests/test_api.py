@@ -1428,6 +1428,13 @@ def test_cube_arithmetic_supports_multiline_datasets_and_fortran_headers():
     ))
 
     assert result.datasets == 2
+    assert result.dataset_ids == (10, 20)
+    assert result.values == [0.5, -2.0]
+
+    wrapped_differently = multi(["0.5D+00", "4.0D+00"]).replace("2 10\n20\n", "2 10 20\n")
+    result = cube.parse(cube.combine(
+        multi(["1.0D+00", "2.0D+00"]), wrapped_differently, "difference",
+    ))
     assert result.values == [0.5, -2.0]
 
 
@@ -1444,6 +1451,32 @@ def test_cube_parser_rejects_non_finite_header_and_grid_values():
             _cube([1.0, 2.0]),
             "sum",
         )
+    with pytest.raises(ValueError, match="arithmetic produced a non-finite"):
+        cube.combine(_cube([1.0e308, 1.0]), _cube([1.0e308, 1.0]), "sum")
+
+
+def test_cube_parser_rejects_malformed_geometry_records_and_empty_axes():
+    import pytest
+
+    from oqp_studio import cube
+
+    valid = _cube([1.0, 2.0])
+    malformed_atom = valid.replace(
+        "0 0.000000 0.0 0.0", "1 0.000000 0.0 0.0", 1,
+    ).replace(
+        "1 0.0 0.0 1.0\n", "1 0.0 0.0 1.0\n8 0.0 0.0 0.0\n", 1,
+    )
+    malformed = [
+        valid.replace("0 0.000000 0.0 0.0", "0 0.000000 0.0"),
+        valid.replace("2 1.0 0.0 0.0", "2 1.0 0.0"),
+        valid.replace("2 1.0 0.0 0.0", "0 1.0 0.0 0.0"),
+        valid.replace("0 0.000000 0.0 0.0", "0 0.000000 0.0 0.0 1 2"),
+        malformed_atom,
+    ]
+
+    for text in malformed:
+        with pytest.raises(ValueError, match="header is invalid"):
+            cube.parse(text)
 
 
 def test_cube_arithmetic_endpoint_uses_only_job_files(tmp_path, monkeypatch):
@@ -1520,6 +1553,34 @@ def test_symmetry_identifies_linear_centrosymmetric_co2():
 
     assert result["point_group"] == "Dinfh"
     assert [1, 3] in result["equivalent_atoms"]
+
+
+def test_symmetry_classifies_an_isolated_atom_as_spherical():
+    from oqp_studio import symmetry
+
+    assert symmetry.analyze("He 2.0 -3.0 4.0\n")["point_group"] == "Kh"
+
+
+def test_symmetry_rejects_incomplete_or_malformed_coordinate_rows():
+    import pytest
+
+    from oqp_studio import symmetry
+
+    with pytest.raises(ValueError, match="every coordinate row"):
+        symmetry.analyze("3\nwater\nO 0 0 0\nH 0 1 0\nnot-an-atom\n")
+    with pytest.raises(ValueError, match="every coordinate row"):
+        symmetry.analyze("O 0 0 0\nH invalid 1 0\n")
+
+
+def test_symmetry_rejects_rotations_indistinguishable_at_the_tolerance():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    coordinates = np.asarray([[1.0, 0.0, 0.0]])
+    almost_identity = symmetry._rotation(np.asarray([0.0, 0.0, 1.0]), 1.0e-6)
+
+    assert not symmetry._moves_coordinates(coordinates, almost_identity, 0.01)
 
 
 def test_symmetry_finds_rotated_ammonia_mirror_planes():

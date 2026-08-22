@@ -511,14 +511,14 @@ moPreset.addEventListener("change", () => {
   moColors.value = preset.colors;
   moVisual.value = preset.visual;
   moAlpha.value = preset.alpha;
-  showOrbital();                             // colours are baked into the volume
+  redrawActiveVolume();                      // colours are baked into the volume
 });
 
 for (const id of ["moColors", "moVisual", "moAlpha"]) {
   $<HTMLElement>(id).addEventListener("change", () => {
     moPreset.value = "custom";
     // Colours are baked in when the volume loads, so redraw for those.
-    if (id === "moColors") showOrbital();
+    if (id === "moColors") redrawActiveVolume();
     else pushOrbitalStyle();
   });
 }
@@ -638,6 +638,7 @@ $<HTMLButtonElement>("symmetryAnalyze").addEventListener("click", async () => {
 $<HTMLButtonElement>("symmetryAlign").addEventListener("click", () => {
   invalidateSymmetryIfCoordinatesChanged();
   if (!symmetryResult) return;
+  clearPdbSource();
   xyzArea.value = atomsToText(symmetryResult.aligned_atoms);
   builderStatus.textContent = "centered and aligned to the principal axes";
   void updatePreview();
@@ -2456,13 +2457,15 @@ orbitalReset.addEventListener("click", () => {
   showMoldenStructure();
 });
 isoRange.addEventListener("change", showOrbital);
-$<HTMLSelectElement>("moSides").addEventListener("change", () => {
+function redrawActiveVolume(): void {
   if (activeMapSource === "direct" && activeDirectCube) {
     showDirectCube(activeDirectCube.jobId, activeDirectCube.url);
   } else if (activeMapSource === "excited") void showExcitedMap();
   else if (activeMapSource === "surface") void showSurface();
   else showOrbital();
-});
+}
+
+$<HTMLSelectElement>("moSides").addEventListener("change", redrawActiveVolume);
 mapKind.addEventListener("change", () => {
   // Each field has its own natural contour, so move the slider with it.
   isoRange.value = String(MAP_ISO[mapKind.value] ?? 0.05);

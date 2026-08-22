@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from itertools import combinations
-from math import cos, gcd, pi, sin
+from math import cos, gcd, isfinite, pi, sin
 
 import numpy as np
 
@@ -111,6 +111,44 @@ def _match(symbols: list[str], coordinates: np.ndarray, matrix: np.ndarray,
     return mapping, residual
 
 
+def _moves_coordinates(coordinates: np.ndarray, matrix: np.ndarray, tolerance: float) -> bool:
+    """A numerically indistinguishable rotation is not a symmetry operation."""
+    displacement = np.linalg.norm(coordinates @ matrix.T - coordinates, axis=1)
+    return bool(len(displacement) and float(np.max(displacement)) > tolerance)
+
+
+def _strict_xyz(xyz: str) -> list[Atom]:
+    lines = xyz.splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if not lines:
+        raise ValueError("no Cartesian coordinates were found")
+    try:
+        declared = int(lines[0].strip())
+    except ValueError:
+        declared = None
+    if declared is not None:
+        if declared < 1 or len(lines) < declared + 2:
+            raise ValueError("XYZ atom count or coordinate rows are invalid")
+        if any(line.strip() for line in lines[declared + 2:]):
+            raise ValueError("symmetry analysis accepts one XYZ structure at a time")
+        source = "\n".join(lines[:declared + 2])
+        frames = parse_xyz(source)
+        expected = declared
+    else:
+        rows = [line for line in lines if line.strip()]
+        frames = parse_xyz("\n".join(rows))
+        expected = len(rows)
+    if len(frames) != 1 or len(frames[0].atoms) != expected:
+        raise ValueError("every coordinate row must contain a valid element and three numbers")
+    atoms = frames[0].atoms
+    if any(not isfinite(value) for atom in atoms for value in atom[1:]):
+        raise ValueError("coordinates must be finite numbers")
+    return atoms
+
+
 def _principal_axes(atoms: list[Atom]) -> tuple[list[str], np.ndarray, np.ndarray]:
     symbols = [atom[0] for atom in atoms]
     coordinates = np.asarray([atom[1:] for atom in atoms], dtype=float)
@@ -150,15 +188,14 @@ def _equivalent_atoms(size: int, operations: list[Operation]) -> list[list[int]]
 
 
 def analyze(xyz: str, tolerance: float = 0.05) -> dict:
-    frames = parse_xyz(xyz)
-    if not frames or not frames[0].atoms:
-        raise ValueError("no Cartesian coordinates were found")
-    atoms = frames[0].atoms
+    atoms = _strict_xyz(xyz)
     if len(atoms) > 300:
         raise ValueError("symmetry analysis supports at most 300 atoms")
     symbols, coordinates, center = _principal_axes(atoms)
     spread = np.linalg.svd(coordinates, compute_uv=False)
-    linear = len(atoms) <= 2 or (len(spread) > 1 and spread[1] <= tolerance)
+    single_atom = len(atoms) == 1
+    linear = len(atoms) == 2 or (len(atoms) > 2 and len(spread) > 1
+                                 and spread[1] <= tolerance)
 
     seed_axes = [np.eye(3)[index] for index in range(3)]
     atom_axes = _unique_axes([point for point in coordinates])[:80]
@@ -185,7 +222,8 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
     for axis in axes:
         for order in _rotation_orders(symbols, coordinates, axis, tolerance):
             matrix = _rotation(axis, 2 * pi / order)
-            matched = _match(symbols, coordinates, matrix, tolerance)
+            matched = (_match(symbols, coordinates, matrix, tolerance)
+                       if _moves_coordinates(coordinates, matrix, tolerance) else None)
             if matched:
                 operation = Operation(f"C{order}", matrix, *matched)
                 rotations.setdefault(order, []).append((axis, operation))
@@ -206,7 +244,9 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
             mirrors.append((normal, operation))
             operations.append(operation)
 
-    if linear:
+    if single_atom:
+        point_group = "Kh"
+    elif linear:
         point_group = "Dinfh" if inversion else "Cinfv"
     elif len(rotations.get(5, [])) >= 6:
         point_group = "Ih" if inversion else "I"
