@@ -64,17 +64,102 @@ document.querySelectorAll<HTMLElement>(".panel").forEach((panel) => {
 const artFrame = $<HTMLIFrameElement>("artFrame");
 let artReady = false;
 let artAtoms: Atom[] = [];
+type ArtScene = {
+  atoms: Atom[];
+  cube?: string;
+  iso?: number;
+  sides?: string;
+  orbital?: Record<string, unknown>;
+  label?: string;
+};
+type ArtSource = { value: string; label: string; disabled?: boolean; reason?: string };
+let artScene: ArtScene = { atoms: [] };
 
-function pushToArt(atoms = artAtoms): void {
-  if (!atoms.length || !artReady) return;
-  artFrame.contentWindow?.postMessage({ type: "oqp-art-structure", atoms }, window.location.origin);
+function setArtStructure(atoms: Atom[]): void {
+  if (!atoms.length) return;
+  artAtoms = atoms;
+  artScene = { atoms };
+  pushToArt();
+}
+
+function pushToArt(): void {
+  if ((!artScene.atoms.length && !artScene.cube) || !artReady) return;
+  artFrame.contentWindow?.postMessage(
+    { type: "oqp-art-scene", scene: artScene }, window.location.origin,
+  );
+  pushArtSources();
+}
+
+function artSources(): { sources: ArtSource[]; selected: string } {
+  const sources: ArtSource[] = [{ value: "molecule", label: "Molecule" }];
+  if (currentMolden) {
+    for (const option of [...orbitalSel.options]) {
+      if (!option.dataset.kind || !orbitalSources.has(option.value)) continue;
+      const prefix = option.dataset.kind === "dyson" ? "Dyson" : "SCF";
+      sources.push({
+        value: `orbital-entry:${encodeURIComponent(option.value)}`,
+        label: `${prefix}: ${option.textContent ?? option.value}`,
+      });
+    }
+    if (orbitalSources.size) {
+      for (const option of [...mapKind.options]) {
+        if (option.hidden || option.value === "mo" || option.value === "dyson") continue;
+        sources.push({ value: `orbital:${option.value}`, label: option.textContent ?? option.value });
+      }
+    }
+  }
+  if (excitedAnalysis?.available) {
+    for (const option of [...excitedMap.options]) {
+      sources.push({ value: `excited:${option.value}`, label: option.textContent ?? option.value });
+    }
+  } else if (excitedAnalysis?.reason) {
+    sources.push({
+      value: "excited:unavailable",
+      label: "NTO / excited-state densities unavailable",
+      disabled: true,
+      reason: excitedAnalysis.reason,
+    });
+  }
+  for (const name of resultCubeFiles) {
+    sources.push({ value: `surface:${name}`, label: `Cube: ${name}` });
+  }
+  let selected = "molecule";
+  if (activeMapSource === "orbital" &&
+      (mapKind.value === "mo" || mapKind.value === "dyson") && orbitalSel.value) {
+    selected = `orbital-entry:${encodeURIComponent(orbitalSel.value)}`;
+  } else if (activeMapSource === "orbital") selected = `orbital:${mapKind.value}`;
+  else if (activeMapSource === "excited") selected = `excited:${excitedMap.value}`;
+  else if ((activeMapSource === "surface" || activeMapSource === "direct") &&
+           $<HTMLSelectElement>("surfacePrimary").value) {
+    selected = `surface:${$<HTMLSelectElement>("surfacePrimary").value}`;
+  }
+  return { sources, selected };
+}
+
+function pushArtSources(): void {
+  if (!artReady) return;
+  artFrame.contentWindow?.postMessage(
+    { type: "oqp-art-sources", ...artSources() }, window.location.origin,
+  );
+}
+
+function pushArtOrbitalStyle(): void {
+  const orbital = currentOrbitalStyle();
+  artScene = { ...artScene, orbital };
+  if (!artReady) return;
+  artFrame.contentWindow?.postMessage(
+    { type: "oqp-art-style", orbital }, window.location.origin,
+  );
 }
 
 window.addEventListener("message", (event) => {
-  if (event.origin !== window.location.origin || event.source !== artFrame.contentWindow ||
-      event.data?.type !== "oqp-art-ready") return;
-  artReady = true;
-  pushToArt();
+  if (event.origin !== window.location.origin || event.source !== artFrame.contentWindow) return;
+  if (event.data?.type === "oqp-art-ready") {
+    artReady = true;
+    pushToArt();
+  } else if (event.data?.type === "oqp-art-source-request") {
+    showArtSource(String(event.data.value ?? "molecule"));
+  }
 });
 
 function showTab(name: string): void {
@@ -94,7 +179,13 @@ function showTab(name: string): void {
     refreshJobs();
   }
   if (name === "art") {
-    if (!artAtoms.length) artAtoms = parseAtoms(xyzArea.value);
+    if (!artScene.atoms.length && !artScene.cube) {
+      const atoms = parseAtoms(xyzArea.value);
+      if (atoms.length) {
+        artAtoms = atoms;
+        artScene = { atoms };
+      }
+    }
     if (!artFrame.src) {
       artReady = false;
       artFrame.src = "/art.html";
@@ -494,6 +585,7 @@ function currentOrbitalStyle(): Record<string, unknown> {
 
 function pushOrbitalStyle(): void {
   pushToViewers({ type: "oqp-orbital-style", orbital: currentOrbitalStyle() });
+  pushArtOrbitalStyle();
 }
 
 // Ready-made orbital looks. "studio" is what the app has always drawn and
@@ -556,7 +648,7 @@ window.addEventListener("message", (event) => {
 async function updatePreview(): Promise<void> {
   invalidateSymmetryIfCoordinatesChanged();
   const atoms = parseAtoms(xyzArea.value);
-  if (atoms.length) artAtoms = atoms;
+  if (atoms.length) setArtStructure(atoms);
   if (pdbSource) {
     pushPdbPreview();
     return;
@@ -1932,7 +2024,10 @@ function renderExcitedAnalysis(data: ExcitedAnalysis): void {
   excitedAnalysis = data;
   const card = $<HTMLDivElement>("excitedAnalysisCard");
   card.style.display = data.available ? "" : "none";
-  if (!data.available) return;
+  if (!data.available) {
+    pushArtSources();
+    return;
+  }
   if (!excitedSource.options.length) {
     const options = stateOptions(data.states);
     excitedSource.innerHTML = options;
@@ -1950,21 +2045,24 @@ function renderExcitedAnalysis(data: ExcitedAnalysis): void {
     `NTO participation ${data.nto_participation_ratio.toFixed(3)}`,
     `promoted charge ${data.n_promoted.toFixed(4)} e`,
   ].join(" · ");
+  pushArtSources();
 }
 
 async function loadExcitedAnalysis(jobId: string): Promise<void> {
-  const ref = excitedSource.value || "0";
-  const target = excitedTarget.value || "1";
+  const currentRef = () => excitedSource.value || "0";
+  const currentTarget = () => excitedTarget.value || "1";
+  const ref = currentRef();
+  const target = currentTarget();
   if (ref === target) return;
   const requestId = ++excitedAnalysisRequestId;
   const response = await fetch(
     `/api/jobs/${jobId}/excited-analysis?ref=${encodeURIComponent(ref)}&target=${encodeURIComponent(target)}`
   );
   if (!response.ok || requestId !== excitedAnalysisRequestId || jobId !== selectedJob ||
-      ref !== excitedSource.value || target !== excitedTarget.value) return;
+      ref !== currentRef() || target !== currentTarget()) return;
   const data = await response.json();
   if (requestId !== excitedAnalysisRequestId || jobId !== selectedJob ||
-      ref !== excitedSource.value || target !== excitedTarget.value) return;
+      ref !== currentRef() || target !== currentTarget()) return;
   renderExcitedAnalysis(data);
 }
 
@@ -2093,8 +2191,9 @@ async function showDirectCube(jobId: string, url: string): Promise<void> {
   const requestId = ++volumetricRequestId;
   activeMapSource = "direct";
   activeDirectCube = { jobId, url };
-  pushOrbitalStyle();
   const name = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? "");
+  if (resultCubeFiles.includes(name)) $<HTMLSelectElement>("surfacePrimary").value = name;
+  pushOrbitalStyle();
   let response: Response;
   let geometryResponse: Response;
   try {
@@ -2131,6 +2230,7 @@ function syncSurfaceFiles(): void {
   $<HTMLSelectElement>("surfaceSecondary").innerHTML = options;
   if (resultCubeFiles.length > 1) $<HTMLSelectElement>("surfaceSecondary").selectedIndex = 1;
   $<HTMLDivElement>("surfaceCard").style.display = resultCubeFiles.length ? "" : "none";
+  pushArtSources();
 }
 
 function syncSurfaceOperation(): void {
@@ -2232,13 +2332,27 @@ function pushToResultViewer(message: Record<string, unknown>): void {
   } else if (message.type === "oqp-cube") {
     displayedResultAtomCount = 0;
   }
-  if ((message.type === "oqp-structure" || message.type === "oqp-normal-mode") &&
-      typeof message.xyz === "string") {
-    const atoms = parseAtoms(message.xyz);
-    if (atoms.length) {
-      artAtoms = atoms;
-      pushToArt();
-    }
+  const type = String(message.type);
+  const coordinateText = typeof message.xyz === "string" ? message.xyz
+    : type === "oqp-file" && typeof message.text === "string" ? message.text : "";
+  const sceneAtoms = coordinateText ? parseAtoms(coordinateText) : [];
+  if (type === "oqp-cube" && typeof message.cube === "string") {
+    const orbital = currentOrbitalStyle();
+    if (sceneAtoms.length) artAtoms = sceneAtoms;
+    artScene = {
+      atoms: sceneAtoms,
+      cube: message.cube,
+      iso: typeof message.iso === "number" ? Math.abs(message.iso) : 0.05,
+      sides: typeof message.sides === "string" ? message.sides : String(orbital.sides ?? "both"),
+      orbital,
+      label: activeMapSource ?? "volumetric surface",
+    };
+    pushToArt();
+  } else if (["oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file"]
+      .includes(type) && sceneAtoms.length) {
+    setArtStructure(sceneAtoms);
+  } else if (type === "oqp-atomic-property" || type === "oqp-nmr-shielding") {
+    setArtStructure(artAtoms);
   }
   const renderTypes = [
     "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
@@ -2487,6 +2601,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
           opt.textContent = `Dyson ${o.dyson_kind}${sourceState}, root ${o.state_index}${strength}${occupation}`;
           dysonGroup.appendChild(opt);
         } else {
+          opt.dataset.kind = "scf";
           const occ = o.occupancy == null ? "" : ` occ=${Number(o.occupancy).toFixed(4)}`;
           opt.textContent = `MO ${index}  E=${Number(o.energy).toFixed(4)} Ha${occ} ${o.spin}`;
           scfGroup.appendChild(opt);
@@ -2505,6 +2620,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       if (!hasDyson && mapKind.value === "dyson") mapKind.value = "mo";
       orbitalCard.style.display = "";
       selectOrbitalClass(mapKind.value);
+      pushArtSources();
     }
     if (modes?.modes?.length) {
       modeSel.innerHTML = '<option value="">Choose a normal mode…</option>';
@@ -2659,6 +2775,43 @@ function redrawActiveVolume(): void {
   } else if (activeMapSource === "excited") void showExcitedMap();
   else if (activeMapSource === "surface") void showSurface();
   else if (activeMapSource === "orbital") showOrbital();
+}
+
+function showArtSource(value: string): void {
+  if (value === "molecule") {
+    if (currentMolden) showMoldenStructure();
+    else setArtStructure(artAtoms);
+    return;
+  }
+  const separator = value.indexOf(":");
+  const category = separator < 0 ? "" : value.slice(0, separator);
+  const source = separator < 0 ? "" : value.slice(separator + 1);
+  if (category === "orbital-entry" && currentMolden) {
+    const orbitalValue = decodeURIComponent(source);
+    const option = [...orbitalSel.options].find((candidate) => candidate.value === orbitalValue);
+    if (!option?.dataset.kind || !orbitalSources.has(orbitalValue)) return;
+    orbitalSel.value = orbitalValue;
+    mapKind.value = option.dataset.kind === "dyson" ? "dyson" : "mo";
+    selectOrbitalClass(mapKind.value);
+    isoRange.value = String(MAP_ISO[mapKind.value]);
+    showOrbital();
+  } else if (category === "orbital" && currentMolden && [...mapKind.options]
+      .some((option) => option.value === source && !option.hidden)) {
+    mapKind.value = source;
+    if (source === "mo" || source === "dyson") selectOrbitalClass(source);
+    isoRange.value = String(MAP_ISO[source] ?? 0.05);
+    showOrbital();
+  } else if (category === "excited" && excitedAnalysis?.available && [...excitedMap.options]
+      .some((option) => option.value === source)) {
+    excitedMap.value = source;
+    $<HTMLDivElement>("excitedPairWrap").style.display = source.startsWith("nto_") ? "" : "none";
+    void showExcitedMap();
+  } else if (category === "surface" && resultCubeFiles.includes(source)) {
+    $<HTMLSelectElement>("surfacePrimary").value = source;
+    $<HTMLSelectElement>("surfaceOperation").value = "display";
+    syncSurfaceOperation();
+    void showSurface();
+  }
 }
 
 $<HTMLSelectElement>("moSides").addEventListener("change", redrawActiveVolume);
