@@ -560,22 +560,29 @@ const optionsCard = $<HTMLDivElement>("optionsCard");
 const hessTypeSel = $<HTMLSelectElement>("hessType");
 const hessTypeHint = $<HTMLSpanElement>("hessTypeHint");
 
+function syncWorkflowOptions(): void {
+  document.querySelectorAll<HTMLElement>(".wf-opt").forEach((row) => {
+    const workflows = (row.dataset.for ?? "").split(" ");
+    const theories = (row.dataset.theories ?? "").split(" ").filter(Boolean);
+    row.classList.toggle("on", (workflows.includes("*") || workflows.includes(currentWf.key)) &&
+      (!theories.length || theories.includes(theorySel.value)));
+  });
+}
+
 function selectWorkflow(wf: Workflow): void {
   const firstSelection = optionsCard.style.display === "none";
   currentWf = wf;
   $<HTMLSelectElement>("workflowSel").value = wf.key;
   $<HTMLDivElement>("workflowDescription").textContent = wf.desc;
-  document.querySelectorAll<HTMLElement>(".wf-opt, .wf-detail").forEach((row) => {
-    const workflows = (row.dataset.for ?? "").split(" ");
-    const theories = (row.dataset.theories ?? "").split(" ").filter(Boolean);
-    row.classList.toggle("on", (workflows.includes("*") || workflows.includes(wf.key)) &&
-      (!theories.length || theories.includes(theorySel.value)));
-  });
   for (const option of Array.from(theorySel.options)) {
     option.disabled = !wf.theories.includes(option.value);
   }
   if (firstSelection || !wf.theories.includes(theorySel.value)) {
     theorySel.value = wf.defaultTheory ?? wf.theories[0];
+  }
+  if (wf.key === "opt") $<HTMLInputElement>("targetState").value = "0";
+  if (wf.key === "exopt" && fieldValue("targetState") === "0") {
+    $<HTMLInputElement>("targetState").value = "1";
   }
   if (wf.key === "hess" && ["hf", "dft"].includes(theorySel.value)) {
     hessTypeSel.value = "analytical";
@@ -583,6 +590,7 @@ function selectWorkflow(wf: Workflow): void {
   $<HTMLSpanElement>("wfLabel").textContent = `— ${wf.title}`;
   optionsCard.style.display = "";
   syncFieldStates();
+  syncWorkflowOptions();
   syncWorkflowDetails();
   updateInpPreview();
 }
@@ -789,7 +797,7 @@ function generateInp(): string {
   switch (currentWf.key) {
     case "energy": driver = `energy${stateArg}`; break;
     case "grad": driver = `grad${stateArg}`; break;
-    case "opt": driver = `opt${stateArg}`; break;
+    case "opt": driver = usesStates ? `opt(S${target})` : "opt"; break;
     case "hess": {
       const hessState = stateArg ? `${stateArg.slice(0, -1)},` : "(";
       driver = `hess${hessState}type=${hessTypeSel.value})`;
@@ -992,6 +1000,7 @@ for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCus
   $<HTMLElement>(id).addEventListener("input", () => {
     syncFieldStates();
     if (id === "pcmSolvent") syncPcmSolvent();
+    if (id === "theory") syncWorkflowOptions();
     syncWorkflowDetails();
     updateInpPreview();
   });
