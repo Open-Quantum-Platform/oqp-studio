@@ -97,6 +97,8 @@ def extract_zip(archive: zipfile.ZipFile, target: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.symlink_to(link_name)
 
+    validate_links(target)
+
 
 def extract_tar(archive: tarfile.TarFile, target: Path) -> None:
     """Extract files, directories, and safe relative links from a TAR archive."""
@@ -134,6 +136,8 @@ def extract_tar(archive: tarfile.TarFile, target: Path) -> None:
         _link_target(target, destination, link_name)
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.symlink_to(link_name)
+
+    validate_links(target)
 
     # Restrictive directory modes must come last or child extraction can lose
     # write/traverse access. Deepest-first also handles parents without +x.

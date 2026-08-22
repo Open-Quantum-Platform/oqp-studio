@@ -56,6 +56,20 @@ def test_zip_extracts_safe_relative_symlinks(tmp_path):
     assert link.read_bytes() == b"library"
 
 
+def test_zip_revalidates_the_completed_symlink_graph(tmp_path):
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        first = zipfile.ZipInfo("app/openqp")
+        first.external_attr = (stat.S_IFLNK | 0o777) << 16
+        archive.writestr(first, b"sub/link/../../outside")
+        later = zipfile.ZipInfo("app/sub/link")
+        later.external_attr = (stat.S_IFLNK | 0o777) << 16
+        archive.writestr(later, b"..")
+
+    with zipfile.ZipFile(payload) as archive, pytest.raises(UnsafeArchiveError):
+        extract_zip(archive, tmp_path)
+
+
 def test_tar_rejects_symlinks_that_escape_the_destination(tmp_path):
     payload = io.BytesIO()
     with tarfile.open(fileobj=payload, mode="w") as archive:
@@ -87,6 +101,23 @@ def test_tar_extracts_safe_relative_symlinks(tmp_path):
     link = tmp_path / "app" / "lib" / "alias.dylib"
     assert link.is_symlink()
     assert link.read_bytes() == b"library"
+
+
+def test_tar_revalidates_the_completed_symlink_graph(tmp_path):
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w") as archive:
+        first = tarfile.TarInfo("app/openqp")
+        first.type = tarfile.SYMTYPE
+        first.linkname = "sub/link/../../outside"
+        archive.addfile(first)
+        later = tarfile.TarInfo("app/sub/link")
+        later.type = tarfile.SYMTYPE
+        later.linkname = ".."
+        archive.addfile(later)
+    payload.seek(0)
+
+    with tarfile.open(fileobj=payload) as archive, pytest.raises(UnsafeArchiveError):
+        extract_tar(archive, tmp_path)
 
 
 def test_tar_extracts_regular_files(tmp_path):
