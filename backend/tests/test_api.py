@@ -804,6 +804,63 @@ def test_scan_polling_parses_each_completed_point_only_once(monkeypatch):
     assert calls == len(infos)
 
 
+def test_project_comparison_aligns_structures_and_keeps_energy_differences(tmp_path, monkeypatch):
+    import json
+    from datetime import datetime, timezone
+
+    from oqp_studio import jobs, main
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    for job_id, name, energy, xyz, states in (
+        ("left", "reference", -1.1, "H 0 0 -0.4\nH 0 0 0.4\n", [-1.1, -0.9]),
+        ("right", "candidate", -1.0, "H 4 -0.4 2\nH 4 0.4 2\n", [-1.0, -0.75]),
+    ):
+        directory = tmp_path / job_id
+        directory.mkdir()
+        (directory / "result.xyz").write_text(f"2\n{name}\n{xyz}")
+        (directory / "result.json").write_text(json.dumps({
+            "energy": energy, "td_energies": states, "dipole": [0.0, 0.0, 1.0],
+        }))
+        manager._jobs[job_id] = jobs.JobInfo(
+            id=job_id, name=name, status=jobs.JobStatus.done, runner="bundled",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+    monkeypatch.setattr(main, "manager", manager)
+    main._summary_cache.clear()
+
+    response = client.get("/api/comparison?left=left&right=right")
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert abs(data["energy_delta_hartree"] - 0.1) < 1.0e-12
+    assert abs(data["energy_delta_kcal_mol"] - 62.7509474) < 1.0e-9
+    assert data["geometry"]["rmsd_angstrom"] < 1.0e-12
+    assert data["states"][1]["delta_ev"] > 1.0
+
+
+def test_project_comparison_rejects_an_active_calculation(monkeypatch):
+    from datetime import datetime, timezone
+
+    from oqp_studio import jobs, main
+
+    class ActiveManager:
+        def get(self, job_id):
+            return jobs.JobInfo(
+                id=job_id, name=job_id,
+                status=jobs.JobStatus.running if job_id == "active" else jobs.JobStatus.done,
+                runner="bundled", created_at=datetime.now(timezone.utc).isoformat(),
+            )
+
+    monkeypatch.setattr(main, "manager", ActiveManager())
+
+    response = client.get("/api/comparison?left=done&right=active")
+
+    assert response.status_code == 409
+    assert "completed projects" in response.json()["detail"]
+
+
 def test_dyson_strength_is_reported_as_twice_its_occupation(monkeypatch):
     """Molden's Occup field is an OpenQP Dyson strength, not an occupancy."""
     import numpy as np

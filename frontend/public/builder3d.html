@@ -192,20 +192,28 @@
           });
         }
 
-        async function addShieldingMap(xyz, shielding) {
+        async function addAtomicPropertyMap(xyz, values) {
           const rows = xyz.split("\n");
           const count = parseInt(rows[0], 10);
-          if (!Number.isFinite(count) || !Array.isArray(shielding) || shielding.length !== count) return;
+          if (!Number.isFinite(count) || !Array.isArray(values) || values.length !== count) return;
+          const finite = values.map(Number);
+          if (finite.some((value) => !Number.isFinite(value))) return;
+          const minimum = Math.min(...finite);
+          const maximum = Math.max(...finite);
           const pdb = [];
           for (let i = 0; i < count; i += 1) {
             const parts = (rows[i + 2] || "").trim().split(/\s+/);
             if (parts.length < 4) return;
-            const value = Number(shielding[i].total_coupled);
+            const value = finite[i];
+            const normalized = maximum === minimum ? 50 : 100 * (value - minimum) / (maximum - minimum);
             const [element, x, y, z] = parts;
+            const label = Math.abs(value) >= 100 ? value.toFixed(0)
+              : Math.abs(value) >= 10 ? value.toFixed(value < 0 ? 0 : 1)
+              : value.toFixed(1);
             pdb.push("HETATM" + String(i + 1).padStart(5) + " " +
-              String(Math.round(value)).padStart(4).slice(0, 4) + " NMR A   1    " +
+              label.padStart(4).slice(-4) + " MAP A   1    " +
               Number(x).toFixed(3).padStart(8) + Number(y).toFixed(3).padStart(8) +
-              Number(z).toFixed(3).padStart(8) + "  1.00" + value.toFixed(2).padStart(6) +
+              Number(z).toFixed(3).padStart(8) + "  1.00" + normalized.toFixed(2).padStart(6) +
               "          " + element.toUpperCase().padStart(2));
           }
           pdb.push("END");
@@ -217,11 +225,19 @@
           const component = await plugin.builders.structure.tryCreateComponentStatic(structure, "all");
           if (!component) return;
           await plugin.builders.structure.representation.addRepresentation(component, {
-            type: "spacefill", color: "bfactor", typeParams: { sizeFactor: 0.42 },
+            type: "spacefill", color: "uncertainty", typeParams: { sizeFactor: 0.42 },
           });
           await plugin.builders.structure.representation.addRepresentation(component, {
             type: "label", typeParams: { level: "element", attachment: "middle-center", sizeFactor: 0.55, backgroundOpacity: 0.45 },
           });
+        }
+
+        async function showAtomicProperty(values) {
+          if (!last || last.format !== "xyz") return;
+          const source = { ...last };
+          await viewer.plugin.clear();
+          await drawStructure(source.data, source.format);
+          await addAtomicPropertyMap(source.data, values);
         }
 
         async function drawStructure(data, format = "xyz") {
@@ -621,8 +637,10 @@
             report();
             await viewer.plugin.clear();
             await drawStructure(message.xyz);
+          } else if (message.type === "oqp-atomic-property") {
+            await showAtomicProperty(message.values);
           } else if (message.type === "oqp-nmr-shielding") {
-            if (last && last.format === "xyz") await addShieldingMap(last.data, message.shielding);
+            await showAtomicProperty((message.shielding || []).map((row) => row.total_coupled));
           } else if (message.type === "oqp-normal-mode") {
             picked.length = 0;
             report();
