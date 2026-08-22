@@ -74,7 +74,8 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
     header_end = 6 + atoms
     if len(lines) < header_end:
         raise ValueError("cube atom header is incomplete")
-    if sum(len(line) + 1 for line in lines[:header_end]) > MAX_CUBE_HEADER:
+    header_size = sum(len(line) + 1 for line in lines[:header_end])
+    if header_size > MAX_CUBE_HEADER:
         raise ValueError(f"cube header is limited to {MAX_CUBE_HEADER // (1024 * 1024)} MiB")
     try:
         atom_records = [_record(line, (5,)) for line in lines[6:header_end]]
@@ -95,7 +96,13 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
         dataset_ids: int | None = None
         identifiers: list[int] = []
         while header_end < len(lines):
-            tokens = _tokens(lines[header_end])
+            identifier_line = lines[header_end]
+            header_size += len(identifier_line) + 1
+            if header_size > MAX_CUBE_HEADER:
+                raise ValueError(
+                    f"cube header is limited to {MAX_CUBE_HEADER // (1024 * 1024)} MiB"
+                )
+            tokens = _tokens(identifier_line)
             header_end += 1
             for token in tokens:
                 if dataset_ids is None:

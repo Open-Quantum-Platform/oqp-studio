@@ -1476,6 +1476,15 @@ def test_cube_header_has_an_aggregate_size_limit():
     with pytest.raises(ValueError, match="header is limited to 4 MiB"):
         cube.parse(text)
 
+    padded_identifiers = (
+        "cube\nvalues\n"
+        "-1 0 0 0\n1 1 0 0\n1 0 1 0\n1 0 0 1\n"
+        "1 0 0 0 0\n"
+        "1" + " " * cube.MAX_CUBE_HEADER + "7\n0.0\n"
+    )
+    with pytest.raises(ValueError, match="header is limited to 4 MiB"):
+        cube.parse(padded_identifiers)
+
 
 def test_cube_arithmetic_rejects_different_grids():
     import pytest
