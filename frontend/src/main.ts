@@ -1383,6 +1383,8 @@ runButton.addEventListener("click", async () => {
 // ---------- results ----------
 let selectedJob = "";
 let resultMoldenFiles: string[] = [];
+type ListedJob = { id: string; name: string; runner: string; status: string; error?: string | null };
+let listedJobs: ListedJob[] = [];
 
 type ScanPoint = {
   job_id: string; name: string; status: string;
@@ -1390,8 +1392,8 @@ type ScanPoint = {
 };
 
 async function refreshJobs(): Promise<void> {
-  const jobs: { id: string; name: string; runner: string; status: string; error?: string | null }[] =
-    await (await fetch("/api/jobs")).json();
+  const jobs: ListedJob[] = await (await fetch("/api/jobs")).json();
+  listedJobs = jobs;
   const body = $<HTMLTableSectionElement>("jobsBody");
   body.innerHTML = "";
   for (const job of jobs) {
@@ -1423,8 +1425,54 @@ async function refreshJobs(): Promise<void> {
     });
     body.appendChild(tr);
   }
+  syncComparisonProjects();
 }
 $<HTMLButtonElement>("jobsRefresh").addEventListener("click", refreshJobs);
+
+function syncComparisonProjects(): void {
+  const select = $<HTMLSelectElement>("comparisonReference");
+  const previous = select.value;
+  const candidates = listedJobs.filter((job) =>
+    job.id !== selectedJob && ["done", "not_converged"].includes(job.status));
+  select.innerHTML = '<option value="">Choose a reference…</option>' + candidates.map((job) =>
+    `<option value="${escapeMarkup(job.id)}">${escapeMarkup(job.name)}</option>`).join("");
+  if (candidates.some((job) => job.id === previous)) select.value = previous;
+  $<HTMLDivElement>("comparisonCard").style.display = selectedJob && candidates.length ? "" : "none";
+  $<HTMLButtonElement>("comparisonRun").disabled = !select.value;
+}
+
+$<HTMLSelectElement>("comparisonReference").addEventListener("change", (event) => {
+  $<HTMLButtonElement>("comparisonRun").disabled = !(event.target as HTMLSelectElement).value;
+});
+
+$<HTMLButtonElement>("comparisonRun").addEventListener("click", async () => {
+  const left = $<HTMLSelectElement>("comparisonReference").value;
+  if (!left || !selectedJob) return;
+  const response = await fetch(
+    `/api/comparison?left=${encodeURIComponent(left)}&right=${encodeURIComponent(selectedJob)}`,
+  );
+  const body = $<HTMLDivElement>("comparisonBody");
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    body.innerHTML = `<div class="hint">${escapeMarkup(detail?.detail ?? `comparison failed (${response.status})`)}</div>`;
+    return;
+  }
+  const data = await response.json();
+  const values: [string, string][] = [];
+  if (data.left.energy != null) values.push([escapeMarkup(`${data.left.name} energy (Ha)`), fixed(data.left.energy, 8)]);
+  if (data.right.energy != null) values.push([escapeMarkup(`${data.right.name} energy (Ha)`), fixed(data.right.energy, 8)]);
+  if (data.energy_delta_hartree != null) values.push(["ΔE, current − reference (Ha)", fixed(data.energy_delta_hartree, 8)]);
+  if (data.energy_delta_kcal_mol != null) values.push(["ΔE, current − reference (kcal/mol)", fixed(data.energy_delta_kcal_mol, 3)]);
+  if (data.geometry.available) values.push(["Aligned structure RMSD (Å)", fixed(data.geometry.rmsd_angstrom, 5)]);
+  else values.push(["Structure RMSD", data.geometry.reason]);
+  if (data.dipole_delta_debye != null) values.push(["Δ|μ| (Debye)", fixed(data.dipole_delta_debye, 4)]);
+  const stateRows = data.states.length ? `<div class="sum-title">Matched excited states</div><table class="sum">
+    <tr><th>State</th><th>Reference (eV)</th><th>Current (eV)</th><th>Δ (eV)</th></tr>${data.states.map(
+      (state: { index: number; left_ev: number; right_ev: number; delta_ev: number }) =>
+        `<tr><td class="k">S${state.index}</td><td class="v">${fixed(state.left_ev, 4)}</td><td class="v">${fixed(state.right_ev, 4)}</td><td class="v">${fixed(state.delta_ev, 4)}</td></tr>`,
+    ).join("")}</table>` : "";
+  body.innerHTML = `<div class="sum-title">Current relative to reference</div>${rows(values)}${stateRows}`;
+});
 
 async function cancelJob(jobId: string, name: string): Promise<void> {
   if (!window.confirm(`Cancel the running calculation “${name}”?`)) return;
@@ -1619,6 +1667,11 @@ function resetAnalysisProject(): void {
   $<HTMLDivElement>("pathCard").style.display = "none";
   $<HTMLDivElement>("pathPlot").innerHTML = "";
   $<HTMLDivElement>("pathNote").textContent = "";
+  $<HTMLDivElement>("comparisonBody").innerHTML = "";
+  $<HTMLDivElement>("atomicPropertyCard").style.display = "none";
+  $<HTMLSelectElement>("atomicProperty").innerHTML = "";
+  $<HTMLDivElement>("propertyLegend").style.display = "none";
+  atomicProperties.clear();
 }
 
 // What to open of its own accord, best first: a molden file carries orbitals
@@ -2278,6 +2331,8 @@ type Summary = {
 };
 
 let summary: Summary | null = null;
+type AtomicProperty = { label: string; values: number[]; unit: string };
+const atomicProperties = new Map<string, AtomicProperty>();
 
 const ENERGY_LABELS: Record<string, string> = {
   total: "Total energy",
@@ -2311,6 +2366,7 @@ function fixed(value: number, digits = 6): string {
 }
 
 function renderSummary(data: Summary): void {
+  atomicProperties.clear();
   const parts: string[] = [];
   const finalStates = Object.entries(data.energy.final_states ?? {})
     .map(([index, value]) => [Number(index), value] as const)
@@ -2419,6 +2475,10 @@ function renderSummary(data: Summary): void {
   }
 
   if (data.nmr.length) {
+    atomicProperties.set("nmr", {
+      label: "NMR total coupled shielding", unit: "ppm",
+      values: data.nmr.map((row) => row.total_coupled),
+    });
     const head = "<tr><th>Atom</th><th>σdia</th><th>σpara (u)</th><th>σpara (c)</th><th>σtotal (u)</th><th>σtotal (c)</th></tr>";
     const body = data.nmr.map((row) =>
       `<tr><td class="k">${row.atom}</td><td class="v">${fixed(row.dia, 3)}</td>` +
@@ -2442,6 +2502,11 @@ function renderSummary(data: Summary): void {
     parts.push(`<div class="sum-title">Partial charges (${source})</div>` +
       rows(values.map((q, i) => [`Atom ${i + 1}`, fixed(q, 4)] as [string, string])));
   }
+  for (const [source, values] of Object.entries(data.charges)) {
+    if (values.length) atomicProperties.set(`charge:${source}`, {
+      label: `${source.toUpperCase()} partial charge`, values, unit: "e",
+    });
+  }
 
   const body = $<HTMLDivElement>("summaryBody");
   body.innerHTML = parts.length
@@ -2449,9 +2514,29 @@ function renderSummary(data: Summary): void {
     : '<div class="hint">nothing summarisable in this job\u2019s output yet</div>';
   $<HTMLDivElement>("summaryCard").style.display = parts.length ? "" : "none";
   document.getElementById("showNmrMap")?.addEventListener("click", () => {
-    pushToResultViewer({ type: "oqp-nmr-shielding", shielding: data.nmr });
+    showAtomicProperty("nmr");
   });
+  const propertySelect = $<HTMLSelectElement>("atomicProperty");
+  propertySelect.innerHTML = [...atomicProperties.entries()].map(([key, property]) =>
+    `<option value="${escapeMarkup(key)}">${escapeMarkup(property.label)}</option>`).join("");
+  $<HTMLDivElement>("atomicPropertyCard").style.display = atomicProperties.size ? "" : "none";
 }
+
+function showAtomicProperty(key = $<HTMLSelectElement>("atomicProperty").value): void {
+  const property = atomicProperties.get(key);
+  if (!property) return;
+  pushToResultViewer({
+    type: "oqp-atomic-property", values: property.values,
+    label: property.label, unit: property.unit,
+  });
+  const minimum = Math.min(...property.values);
+  const maximum = Math.max(...property.values);
+  $<HTMLSpanElement>("propertyMinimum").textContent = `${fixed(minimum, 3)} ${property.unit}`;
+  $<HTMLSpanElement>("propertyMaximum").textContent = `${fixed(maximum, 3)} ${property.unit}`;
+  $<HTMLDivElement>("propertyLegend").style.display = "";
+}
+
+$<HTMLButtonElement>("showAtomicProperty").addEventListener("click", () => showAtomicProperty());
 
 // ---------- spectra ----------
 const SPECTRA: { value: string; label: string; needs: "freq" | "states" | "exopt" | "ip" | "ea" }[] = [

@@ -51,6 +51,12 @@ Analysis plots relative energies in kcal/mol, and selecting a point opens that
 calculation and structure. Optimization, IRC, and NEB histories use the same
 interactive reaction-path plot when their step energies are present.
 
+Analysis can compare any two completed projects without merging their result
+identities. It reports the current-minus-reference energy, aligned Cartesian
+structure RMSD, dipole-magnitude change, and matched excited-state energy
+changes. Atomic results exported by OpenQP are also available as labeled 3D
+maps: Mulliken, Lowdin, and RESP partial charges, plus coupled NMR shielding.
+
 Until OpenQP's native continuum solver is merged, the bundled engine also
 contains the external ddX library required for PCM calculations.
 

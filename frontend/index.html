@@ -248,6 +248,11 @@
       .path-point { fill: var(--panel); stroke: var(--accent); stroke-width: 2; cursor: pointer; }
       .path-point:hover, .path-point.selected { fill: var(--accent); }
       .path-label { fill: var(--text-dim); font: 11px system-ui, sans-serif; }
+      .property-scale {
+        height: 10px; margin-top: .7rem; border-radius: 3px;
+        background: linear-gradient(90deg, #3b6fd6, #d9dde4 50%, #d64a3b);
+      }
+      .property-range { display: flex; justify-content: space-between; color: var(--text-dim); font-size: 11px; }
 
       /* Viewer plus its measurement read-out. */
       .viewer-wrap { position: relative; min-width: 0; height: 100%; }
@@ -1024,6 +1029,13 @@
                 <tbody id="jobsBody"></tbody>
               </table>
             </div>
+            <div class="card" id="comparisonCard" style="display:none">
+              <h3>Compare projects</h3>
+              <label>Reference project</label>
+              <select id="comparisonReference"><option value="">Choose a reference…</option></select>
+              <div class="actions"><button id="comparisonRun" type="button" disabled>Compare</button></div>
+              <div id="comparisonBody"></div>
+            </div>
             <div class="card">
               <h3>Project files</h3>
               <ul class="files" id="resultFiles"><li class="hint">select a job</li></ul>
@@ -1047,6 +1059,16 @@
             <div class="card" id="summaryCard" style="display:none">
               <h3>Results summary</h3>
               <div id="summaryBody"></div>
+            </div>
+            <div class="card" id="atomicPropertyCard" style="display:none">
+              <h3>3D atomic property</h3>
+              <label>Property</label>
+              <select id="atomicProperty"></select>
+              <div class="actions"><button id="showAtomicProperty" type="button">Show on molecule</button></div>
+              <div id="propertyLegend" style="display:none">
+                <div class="property-scale"></div>
+                <div class="property-range"><span id="propertyMinimum"></span><span id="propertyMaximum"></span></div>
+              </div>
             </div>
             <div class="card" id="spectrumCard" style="display:none">
               <h3>Spectrum

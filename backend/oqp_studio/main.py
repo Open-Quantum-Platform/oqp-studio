@@ -22,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import __version__, engine, environment, host, network, scans
-from .jobs import JobInfo, JobRequest, manager
+from .jobs import JobInfo, JobRequest, JobStatus, manager
 from .runners import available_runners
 
 # How long each piece of starting up took, on stderr. The shell gives the
@@ -681,6 +681,118 @@ def _job_paths(job_id: str) -> list[Path]:
         path for entry in manager.files(job_id)
         if (path := manager.file_path(job_id, entry["name"])) is not None
     ]
+
+
+def _summary_energy(summary: dict) -> float | None:
+    energy = summary.get("energy", {})
+    value = energy.get("total", energy.get("components", {}).get("total"))
+    if value is None:
+        value = summary.get("scf", {}).get("energy")
+    return float(value) if value is not None else None
+
+
+def _comparison_frame(paths: list[Path]):
+    from . import structure_io
+
+    def rank(path: Path) -> tuple[int, str]:
+        name = path.name.lower()
+        if name == "opt.xyz" or name.endswith((".trj", ".namd.trj")):
+            return (0, name)
+        if name.endswith((".xyz", ".molden", ".json", ".log", ".out")):
+            return (1, name)
+        if name.endswith((".oqp", ".inp", ".pdb")):
+            return (2, name)
+        return (3, name)
+
+    for path in sorted(paths, key=rank):
+        try:
+            structure = structure_io.parse(path.name, path.read_bytes(), path=str(path))
+        except (OSError, ValueError):
+            continue
+        if structure.frames and structure.frames[-1].atoms:
+            return structure.frames[-1]
+    return None
+
+
+def _geometry_comparison(left_paths: list[Path], right_paths: list[Path]) -> dict:
+    import numpy as np
+
+    left = _comparison_frame(left_paths)
+    right = _comparison_frame(right_paths)
+    if left is None or right is None:
+        return {"available": False, "reason": "a comparable structure is missing"}
+    left_symbols = [atom[0] for atom in left.atoms]
+    right_symbols = [atom[0] for atom in right.atoms]
+    if left_symbols != right_symbols:
+        return {
+            "available": False,
+            "reason": "atom counts or atom ordering differ",
+            "left_atoms": len(left_symbols), "right_atoms": len(right_symbols),
+        }
+    left_xyz = np.asarray([atom[1:] for atom in left.atoms], dtype=float)
+    right_xyz = np.asarray([atom[1:] for atom in right.atoms], dtype=float)
+    left_centered = left_xyz - left_xyz.mean(axis=0)
+    right_centered = right_xyz - right_xyz.mean(axis=0)
+    u, _, vt = np.linalg.svd(left_centered.T @ right_centered)
+    correction = np.eye(3)
+    correction[-1, -1] = np.sign(np.linalg.det(u @ vt))
+    rotation = u @ correction @ vt
+    difference = left_centered @ rotation - right_centered
+    return {
+        "available": True,
+        "atoms": len(left_symbols),
+        "rmsd_angstrom": float(np.sqrt(np.mean(np.sum(difference * difference, axis=1)))),
+    }
+
+
+@app.get("/api/comparison")
+def compare_jobs(left: str, right: str) -> dict:
+    """Compare two completed calculations without conflating their methods."""
+    left_info = manager.get(left)
+    right_info = manager.get(right)
+    if left_info is None or right_info is None:
+        raise HTTPException(status_code=404, detail="comparison project not found")
+    terminal = {JobStatus.done, JobStatus.not_converged}
+    if left_info.status not in terminal or right_info.status not in terminal:
+        raise HTTPException(status_code=409, detail="comparison requires completed projects")
+    left_paths = _job_paths(left)
+    right_paths = _job_paths(right)
+    left_summary = _job_summary(left)
+    right_summary = _job_summary(right)
+    left_energy = _summary_energy(left_summary)
+    right_energy = _summary_energy(right_summary)
+    state_left = {row["index"]: row for row in left_summary.get("states", [])}
+    state_right = {row["index"]: row for row in right_summary.get("states", [])}
+    states = []
+    for index in sorted(state_left.keys() & state_right.keys()):
+        left_ev = state_left[index].get("excitation_ev")
+        right_ev = state_right[index].get("excitation_ev")
+        if not isinstance(left_ev, (int, float)) or not isinstance(right_ev, (int, float)):
+            continue
+        states.append({
+            "index": index, "left_ev": left_ev, "right_ev": right_ev,
+            "delta_ev": right_ev - left_ev,
+        })
+    left_dipole = left_summary.get("dipole") or {}
+    right_dipole = right_summary.get("dipole") or {}
+    return {
+        "left": {"id": left, "name": left_info.name, "energy": left_energy},
+        "right": {"id": right, "name": right_info.name, "energy": right_energy},
+        "energy_delta_hartree": (
+            right_energy - left_energy
+            if left_energy is not None and right_energy is not None else None
+        ),
+        "energy_delta_kcal_mol": (
+            (right_energy - left_energy) * 627.509474
+            if left_energy is not None and right_energy is not None else None
+        ),
+        "geometry": _geometry_comparison(left_paths, right_paths),
+        "states": states,
+        "dipole_delta_debye": (
+            right_dipole["total_debye"] - left_dipole["total_debye"]
+            if "total_debye" in left_dipole and "total_debye" in right_dipole else None
+        ),
+    }
 
 
 @app.get("/api/jobs/{job_id}/summary")
