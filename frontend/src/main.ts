@@ -629,23 +629,20 @@ $<HTMLButtonElement>("symmetryAnalyze").addEventListener("click", async () => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ xyz: source, tolerance }),
   });
+  const payload = await response.json().catch(() => null);
   if (requestId !== symmetryRequestId || source !== xyzArea.value ||
       tolerance !== +$<HTMLInputElement>("symmetryTolerance").value) return;
   symmetryPendingSource = "";
   symmetryPendingTolerance = null;
   if (!response.ok) {
-    const detail = await response.json().catch(() => null);
-    if (requestId !== symmetryRequestId || source !== xyzArea.value ||
-        tolerance !== +$<HTMLInputElement>("symmetryTolerance").value) return;
-    status.textContent = detail?.detail ?? `symmetry analysis failed (${response.status})`;
+    status.textContent = payload?.detail ?? `symmetry analysis failed (${response.status})`;
     return;
   }
-  symmetryResult = await response.json();
-  if (requestId !== symmetryRequestId || source !== xyzArea.value ||
-      tolerance !== +$<HTMLInputElement>("symmetryTolerance").value) {
-    symmetryResult = null;
+  if (!payload) {
+    status.textContent = "symmetry analysis returned an invalid response";
     return;
   }
+  symmetryResult = payload;
   symmetrySource = source;
   symmetryTolerance = tolerance;
   const equivalents = symmetryResult!.equivalent_atoms

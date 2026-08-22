@@ -1984,6 +1984,29 @@ def test_symmetry_detects_a_pure_improper_rotation_group():
     assert symmetry.analyze("\n".join(rows), tolerance=0.001)["point_group"] == "S4"
 
 
+def test_symmetry_screens_compact_improper_operations_by_their_full_displacement():
+    from math import cos, pi, sin
+
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    coordinates = []
+    symbols = []
+    for symbol, radius, height, offset in (("C", 0.30, 0.40, 0.0), ("H", 0.34, 0.70, 0.37)):
+        for index in range(4):
+            angle = offset + index * pi / 2
+            z = height if index % 2 == 0 else -height
+            symbols.append(symbol)
+            coordinates.append([radius * cos(angle), radius * sin(angle), z])
+
+    xyz = np.asarray(coordinates)
+    axis = np.asarray([0.0, 0.0, 1.0])
+
+    assert 4 not in symmetry._rotation_orders(symbols, xyz, axis, 0.5)
+    assert 4 in symmetry._improper_orders(symbols, xyz, axis, 0.5)
+
+
 def test_symmetry_distinguishes_an_icosahedral_structure():
     from oqp_studio import symmetry
 

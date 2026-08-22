@@ -34,7 +34,7 @@ MAX_MATCH_WORK = 40_000_000
 MAX_ASSIGNMENT_EDGES = 10_000
 MAX_ASSIGNMENT_VISITS = 100_000
 MAX_XYZ_CHARACTERS = 1_000_000
-MAX_ROTATION_SCREEN_WORK = 3_000_000
+MAX_ROTATION_SCREEN_WORK = 5_000_000
 
 
 @dataclass
@@ -69,10 +69,24 @@ def _rotation(axis: np.ndarray, angle: float) -> np.ndarray:
 def _rotation_orders(symbols: list[str], coordinates: np.ndarray, axis: np.ndarray,
                      tolerance: float) -> list[int]:
     """Orders compatible with atoms detectably moved by each candidate rotation."""
+    return _operation_orders(symbols, coordinates, axis, tolerance, improper=False)
+
+
+def _improper_orders(symbols: list[str], coordinates: np.ndarray, axis: np.ndarray,
+                     tolerance: float) -> list[int]:
+    """Orders compatible with displacement from rotation followed by reflection."""
+    return _operation_orders(symbols, coordinates, axis, tolerance, improper=True)
+
+
+def _operation_orders(symbols: list[str], coordinates: np.ndarray, axis: np.ndarray,
+                      tolerance: float, *, improper: bool) -> list[int]:
     maximum = max(Counter(symbols).values(), default=1)
+    reflection = np.eye(3) - 2 * np.outer(axis, axis)
     orders: list[int] = []
     for order in range(2, maximum + 1):
         matrix = _rotation(axis, 2 * pi / order)
+        if improper:
+            matrix = matrix @ reflection
         displacement = np.linalg.norm(coordinates @ matrix.T - coordinates, axis=1)
         counts = Counter(
             symbol for symbol, moved in zip(symbols, displacement) if moved > tolerance
@@ -299,9 +313,14 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
         principal_line = directions[0]
         projection = np.outer(coordinates @ principal_line, principal_line)
         maximum_perpendicular = float(np.max(np.linalg.norm(coordinates - projection, axis=1)))
+        axial_extent = float(np.max(np.abs(coordinates @ principal_line)))
     else:
         maximum_perpendicular = 0.0
-    linear = len(atoms) == 2 or (len(atoms) > 2 and maximum_perpendicular <= tolerance)
+        axial_extent = 0.0
+    linear = len(atoms) == 2 or (
+        len(atoms) > 2 and maximum_perpendicular <= tolerance
+        and maximum_perpendicular <= 0.05 * max(axial_extent, 1.0e-12)
+    )
 
     seed_axes = [np.eye(3)[index] for index in range(3)]
     atom_axes = _unique_axes([point for point in coordinates])[:80]
@@ -341,17 +360,19 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
     rotation_screen_work = 0
     maximum_order = max(Counter(symbols).values(), default=1)
     for axis in axes:
-        rotation_screen_work += len(atoms) * max(0, maximum_order - 1)
+        rotation_screen_work += 2 * len(atoms) * max(0, maximum_order - 1)
         if rotation_screen_work > MAX_ROTATION_SCREEN_WORK:
             raise ValueError(
                 "symmetry rotation screening exceeded its work limit; "
                 "use fewer atoms or a tighter tolerance"
             )
-        for order in _rotation_orders(symbols, coordinates, axis, tolerance):
-            reflection = np.eye(3) - 2 * np.outer(axis, axis)
+        proper_orders = set(_rotation_orders(symbols, coordinates, axis, tolerance))
+        improper_orders = set(_improper_orders(symbols, coordinates, axis, tolerance))
+        reflection = np.eye(3) - 2 * np.outer(axis, axis)
+        for order in sorted(proper_orders | improper_orders):
             matrix = _rotation(axis, 2 * pi / order)
-            matched = (bounded_match(matrix)
-                       if _moves_coordinates(coordinates, matrix, tolerance) else None)
+            matched = (bounded_match(matrix) if order in proper_orders
+                       and _moves_coordinates(coordinates, matrix, tolerance) else None)
             if matched:
                 powers = _operation_powers(
                     f"C{order}", matrix, matched, order, coordinates, tolerance,
@@ -359,8 +380,9 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
                 rotations.setdefault(order, []).append((axis, powers[0]))
                 operations.extend(powers)
             improper_matrix = matrix @ reflection
-            improper_match = (bounded_match(improper_matrix)
-                              if _moves_coordinates(coordinates, matrix, tolerance) else None)
+            improper_match = (bounded_match(improper_matrix) if order in improper_orders
+                              and _moves_coordinates(coordinates, improper_matrix, tolerance)
+                              else None)
             if improper_match:
                 powers = _operation_powers(
                     f"S{order}", improper_matrix, improper_match,
