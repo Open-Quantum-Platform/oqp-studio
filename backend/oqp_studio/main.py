@@ -578,6 +578,13 @@ def _job_summary(job_id: str) -> dict:
     return cached
 
 
+def _job_paths(job_id: str) -> list[Path]:
+    return [
+        path for entry in manager.files(job_id)
+        if (path := manager.file_path(job_id, entry["name"])) is not None
+    ]
+
+
 @app.get("/api/jobs/{job_id}/summary")
 def job_summary(job_id: str, refresh: bool = False) -> dict:
     """Energies, states, frequencies, thermochemistry and properties."""
@@ -586,16 +593,41 @@ def job_summary(job_id: str, refresh: bool = False) -> dict:
     return _job_summary(job_id)
 
 
+@app.get("/api/jobs/{job_id}/optimization")
+def job_optimization(job_id: str) -> dict:
+    """Geometry, convergence measures and response data for each opt step."""
+    from . import analysis
+
+    if manager.get(job_id) is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    return analysis.optimization_history(_job_paths(job_id))
+
+
 @app.get("/api/jobs/{job_id}/spectrum")
 def job_spectrum(job_id: str, kind: str = "ir", shape: str = "lorentzian",
-                 fwhm: float | None = None, state: int = 1) -> dict:
+                 fwhm: float | None = None, state: int = 1,
+                 step: int | None = None) -> dict:
     """One broadened spectrum. Lorentzian is the default line shape."""
     from . import analysis, spectra
 
     if shape not in spectra.SHAPES:
         raise HTTPException(status_code=400, detail=f"unknown line shape: {shape}")
-    return analysis.spectrum(_job_summary(job_id), kind, shape=shape,
-                             fwhm=fwhm, state=max(1, state))
+    summary = _job_summary(job_id)
+    if step is not None and kind in {"absorption", "emission", "esa"}:
+        selected = next((item for item in analysis.optimization_history(_job_paths(job_id))["steps"]
+                         if item["index"] == step), None)
+        if selected is None or len(selected["states"]) < 2:
+            return {"available": False,
+                    "reason": f"no state-resolved spectrum recorded for optimization step {step}"}
+        summary = dict(summary)
+        summary["states"] = selected["states"]
+        summary["transitions"] = selected["transitions"]
+        summary["has_states"] = True
+        summary["has_oscillators"] = any(row.get("oscillator") is not None for row in selected["states"])
+    data = analysis.spectrum(summary, kind, shape=shape, fwhm=fwhm, state=max(1, state))
+    if step is not None and kind in {"absorption", "emission", "esa"} and data.get("available"):
+        data["title"] = f"{data.get('title', 'Spectrum')} at optimization step {step}"
+    return data
 
 
 MAP_KINDS = ("density", "spin", "alpha", "beta", "esp")

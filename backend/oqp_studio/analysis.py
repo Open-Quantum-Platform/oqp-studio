@@ -420,6 +420,117 @@ def summarize(paths: list[Path]) -> dict:
     return summary
 
 
+def optimization_history(paths: list[Path]) -> dict:
+    """Return the recorded geometries and electronic data for an optimization.
+
+    ``opt_geom.xyz`` is the authoritative geometry trajectory, ``opt_status``
+    supplies the convergence measures, and the calculation log supplies the
+    state-resolved energies and oscillator strengths at each geometry.
+    """
+    from .structure_io import parse_xyz
+
+    trajectory = next((path for path in paths if path.name.lower() == "opt_geom.xyz"), None)
+    status_file = next((path for path in paths if path.name.lower() == "opt_status.txt"), None)
+    log_file = next((path for path in paths if path.suffix.lower() in (".log", ".out")
+                     and path.name.lower() != "job.log"), None)
+    if trajectory is None:
+        return {"steps": []}
+
+    try:
+        frames = parse_xyz(trajectory.read_text(errors="replace"))
+    except (OSError, ValueError):
+        return {"steps": []}
+
+    steps: dict[int, dict] = {}
+    for position, frame in enumerate(frames, start=1):
+        match = re.search(r"(?:geom|step)\s+(\d+)(?:\s+(" + _NUM + r"))?", frame.label,
+                          re.IGNORECASE)
+        index = int(match.group(1)) if match else position
+        energy = float(match.group(2).replace("d", "e").replace("D", "E")) if match and match.group(2) else None
+        steps[index] = {
+            "index": index,
+            "label": frame.label or f"Step {index}",
+            "atoms": [[atom[0], atom[1], atom[2], atom[3]] for atom in frame.atoms],
+            "energy": energy,
+            "states": [],
+            "transitions": [],
+        }
+
+    if status_file is not None:
+        try:
+            for line in status_file.read_text(errors="replace").splitlines():
+                fields = line.split()
+                if len(fields) != 7 or not fields[0].isdigit():
+                    continue
+                index = int(fields[0])
+                if index not in steps:
+                    continue
+                values = [float(value.replace("d", "e").replace("D", "E")) for value in fields[1:]]
+                steps[index].update({
+                    "energy": values[0], "energy_shift": values[1],
+                    "rmsd_step": values[2], "max_step": values[3],
+                    "rmsd_grad": values[4], "max_grad": values[5],
+                })
+        except (OSError, ValueError):
+            pass
+
+    if log_file is not None:
+        _optimization_log_data(log_file, steps)
+    return {"steps": [steps[index] for index in sorted(steps)]}
+
+
+def _optimization_log_data(path: Path, steps: dict[int, dict]) -> None:
+    """Read each response summary and transition table from an optimization log."""
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return
+    current: int | None = None
+    table: str | None = None
+    for line in lines:
+        marker = re.search(r"Geometry Optimization Step\s+(\d+)", line, re.IGNORECASE)
+        if marker:
+            current = int(marker.group(1))
+            table = None
+            continue
+        if current not in steps:
+            continue
+        if re.match(r"\s*State\s+Energy\s+Excitation", line, re.IGNORECASE):
+            table = "states"
+            continue
+        if re.match(r"\s*Transition\s+Excitation", line, re.IGNORECASE):
+            table = "transitions"
+            continue
+        if table == "states":
+            match = re.match(r"\s*S(\d+)\s+(" + _NUM + r")", line)
+            if match:
+                values = _floats(line)
+                if len(values) >= 4:
+                    total = float(match.group(2).replace("d", "e").replace("D", "E"))
+                    excitation_ev = values[3]
+                    steps[current]["states"].append({
+                        "index": int(match.group(1)), "total": total,
+                        "excitation_ev": excitation_ev,
+                        "excitation_nm": NM_EV / excitation_ev if excitation_ev > 0 else None,
+                        "oscillator": values[-1] if len(values) >= 10 else None,
+                    })
+                continue
+            if line.strip() and not line.lstrip().startswith(("Hartree", "REF")):
+                table = None
+        elif table == "transitions":
+            match = re.match(r"\s*S(\d+)\s*->\s*S(\d+)\s+(" + _NUM + r")", line)
+            if match:
+                values = _floats(line)
+                steps[current]["transitions"].append({
+                    "from": int(match.group(1)), "to": int(match.group(2)),
+                    "excitation_ev": float(match.group(3).replace("d", "e").replace("D", "E")),
+                    "oscillator": values[-1] if len(values) >= 7 else None,
+                })
+                continue
+            if line.strip() and not line.lstrip().startswith("eV"):
+                table = None
+
+
 def spectrum(summary: dict, kind: str, *, shape: str = "lorentzian",
              fwhm: float | None = None, state: int = 1, eta: float = 0.5) -> dict:
     """Build one broadened spectrum from a summary.

@@ -1303,6 +1303,7 @@ async function selectJob(jobId: string): Promise<void> {
   resetAnalysisProject();
   refreshJobs();
   loadSummary(jobId).catch(() => {});
+  loadOptimizationHistory(jobId).catch(() => {});
   const files: { name: string; size: number }[] =
     await (await fetch(`/api/jobs/${jobId}/files`)).json();
   if (jobId !== selectedJob) return;
@@ -1343,6 +1344,7 @@ function resetAnalysisProject(): void {
   lastSpectrum = null;
   resultMoldenFiles = [];
   resultFrames = [];
+  optimizationSteps = [];
   pendingResultMessage = null;
   if (activeCubeUrl) {
     URL.revokeObjectURL(activeCubeUrl);
@@ -1367,6 +1369,11 @@ function resetAnalysisProject(): void {
   modePlay.disabled = true;
   modePause.disabled = true;
   modeReset.disabled = true;
+  $<HTMLDivElement>("resultFrameCard").style.display = "none";
+  $<HTMLElement>("optimizationStepControls").style.display = "none";
+  $<HTMLSelectElement>("optimizationStepSelect").innerHTML = "";
+  $<HTMLDivElement>("optimizationStepValues").textContent = "";
+  $<HTMLHeadingElement>("resultFrameTitle").textContent = "Trajectory";
 }
 
 // What to open of its own accord, best first: a molden file carries orbitals
@@ -1412,6 +1419,13 @@ type OrbitalSource = { name: string; index: number };
 const orbitalSources = new Map<string, OrbitalSource>();
 let activeCubeUrl: string | null = null;
 let resultFrames: { label: string; atoms: Atom[] }[] = [];
+type OptimizationStep = {
+  index: number; label: string; atoms: [string, number, number, number][];
+  energy: number | null; energy_shift?: number;
+  rmsd_step?: number; max_step?: number; rmsd_grad?: number; max_grad?: number;
+  states: Summary["states"]; transitions: Summary["transitions"];
+};
+let optimizationSteps: OptimizationStep[] = [];
 let resultViewerReady = false;
 let pendingResultMessage: Record<string, unknown> | null = null;
 
@@ -1451,13 +1465,59 @@ function showResultFrame(index: number): void {
 }
 
 $<HTMLInputElement>("resultFrameRange").addEventListener("input", (event) => {
-  showResultFrame(+(event.target as HTMLInputElement).value);
+  const position = +(event.target as HTMLInputElement).value;
+  if (optimizationSteps.length) selectOptimizationStep(position);
+  else showResultFrame(position);
 });
+
+$<HTMLSelectElement>("optimizationStepSelect").addEventListener("change", (event) => {
+  const index = +(event.target as HTMLSelectElement).value;
+  const position = optimizationSteps.findIndex((step) => step.index === index) + 1;
+  if (position > 0) selectOptimizationStep(position);
+});
+
+async function loadOptimizationHistory(jobId: string): Promise<void> {
+  const response = await fetch(`/api/jobs/${jobId}/optimization`);
+  if (!response.ok || jobId !== selectedJob) return;
+  const data: { steps: OptimizationStep[] } = await response.json();
+  if (!data.steps.length || jobId !== selectedJob) return;
+  optimizationSteps = data.steps;
+  resultFrames = data.steps.map((step) => ({ label: step.label, atoms: step.atoms }));
+  const select = $<HTMLSelectElement>("optimizationStepSelect");
+  select.innerHTML = data.steps.map((step) =>
+    `<option value="${step.index}">Step ${step.index}</option>`).join("");
+  const slider = $<HTMLInputElement>("resultFrameRange");
+  slider.max = String(data.steps.length);
+  $<HTMLDivElement>("resultFrameCard").style.display = "";
+  $<HTMLHeadingElement>("resultFrameTitle").textContent = "Optimization path";
+  $<HTMLElement>("optimizationStepControls").style.display = "";
+  selectOptimizationStep(data.steps.length);
+}
+
+function selectOptimizationStep(position: number): void {
+  const step = optimizationSteps[position - 1];
+  if (!step) return;
+  $<HTMLInputElement>("resultFrameRange").value = String(position);
+  $<HTMLSelectElement>("optimizationStepSelect").value = String(step.index);
+  if (activeCubeUrl) {
+    URL.revokeObjectURL(activeCubeUrl);
+    activeCubeUrl = null;
+  }
+  orbitalSel.value = "";
+  showResultFrame(position);
+  const value = (label: string, number: number | null | undefined, digits = 6) =>
+    number == null ? "" : `${label} ${number.toFixed(digits)}`;
+  $<HTMLDivElement>("optimizationStepValues").textContent = [
+    value("Surface energy (Ha)", step.energy, 8),
+    value("RMS gradient", step.rmsd_grad), value("Max gradient", step.max_grad),
+    value("RMS step", step.rmsd_step), value("Max step", step.max_step),
+  ].filter(Boolean).join("  |  ");
+  void loadSpectrum();
+}
 
 function hideResultPanels(): void {
   orbitalCard.style.display = "none";
   modeCard.style.display = "none";
-  $<HTMLDivElement>("resultFrameCard").style.display = "none";
   currentMolden = null;
   orbitalSources.clear();
 }
@@ -1582,6 +1642,8 @@ async function openAsStructure(name: string, url: string): Promise<void> {
     slider.value = String(resultFrames.length);
     $<HTMLDivElement>("resultFrameCard").style.display =
       resultFrames.length > 1 ? "" : "none";
+    $<HTMLElement>("optimizationStepControls").style.display = "none";
+    $<HTMLHeadingElement>("resultFrameTitle").textContent = "Trajectory";
     showResultFrame(resultFrames.length);
   } catch {
     // Nothing renderable in this file; the download link still works.
@@ -1974,6 +2036,8 @@ async function loadSpectrum(): Promise<void> {
     fwhm: String(widthValue()),
     state: specState.value,
   });
+  const selectedStep = optimizationSteps[+$<HTMLInputElement>("resultFrameRange").value - 1];
+  if (selectedStep) query.set("step", String(selectedStep.index));
   const data = await (await fetch(`/api/jobs/${jobId}/spectrum?${query}`)).json();
   if (jobId !== selectedJob) return;
   drawSpectrum(data);

@@ -373,6 +373,54 @@ Transition   Excitation         Transition dipole, a.u.                   Oscill
     assert max(data["x"]) <= 2 * analysis.NM_EV / 1.519945 + 1e-6
 
 
+def test_optimization_history_keeps_each_geometrys_electronic_spectrum(tmp_path):
+    """An optimization trajectory must not borrow the final spectrum for every step."""
+    from oqp_studio import analysis
+
+    trajectory = tmp_path / "opt_geom.xyz"
+    trajectory.write_text("""3
+Geom 1 -76.0412293829
+O 0.000 0.000 0.000
+H 0.000 0.757 -0.469
+H 0.000 -0.757 -0.469
+3
+Geom 2 -76.0685554095
+O 0.010 0.000 0.000
+H 0.000 0.757 -0.469
+H 0.000 -0.757 -0.469
+""")
+    status = tmp_path / "opt_status.txt"
+    status.write_text("""Step Energy Shift RMSD Step Max Step RMSD Grad Max Grad
+1 -76.04122938 -76.04122938 0.000000 0.000000 0.061977 0.119177
+2 -76.06855541 -0.02732603 0.100467 0.200173 0.013577 0.022500
+""")
+    log = tmp_path / "water.log"
+    log.write_text("""Geometry Optimization Step 1
+State      Energy       Excitation   Excitation(eV)  <S^2>         Transition dipole moment, a.u.        Oscillator
+    S0    -76.3600325966    -7.428327     0.000000      0.000     0.0000     0.0000     0.0000     0.0000      0.0000
+    S1    -76.0412293756     1.246750     8.675078      0.000     0.0000    -0.0000     0.2401     0.2401      0.0123
+    S2    -75.9853724356     2.766695    10.195022      0.000    -0.0000     0.0000     0.0001     0.0001      0.0000
+Transition   Excitation         Transition dipole, a.u.                   Oscillator
+   S1 -> S2     1.519945        1.7982    -0.0046    -0.0000     1.7982       0.1204
+Geometry Optimization Step 2
+State      Energy       Excitation   Excitation(eV)  <S^2>         Transition dipole moment, a.u.        Oscillator
+    S0    -76.3285260128    -6.828327     0.000000      0.000     0.0000     0.0000     0.0000     0.0000      0.0000
+    S1    -76.0685554095     0.246750     7.074160      0.000     0.0000    -0.0000     0.2401     0.2401      0.0048
+    S2    -76.0227501977     1.766695     8.320584      0.000    -0.0000     0.0000     0.0001     0.0001      0.0000
+Transition   Excitation         Transition dipole, a.u.                   Oscillator
+   S1 -> S2     1.246423        1.7982    -0.0046    -0.0000     1.7982       0.0915
+""")
+
+    history = analysis.optimization_history([trajectory, status, log])
+    first, second = history["steps"]
+    assert len(history["steps"]) == 2
+    assert first["energy"] == -76.04122938
+    assert first["rmsd_grad"] == 0.061977
+    assert first["states"][1]["excitation_ev"] == 8.675078
+    assert second["states"][1]["excitation_ev"] == 7.07416
+    assert second["transitions"][0]["oscillator"] == 0.0915
+
+
 def test_emission_is_available_only_after_excited_state_optimization(tmp_path):
     from oqp_studio import analysis
 

@@ -928,7 +928,12 @@
               <ul class="files" id="resultFiles"><li class="hint">select a job</li></ul>
             </div>
             <div class="card" id="resultFrameCard" style="display:none">
-              <h3>Trajectory</h3>
+              <h3 id="resultFrameTitle">Trajectory</h3>
+              <div id="optimizationStepControls" style="display:none">
+                <label>Optimization structure</label>
+                <select id="optimizationStepSelect"></select>
+                <div class="hint" id="optimizationStepValues" style="margin-top:.65rem"></div>
+              </div>
               <label>Frame <span id="resultFrameLabel" class="hint"></span></label>
               <input type="range" id="resultFrameRange" min="1" max="1" value="1" />
             </div>
