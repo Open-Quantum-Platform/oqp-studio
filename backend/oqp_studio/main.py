@@ -911,14 +911,10 @@ def _comparison_frame(paths: list[Path]):
     text_candidates = [item for item in candidates if item[0][0] == 8]
     for _rank, path in sorted([*log_candidates, *text_candidates], key=lambda item: item[1].name):
         try:
-            if path.name.lower().endswith(".txt"):
-                if frame := openqp_text_frame(path):
-                    return frame
-                continue
-            structure = parse_path(path)
+            frame = openqp_text_frame(path)
         except (OSError, ValueError):
             continue
-        if frame := usable_frame(structure):
+        if frame:
             return frame
 
     for priority in range(3, 8):

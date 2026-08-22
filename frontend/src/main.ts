@@ -672,7 +672,9 @@ $<HTMLButtonElement>("symmetryAlign").addEventListener("click", () => {
   invalidateSymmetryIfCoordinatesChanged();
   if (!symmetryResult) return;
   clearPdbSource();
-  xyzArea.value = atomsToText(symmetryResult.aligned_atoms);
+  const aligned = atomsToText(symmetryResult.aligned_atoms);
+  xyzArea.value = aligned;
+  symmetrySource = aligned;
   builderStatus.textContent = "centered and aligned to the principal axes";
   void updatePreview();
 });

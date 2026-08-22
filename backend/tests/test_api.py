@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 from typing import ClassVar
 
+import pytest
 from fastapi.testclient import TestClient
 
 from oqp_studio.main import app
@@ -984,6 +985,27 @@ def test_comparison_geometry_does_not_read_text_when_result_xyz_exists(tmp_path,
 
     monkeypatch.setattr(type(large_text), "read_bytes", guarded_read)
     assert main._comparison_frame([large_text, result_xyz]).atoms[0][1] == 1.0
+
+
+@pytest.mark.parametrize("suffix", [".log", ".out", ".txt"])
+def test_comparison_geometry_streams_openqp_logs(tmp_path, monkeypatch, suffix):
+    from oqp_studio import main
+
+    output = tmp_path / f"result{suffix}"
+    output.write_text(
+        "Cartesian Coordinate in Angstrom\n"
+        "--------------------------------\n"
+        "1 1.0 4.0 0.0 0.0\n"
+    )
+    original_read_bytes = type(output).read_bytes
+
+    def guarded_read(path):
+        if path == output:
+            raise AssertionError("OpenQP log was materialized instead of streamed")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(type(output), "read_bytes", guarded_read)
+    assert main._comparison_frame([output]).atoms[0][1] == 4.0
 
 
 def test_comparison_geometry_uses_unknown_result_suffix_as_a_last_resort(tmp_path):

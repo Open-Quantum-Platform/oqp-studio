@@ -666,6 +666,7 @@
           if (event.origin !== window.location.origin) return;
           const message = event.data || {};
           if (message.style) style = { ...style, ...message.style };
+          if (message.orbital) orbital = { ...orbital, ...message.orbital };
           const replacementTypes = new Set([
             "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
           ]);
@@ -775,7 +776,6 @@
             report();
           } else if (message.type === "oqp-cube") {
             lastAtomicProperty = null;
-            if (message.orbital) orbital = { ...orbital, ...message.orbital };
             lastCube = { ...message };
             await drawCube(lastCube);
           }
