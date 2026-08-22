@@ -640,6 +640,35 @@ def job_optimization(job_id: str) -> dict:
     return analysis.optimization_history(_job_paths(job_id))
 
 
+@app.get("/api/jobs/{job_id}/excited-analysis")
+def job_excited_analysis(job_id: str, ref: int = 0, target: int = 1) -> dict:
+    """Physical-root MRSF NTO and attachment/detachment descriptors."""
+    from . import excited_state
+
+    if manager.get(job_id) is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    try:
+        return excited_state.summary(_job_paths(job_id), ref, target)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get("/api/jobs/{job_id}/excited-analysis/cube")
+def job_excited_analysis_cube(job_id: str, kind: str = "nto_hole",
+                              ref: int = 0, target: int = 1,
+                              rank: int = 0) -> PlainTextResponse:
+    """One MRSF physical-root orbital or density as a Gaussian cube."""
+    from . import excited_state
+
+    if manager.get(job_id) is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    try:
+        data = excited_state.ExcitedStateData.load(_job_paths(job_id))
+        return PlainTextResponse(data.cube(kind, ref, target, rank))
+    except (excited_state.AnalysisUnavailable, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @app.get("/api/jobs/{job_id}/spectrum")
 def job_spectrum(job_id: str, kind: str = "ir", shape: str = "lorentzian",
                  fwhm: float | None = None, state: int = 1,

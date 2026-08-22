@@ -326,6 +326,83 @@ def test_molden_parse_and_cube():
     assert "E=" in header[1]
 
 
+def test_excited_state_analysis_uses_the_physical_root_transition_density():
+    """NTOs come from S0->S1, not the auxiliary-reference response vector."""
+    import numpy as np
+
+    from oqp_studio import excited_state, molden
+
+    densities = np.zeros((2, 2, 2, 2))
+    densities[1, 0, 0, 1] = 1.0  # particle MO 2, hole MO 1
+    densities[:, :, 1, 1] = np.diag([-0.7, 0.7])
+    data = excited_state.ExcitedStateData(
+        energies=np.array([-0.2, 0.1]),
+        transition_densities=densities,
+        coefficients=np.eye(2),
+        reference_occupations=np.array([2.0, 0.0]),
+        molden_data=molden.MoldenData(atoms=[]),
+        json_name="mrsf.json",
+        molden_name="mrsf.molden",
+    )
+
+    report = data.summary(0, 1)
+    nto = data.nto(0, 1)
+
+    assert report["nto_pairs"][0]["fraction"] == 1.0
+    assert report["nto_participation_ratio"] == 1.0
+    assert abs(report["n_promoted"] - 0.7) < 1e-12
+    np.testing.assert_allclose(np.abs(nto["holes_ao"][:, 0]), [1.0, 0.0])
+    np.testing.assert_allclose(np.abs(nto["particles_ao"][:, 0]), [0.0, 1.0])
+
+
+def test_excited_state_json_restores_openqp_fortran_array_order(tmp_path):
+    import json
+
+    import numpy as np
+
+    from oqp_studio import excited_state, molden
+
+    sample = (
+        Path(__file__).resolve().parents[2]
+        / "frontend" / "public" / "viewer" / "samples" / "water-hessian-mo.molden"
+    )
+    nbf = len(molden.parse_molden(sample.read_text()).basis)
+    densities = np.zeros((nbf, nbf, 2, 2))
+    densities[2, 1, 0, 1] = 0.625
+    densities[0, 0, 1, 1] = -0.4
+    densities[1, 1, 1, 1] = 0.4
+    result = tmp_path / "mrsf.json"
+    result.write_text(json.dumps({
+        "OQP::td_energies": [-10.0, -9.7],
+        "OQP::VEC_MO_A": np.eye(nbf).ravel().tolist(),
+        "OQP::td_trans_density_mo": densities.ravel(order="F").tolist(),
+    }))
+
+    loaded = excited_state.ExcitedStateData.load([result, sample])
+
+    assert loaded.tdm_mo(0, 1)[2, 1] == 0.625
+    np.testing.assert_allclose(loaded.difference_mo(0, 1)[:2, :2], [[-0.4, 0], [0, 0.4]])
+
+
+def test_arbitrary_ao_density_matrix_can_be_exported_as_cube():
+    import numpy as np
+
+    from oqp_studio import molden
+
+    sample = (
+        Path(__file__).resolve().parents[2]
+        / "frontend" / "public" / "viewer" / "samples" / "water-hessian-mo.molden"
+    )
+    data = molden.parse_molden(sample.read_text())
+    cube = molden.matrix_density_cube(
+        data, np.eye(len(data.basis)) * 0.01,
+        "test excited density", "density", max_points=40_000,
+    )
+
+    assert cube.startswith("test excited density\ndensity\n")
+    assert int(cube.splitlines()[2].split()[0]) == 3
+
+
 def test_dyson_strength_is_reported_as_twice_its_occupation(monkeypatch):
     """Molden's Occup field is an OpenQP Dyson strength, not an occupancy."""
     import numpy as np
