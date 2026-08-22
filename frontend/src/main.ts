@@ -1119,10 +1119,12 @@ $<HTMLButtonElement>("importBtn").addEventListener("click", () => {
 
 async function selectJob(jobId: string): Promise<void> {
   selectedJob = jobId;
+  resetAnalysisProject();
   refreshJobs();
   loadSummary(jobId).catch(() => {});
   const files: { name: string; size: number }[] =
     await (await fetch(`/api/jobs/${jobId}/files`)).json();
+  if (jobId !== selectedJob) return;
   resultMoldenFiles = files
     .map((file) => file.name)
     .filter((name) => name.toLowerCase().endsWith(".molden"));
@@ -1155,6 +1157,37 @@ async function selectJob(jobId: string): Promise<void> {
   }
 }
 
+function resetAnalysisProject(): void {
+  summary = null;
+  lastSpectrum = null;
+  resultMoldenFiles = [];
+  resultFrames = [];
+  pendingResultMessage = null;
+  if (activeCubeUrl) {
+    URL.revokeObjectURL(activeCubeUrl);
+    activeCubeUrl = null;
+  }
+  hideResultPanels();
+  $<HTMLDivElement>("summaryCard").style.display = "none";
+  $<HTMLDivElement>("summaryBody").innerHTML = "";
+  $<HTMLDivElement>("spectrumCard").style.display = "none";
+  specKind.innerHTML = "";
+  specShape.value = "lorentzian";
+  specWidth.value = "20";
+  specState.value = "1";
+  $<HTMLDivElement>("specStateWrap").style.display = "none";
+  $<HTMLDivElement>("specPlot").innerHTML = "";
+  $<HTMLDivElement>("specNote").textContent = "";
+  orbitalSel.innerHTML = '<option value="">Choose an orbital…</option>';
+  mapKind.value = "mo";
+  $<HTMLOptionElement>("dysonMapKind").hidden = true;
+  $<HTMLOptionElement>("dysonMapKind").disabled = true;
+  modeSel.innerHTML = '<option value="">Choose a normal mode…</option>';
+  modePlay.disabled = true;
+  modePause.disabled = true;
+  modeReset.disabled = true;
+}
+
 // What to open of its own accord, best first: a molden file carries orbitals
 // and normal modes, a log or an optimisation trajectory carries the geometry
 // as it moved, and the rest are still better than an empty panel.
@@ -1171,13 +1204,13 @@ function bestFileToShow(names: string[]): string | undefined {
 // Energies, states, frequencies and properties, read back from whatever the
 // job wrote — the JSON export when there is one, the log otherwise.
 async function loadSummary(jobId: string): Promise<void> {
-  $<HTMLDivElement>("summaryCard").style.display = "none";
-  $<HTMLDivElement>("spectrumCard").style.display = "none";
   const response = await fetch(`/api/jobs/${jobId}/summary?refresh=true`);
   if (!response.ok) return;
-  summary = await response.json();
-  renderSummary(summary!);
-  buildSpectrumList(summary!);
+  const data: Summary = await response.json();
+  if (jobId !== selectedJob) return;
+  summary = data;
+  renderSummary(data);
+  buildSpectrumList(data);
   if ($<HTMLDivElement>("spectrumCard").style.display === "") await loadSpectrum();
 }
 
@@ -1249,6 +1282,7 @@ function hideResultPanels(): void {
 }
 
 async function viewResultFile(jobId: string, name: string, url: string): Promise<void> {
+  if (jobId !== selectedJob) return;
   const lower = name.toLowerCase();
   hideResultPanels();
 
@@ -1270,6 +1304,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       })),
       fetch(`${base}/modes`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
+    if (jobId !== selectedJob) return;
     const scfFile = orbitalFiles.find((file) =>
       file.data?.orbitals?.some((orbital: { kind?: string }) => orbital.kind === "scf"));
     if (scfFile) currentMolden = { jobId, name: scfFile.name };
@@ -1401,10 +1436,14 @@ function showMoldenStructure(): void {
     URL.revokeObjectURL(activeCubeUrl);
     activeCubeUrl = null;
   }
-  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
+  const molden = currentMolden;
+  const base = `/api/jobs/${molden.jobId}/molden/${encodeURIComponent(molden.name)}`;
   fetch(`${base}/geom.xyz`)
     .then((response) => response.text())
-    .then((xyz) => pushToResultViewer({ type: "oqp-structure", xyz }));
+    .then((xyz) => {
+      if (currentMolden?.jobId !== molden.jobId || currentMolden.name !== molden.name) return;
+      pushToResultViewer({ type: "oqp-structure", xyz });
+    });
 }
 
 function mapUrl(base: string, source: OrbitalSource | null): string {
@@ -1745,7 +1784,8 @@ function widthValue(): number {
 }
 
 async function loadSpectrum(): Promise<void> {
-  if (!selectedJob) return;
+  const jobId = selectedJob;
+  if (!jobId) return;
   syncSpectrumControls();
   const query = new URLSearchParams({
     kind: specKind.value,
@@ -1753,7 +1793,8 @@ async function loadSpectrum(): Promise<void> {
     fwhm: String(widthValue()),
     state: specState.value,
   });
-  const data = await (await fetch(`/api/jobs/${selectedJob}/spectrum?${query}`)).json();
+  const data = await (await fetch(`/api/jobs/${jobId}/spectrum?${query}`)).json();
+  if (jobId !== selectedJob) return;
   drawSpectrum(data);
 }
 
