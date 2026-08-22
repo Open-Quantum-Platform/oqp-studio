@@ -1569,11 +1569,22 @@ $<HTMLButtonElement>("comparisonRun").addEventListener("click", async () => {
   const requestId = ++comparisonRequestId;
   const isCurrent = () => requestId === comparisonRequestId && right === selectedJob &&
     left === $<HTMLSelectElement>("comparisonReference").value;
-  const response = await fetch(
-    `/api/comparison?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`,
-  );
-  if (!isCurrent()) return;
   const body = $<HTMLDivElement>("comparisonBody");
+  body.innerHTML = '<div class="hint">Comparing projects…</div>';
+  let response: Response;
+  try {
+    response = await fetch(
+      `/api/comparison?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`,
+    );
+  } catch (error) {
+    if (isCurrent()) {
+      body.innerHTML = `<div class="hint">${escapeMarkup(
+        `comparison failed: ${error instanceof Error ? error.message : String(error)}`,
+      )}</div>`;
+    }
+    return;
+  }
+  if (!isCurrent()) return;
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     if (!isCurrent()) return;
@@ -2598,7 +2609,7 @@ function redrawActiveVolume(): void {
     showDirectCube(activeDirectCube.jobId, activeDirectCube.url);
   } else if (activeMapSource === "excited") void showExcitedMap();
   else if (activeMapSource === "surface") void showSurface();
-  else showOrbital();
+  else if (activeMapSource === "orbital") showOrbital();
 }
 
 $<HTMLSelectElement>("moSides").addEventListener("change", redrawActiveVolume);
