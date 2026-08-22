@@ -141,6 +141,6 @@ def test_links_are_revalidated_after_archive_root_is_flattened(tmp_path):
     validate_links(staging)
 
     _strip_single_root(staging)
-    assert (staging / "openqp").is_file()
+    assert (staging / "openqp").is_symlink()
     with pytest.raises(UnsafeArchiveError):
         validate_links(staging)
