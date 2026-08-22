@@ -84,6 +84,22 @@ def _from_json(data: dict, summary: dict) -> None:
         if isinstance(charges, list) and charges:
             summary["charges"][label] = [float(c) for c in charges]
 
+    shielding = data.get("nmr_shielding")
+    if isinstance(shielding, list) and shielding:
+        rows = []
+        for index, values in enumerate(shielding, start=1):
+            if not isinstance(values, list) or len(values) < 5:
+                continue
+            try:
+                dia, para_u, para_c, total_u, total_c = (float(value) for value in values[:5])
+            except (TypeError, ValueError):
+                continue
+            rows.append({"atom": index, "dia": dia, "para_uncoupled": para_u,
+                         "para_coupled": para_c, "total_uncoupled": total_u,
+                         "total_coupled": total_c})
+        if rows:
+            summary["nmr"] = rows
+
 
 def _from_input(text: str, summary: dict) -> None:
     """Record the optimized electronic state when the job input provides it."""
@@ -178,6 +194,28 @@ def _from_log(text: str, summary: dict) -> None:
     _log_transitions(lines, summary)
     _log_ekt_roots(lines, summary)
     _log_dipole(lines, summary)
+    _log_nmr(lines, summary)
+
+
+def _log_nmr(lines: list[str], summary: dict) -> None:
+    """Read the isotropic-shielding table when a JSON export is unavailable."""
+    if summary["nmr"]:
+        return
+    header = next((i for i, line in enumerate(lines)
+                   if "isotropic shielding" in line.lower() and "ppm" in line.lower()), -1)
+    if header < 0:
+        return
+    rows = []
+    for line in lines[header + 1:]:
+        values = _floats(line)
+        if len(values) >= 7 and float(values[0]).is_integer():
+            rows.append({"atom": int(values[0]), "dia": values[2],
+                         "para_uncoupled": values[3], "para_coupled": values[4],
+                         "total_uncoupled": values[5], "total_coupled": values[6]})
+            continue
+        if rows and line.strip():
+            break
+    summary["nmr"] = rows
 
 
 def _log_frequencies(lines: list[str], summary: dict) -> None:
@@ -385,7 +423,7 @@ def summarize(paths: list[Path]) -> dict:
         "energy": {}, "scf": {}, "states": [], "frequencies": [], "transitions": [],
         "ekt": {"ip": [], "ea": []},
         "excited_state_optimized": None,
-        "thermochemistry": {}, "charges": {}, "dipole": None, "symmetry": None,
+        "thermochemistry": {}, "charges": {}, "nmr": [], "dipole": None, "symmetry": None,
         "units": {"ir": "km/mol", "raman": "a.u."},
         "sources": [],
     }
@@ -417,6 +455,7 @@ def summarize(paths: list[Path]) -> dict:
         s.get("oscillator") is not None for s in summary["states"])
     summary["has_ekt_ip"] = bool(summary["ekt"]["ip"])
     summary["has_ekt_ea"] = bool(summary["ekt"]["ea"])
+    summary["has_nmr"] = bool(summary["nmr"])
     return summary
 
 

@@ -719,9 +719,8 @@ function withOptions(driver: string, options: string): string {
 }
 
 function optimisationOptions(): string {
-  // MEP is currently native-only; state-specific minima, including MRSF S1,
-  // use geomeTRIC's DLC coordinates by default.
-  const backend = currentWf.key === "mep" ? "oqp" : fieldValue("geomBackend") || "geometric";
+  // Geometry workflows use OpenQP's native optimizer on every platform.
+  const backend = "oqp";
   const options: [string, string][] = [
     // Concise .oqp accepts the active optimizer controls on the driver.  The
     // old optimizer/step_size keys selected a retired SciPy path.
@@ -734,7 +733,6 @@ function optimisationOptions(): string {
     ["rmsd_step", fieldValue("rmsdStep")],
     ["max_step", fieldValue("maxStep")],
   ];
-  if (backend === "geometric") options.splice(3, 0, ["tmax", fieldValue("geomTrustMax")]);
   return optionList(options);
 }
 
@@ -1818,6 +1816,8 @@ type Summary = {
   frequencies: { index: number; frequency: number; ir: number | null; raman: number | null }[];
   thermochemistry: Record<string, number>;
   charges: Record<string, number[]>;
+  nmr: { atom: number; dia: number; para_uncoupled: number; para_coupled: number;
+         total_uncoupled: number; total_coupled: number }[];
   dipole: { x: number; y: number; z: number; total_au: number; total_debye: number } | null;
   symmetry: { point_group: string; detected: string | null; enabled: boolean } | null;
   units: { ir: string; raman: string };
@@ -1829,6 +1829,7 @@ type Summary = {
   has_ekt_ip: boolean;
   has_ekt_ea: boolean;
   excited_state_optimized: number | null;
+  has_nmr: boolean;
 };
 
 let summary: Summary | null = null;
@@ -1972,6 +1973,17 @@ function renderSummary(data: Summary): void {
         : ""));
   }
 
+  if (data.nmr.length) {
+    const head = "<tr><th>Atom</th><th>σdia</th><th>σpara (u)</th><th>σpara (c)</th><th>σtotal (u)</th><th>σtotal (c)</th></tr>";
+    const body = data.nmr.map((row) =>
+      `<tr><td class="k">${row.atom}</td><td class="v">${fixed(row.dia, 3)}</td>` +
+      `<td class="v">${fixed(row.para_uncoupled, 3)}</td><td class="v">${fixed(row.para_coupled, 3)}</td>` +
+      `<td class="v">${fixed(row.total_uncoupled, 3)}</td><td class="v">${fixed(row.total_coupled, 3)}</td></tr>`,
+    ).join("");
+    parts.push(`<div class="sum-title">NMR shielding (ppm) <button class="ghost" id="showNmrMap" type="button" style="float:right;padding:.15rem .7rem;font-size:12px">Show 3D map</button></div>` +
+      `<table class="sum">${head}${body}</table><div class="hint">σtotal (c) includes the coupled magnetic response.</div>`);
+  }
+
   const thermo = Object.entries(THERMO_LABELS)
     .filter(([key]) => data.thermochemistry[key] !== undefined)
     .map(([key, label]) => [label, fixed(data.thermochemistry[key])] as [string, string]);
@@ -1991,6 +2003,9 @@ function renderSummary(data: Summary): void {
     ? parts.join("")
     : '<div class="hint">nothing summarisable in this job\u2019s output yet</div>';
   $<HTMLDivElement>("summaryCard").style.display = parts.length ? "" : "none";
+  document.getElementById("showNmrMap")?.addEventListener("click", () => {
+    pushToResultViewer({ type: "oqp-nmr-shielding", shielding: data.nmr });
+  });
 }
 
 // ---------- spectra ----------
