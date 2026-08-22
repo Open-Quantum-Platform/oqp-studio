@@ -111,7 +111,7 @@ jobs:
       - name: Build ILP64 OpenBLAS for ddX
         run: |
           set -euo pipefail
-          root="$HOME/Library/Caches/openqp/openblas-ilp64/${{ matrix.arch }}"
+          root="$HOME/Library/Caches/openqp/openblas-ilp64/${{ matrix.arch }}-target2"
           if [ ! -f "$root/lib/pkgconfig/openblas64.pc" ]; then
             rm -rf /tmp/OpenBLAS
             git clone --depth 1 --branch v0.3.30 https://github.com/OpenMathLib/OpenBLAS.git /tmp/OpenBLAS
