@@ -85,6 +85,13 @@ def _from_json(data: dict, summary: dict) -> None:
             summary["charges"][label] = [float(c) for c in charges]
 
 
+def _from_input(text: str, summary: dict) -> None:
+    """Record the optimized electronic state when the job input provides it."""
+    match = re.search(r"\bopt\s*\(\s*S(\d+)\s*\)", text, re.IGNORECASE)
+    if match:
+        summary["excited_state_optimized"] = int(match.group(1))
+
+
 def _set_states(summary: dict, totals: list[float]) -> None:
     ground = totals[0]
     summary["states"] = [
@@ -377,11 +384,17 @@ def summarize(paths: list[Path]) -> dict:
     summary: dict = {
         "energy": {}, "scf": {}, "states": [], "frequencies": [], "transitions": [],
         "ekt": {"ip": [], "ea": []},
+        "excited_state_optimized": None,
         "thermochemistry": {}, "charges": {}, "dipole": None, "symmetry": None,
         "units": {"ir": "km/mol", "raman": "a.u."},
         "sources": [],
     }
     for path in sorted(paths):
+        if path.suffix.lower() in (".oqp", ".inp"):
+            try:
+                _from_input(path.read_text(errors="replace"), summary)
+            except OSError:
+                continue
         if path.suffix.lower() == ".json":
             try:
                 data = json.loads(path.read_text(errors="replace"))
@@ -486,6 +499,9 @@ def spectrum(summary: dict, kind: str, *, shape: str = "lorentzian",
                  [(s["excitation_ev"], s.get("oscillator")) for s in states[1:]])
         title = "Absorption from S0"
     elif kind == "emission":
+        if summary.get("excited_state_optimized") is None:
+            return {"available": False,
+                    "reason": "emission requires an excited-state optimized geometry"}
         chosen = next((s for s in states if s["index"] == state), states[1])
         pairs = [(chosen["excitation_ev"], chosen.get("oscillator"))]
         title = f"Emission from S{chosen['index']}"

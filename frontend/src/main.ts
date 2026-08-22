@@ -1433,6 +1433,7 @@ type Summary = {
          ea: { index: number; binding_ev: number; strength: number }[] };
   has_ekt_ip: boolean;
   has_ekt_ea: boolean;
+  excited_state_optimized: number | null;
 };
 
 let summary: Summary | null = null;
@@ -1598,11 +1599,11 @@ function renderSummary(data: Summary): void {
 }
 
 // ---------- spectra ----------
-const SPECTRA: { value: string; label: string; needs: "freq" | "states" | "ip" | "ea" }[] = [
+const SPECTRA: { value: string; label: string; needs: "freq" | "states" | "exopt" | "ip" | "ea" }[] = [
   { value: "ir", label: "IR absorption", needs: "freq" },
   { value: "raman", label: "Raman", needs: "freq" },
   { value: "absorption", label: "Absorption (S0 geometry)", needs: "states" },
-  { value: "emission", label: "Emission (excited-state geometry)", needs: "states" },
+  { value: "emission", label: "Emission (excited-state geometry)", needs: "exopt" },
   { value: "esa", label: "Excited-state absorption (excited-state geometry)", needs: "states" },
   { value: "photoelectron", label: "Photoelectron spectrum (IP)", needs: "ip" },
   { value: "inverse_photoelectron", label: "Inverse photoelectron spectrum (EA)", needs: "ea" },
@@ -1617,6 +1618,7 @@ function buildSpectrumList(data: Summary): void {
   const usable = SPECTRA.filter((entry) =>
     entry.needs === "freq" ? data.has_frequencies
       : entry.needs === "states" ? data.has_states
+        : entry.needs === "exopt" ? data.has_states && data.excited_state_optimized !== null
         : entry.needs === "ip" ? data.has_ekt_ip : data.has_ekt_ea);
   specKind.innerHTML = "";
   for (const entry of usable) {

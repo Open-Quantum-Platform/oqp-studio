@@ -354,6 +354,25 @@ Transition   Excitation         Transition dipole, a.u.                   Oscill
     assert max(data["x"]) <= 2 * analysis.NM_EV / 1.519945 + 1e-6
 
 
+def test_emission_is_available_only_after_excited_state_optimization(tmp_path):
+    from oqp_studio import analysis
+
+    log = tmp_path / "water.log"
+    log.write_text("""
+State      Energy       Excitation   Excitation(eV)  <S^2>         Transition dipole moment, a.u.        Oscillator
+    S0    -76.3600325966    -7.428327     0.000000      0.000     0.0000     0.0000     0.0000     0.0000      0.0000
+    S1    -76.0412293756     1.246750     8.675078      0.000     0.0000    -0.0000     0.2401     0.2401      0.0123
+""")
+    input_file = tmp_path / "water.oqp"
+    input_file.write_text("mrsf/bhhlyp/6-31g\nopt(S1)\n")
+
+    vertical = analysis.summarize([log])
+    assert not analysis.spectrum(vertical, "emission")["available"]
+    optimized = analysis.summarize([input_file, log])
+    assert optimized["excited_state_optimized"] == 1
+    assert analysis.spectrum(optimized, "emission")["available"]
+
+
 def test_importing_a_folder_takes_the_results_and_leaves_the_rest(tmp_path, monkeypatch):
     from oqp_studio import jobs
 
