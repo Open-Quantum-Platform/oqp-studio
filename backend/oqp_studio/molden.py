@@ -354,6 +354,39 @@ def orbital_cube(data: MoldenData, mo_index: int, max_points: int = 1_100_000) -
     )
 
 
+def orbital_coeff_cube(data: MoldenData, coefficients: np.ndarray,
+                       title: str, subtitle: str,
+                       max_points: int = 1_100_000) -> str:
+    """Gaussian cube for an AO-coefficient vector not stored as a Molden MO."""
+    vector = np.asarray(coefficients, dtype=float).ravel()
+    if vector.size != len(data.basis):
+        raise ValueError("orbital coefficient count does not match the Molden basis")
+    coords, lo, spacing, counts, axes = _grid(data, _point_budget(data, max_points))
+    values = _evaluate(data, coords, axes, vector[None, :])[0]
+    return _cube_text(data, title, subtitle, coords, lo, spacing, counts, values)
+
+
+def matrix_density_cube(data: MoldenData, density_ao: np.ndarray,
+                        title: str, subtitle: str,
+                        max_points: int = 700_000) -> str:
+    """Gaussian cube for a real AO density matrix, including signed fields."""
+    matrix = np.asarray(density_ao, dtype=float)
+    nbf = len(data.basis)
+    if matrix.shape != (nbf, nbf):
+        raise ValueError("density matrix dimensions do not match the Molden basis")
+    matrix = 0.5 * (matrix + matrix.T)
+    eigenvalues, vectors = np.linalg.eigh(matrix)
+    largest = float(np.max(np.abs(eigenvalues))) if eigenvalues.size else 0.0
+    keep = np.abs(eigenvalues) > max(largest * 1e-12, 1e-14)
+    coords, lo, spacing, counts, axes = _grid(data, _point_budget(data, max_points))
+    if np.any(keep):
+        orbitals = _evaluate(data, coords, axes, vectors[:, keep].T)
+        values = np.einsum("i,ixyz->xyz", eigenvalues[keep], orbitals * orbitals)
+    else:
+        values = np.zeros(tuple(int(value) for value in counts))
+    return _cube_text(data, title, subtitle, coords, lo, spacing, counts, values)
+
+
 def _occupancies(data: MoldenData) -> list[float]:
     """Occupation numbers, defaulted for files that omit them."""
     spins = {o.spin for o in data.orbitals}

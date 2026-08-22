@@ -306,11 +306,39 @@
       }
       .menu-item:hover { background: var(--accent-soft); color: var(--accent); }
       @media (max-width: 700px) {
-        body { grid-template-columns: 0 1fr; }
+        body {
+          grid-template-columns: 0 1fr;
+          grid-template-rows: 34px minmax(0, 1fr) 30px;
+        }
         nav { display: none; }
         header .title { display: none; }
-        main .panel { inset: .75rem; }
+        header { min-width: 0; overflow-x: auto; }
+        header > * { flex: none; }
+        main .panel { inset: .75rem; overflow: auto; }
         main #panel-art { inset: 0; }
+        .cols {
+          display: flex;
+          flex-direction: column;
+          height: auto;
+          gap: .75rem;
+        }
+        .cols > *:first-child { overflow: visible; }
+        .splitter { display: none; }
+        .viewer-wrap {
+          flex: none;
+          width: 100%;
+          height: min(65vh, 520px);
+          min-height: 420px;
+        }
+        footer { min-width: 0; overflow-x: auto; white-space: nowrap; }
+        footer > * { flex: none; }
+        #excitedAnalysisCard h3 {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: .5rem;
+        }
+        #excitedAnalysisCard h3 button { float: none !important; flex: none; }
       }
     </style>
   </head>
@@ -1015,6 +1043,38 @@
               <input type="range" id="specWidth" min="1" max="100" step="1" value="20" />
               <div id="specPlot" style="margin-top:.6rem"></div>
               <div class="hint" id="specNote"></div>
+            </div>
+            <div class="card" id="excitedAnalysisCard" style="display:none">
+              <h3>Excited-state analysis
+                <button class="ghost" id="excitedReset" type="button"
+                        style="float:right;padding:.15rem .7rem;font-size:12px">Reset map</button>
+              </h3>
+              <div class="row">
+                <div>
+                  <label>Source state</label>
+                  <select id="excitedSource"></select>
+                </div>
+                <div>
+                  <label>Target state</label>
+                  <select id="excitedTarget"></select>
+                </div>
+              </div>
+              <label>Map</label>
+              <select id="excitedMap">
+                <option value="nto_hole">NTO hole</option>
+                <option value="nto_particle">NTO particle</option>
+                <option value="attachment">Attachment density</option>
+                <option value="detachment">Detachment density</option>
+                <option value="difference">Difference density</option>
+                <option value="transition">Transition density</option>
+                <option value="state_density">Target-state density</option>
+              </select>
+              <div id="excitedPairWrap">
+                <label>NTO pair</label>
+                <select id="excitedPair"></select>
+              </div>
+              <div id="excitedMetrics" class="hint" style="margin:.6rem 0"></div>
+              <button id="excitedShow" type="button">Show 3D map</button>
             </div>
             <div class="card" id="orbitalCard" style="display:none">
               <h3>Orbitals and 3D maps <button class="ghost" id="orbitalReset"

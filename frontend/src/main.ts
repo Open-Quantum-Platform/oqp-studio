@@ -975,6 +975,7 @@ function generateInp(): string {
     ], RESPONSE_DEFAULTS);
     if (responseOptions) lines.push(`tdhf(${responseOptions})`);
   }
+  if (theory === "mrsf") lines.push("guess(save_mol=true)");
   if (["fci", "casci", "casscf", "sa-casscf", "caspt2", "ms-caspt2", "xms-caspt2", "nevpt2", "sc-nevpt2", "mrmp2", "mcqdpt2", "xmcqdpt2"].includes(theory)) {
     const casOptions = optionList([
       ["active_electrons", fieldValue("activeElectrons")], ["active_orbitals", fieldValue("activeOrbitals")],
@@ -1491,6 +1492,7 @@ async function selectJob(jobId: string): Promise<void> {
   resultMoldenFiles = files
     .map((file) => file.name)
     .filter((name) => name.toLowerCase().endsWith(".molden"));
+  loadExcitedAnalysis(jobId).catch(() => {});
   const list = $<HTMLUListElement>("resultFiles");
   list.innerHTML = files.length ? "" : '<li class="hint">no files</li>';
   for (const f of files) {
@@ -1549,6 +1551,12 @@ function resetAnalysisProject(): void {
   $<HTMLDivElement>("summaryCard").style.display = "none";
   $<HTMLDivElement>("summaryBody").innerHTML = "";
   $<HTMLDivElement>("spectrumCard").style.display = "none";
+  excitedAnalysis = null;
+  $<HTMLDivElement>("excitedAnalysisCard").style.display = "none";
+  excitedSource.innerHTML = "";
+  excitedTarget.innerHTML = "";
+  excitedPair.innerHTML = "";
+  $<HTMLDivElement>("excitedMetrics").textContent = "";
   specKind.innerHTML = "";
   specShape.value = "lorentzian";
   specWidth.value = "20";
@@ -1596,6 +1604,124 @@ async function loadSummary(jobId: string): Promise<void> {
   buildSpectrumList(data);
   if ($<HTMLDivElement>("spectrumCard").style.display === "") await loadSpectrum();
 }
+
+interface ExcitedAnalysis {
+  available: boolean;
+  reason?: string;
+  source_state: number;
+  target_state: number;
+  transition_ev: number;
+  states: { index: number; label: string; relative_ev: number }[];
+  nto_pairs: { index: number; singular_value: number; weight: number; fraction: number }[];
+  nto_participation_ratio: number;
+  transition_density_norm: number;
+  n_promoted: number;
+  n_attach: number;
+  n_detach: number;
+  molden_file: string;
+}
+
+const excitedSource = $<HTMLSelectElement>("excitedSource");
+const excitedTarget = $<HTMLSelectElement>("excitedTarget");
+const excitedMap = $<HTMLSelectElement>("excitedMap");
+const excitedPair = $<HTMLSelectElement>("excitedPair");
+let excitedAnalysis: ExcitedAnalysis | null = null;
+
+function stateOptions(states: ExcitedAnalysis["states"]): string {
+  return states.map((state) =>
+    `<option value="${state.index}">${state.label} (${state.relative_ev.toFixed(3)} eV rel. S0)</option>`
+  ).join("");
+}
+
+function renderExcitedAnalysis(data: ExcitedAnalysis): void {
+  excitedAnalysis = data;
+  const card = $<HTMLDivElement>("excitedAnalysisCard");
+  card.style.display = data.available ? "" : "none";
+  if (!data.available) return;
+  if (!excitedSource.options.length) {
+    const options = stateOptions(data.states);
+    excitedSource.innerHTML = options;
+    excitedTarget.innerHTML = options;
+  }
+  excitedSource.value = String(data.source_state);
+  excitedTarget.value = String(data.target_state);
+  excitedPair.innerHTML = data.nto_pairs.map((pair) =>
+    `<option value="${pair.index}">Pair ${pair.index + 1} · ${(100 * pair.fraction).toFixed(2)}%</option>`
+  ).join("");
+  $<HTMLDivElement>("excitedPairWrap").style.display =
+    excitedMap.value.startsWith("nto_") ? "" : "none";
+  $<HTMLDivElement>("excitedMetrics").textContent = [
+    `${data.transition_ev.toFixed(4)} eV`,
+    `NTO participation ${data.nto_participation_ratio.toFixed(3)}`,
+    `promoted charge ${data.n_promoted.toFixed(4)} e`,
+  ].join(" · ");
+}
+
+async function loadExcitedAnalysis(jobId: string): Promise<void> {
+  const ref = excitedSource.value || "0";
+  const target = excitedTarget.value || "1";
+  if (ref === target) return;
+  const response = await fetch(
+    `/api/jobs/${jobId}/excited-analysis?ref=${encodeURIComponent(ref)}&target=${encodeURIComponent(target)}`
+  );
+  if (!response.ok || jobId !== selectedJob) return;
+  renderExcitedAnalysis(await response.json());
+}
+
+async function showExcitedMap(): Promise<void> {
+  if (!selectedJob || !excitedAnalysis?.available) return;
+  const kind = excitedMap.value;
+  const query = new URLSearchParams({
+    kind,
+    ref: excitedSource.value,
+    target: excitedTarget.value,
+    rank: excitedPair.value || "0",
+  });
+  const base = `/api/jobs/${selectedJob}`;
+  const [geometryResponse, cubeResponse] = await Promise.all([
+    fetch(`${base}/molden/${encodeURIComponent(excitedAnalysis.molden_file)}/geom.xyz`),
+    fetch(`${base}/excited-analysis/cube?${query}`),
+  ]);
+  if (!geometryResponse.ok || !cubeResponse.ok) return;
+  const [xyz, cube] = await Promise.all([geometryResponse.text(), cubeResponse.text()]);
+  if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
+  activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
+  pushOrbitalStyle();
+  pushToResultViewer({
+    type: "oqp-cube",
+    xyz,
+    cube: activeCubeUrl,
+    iso: kind.startsWith("nto_") ? 0.05 : 0.002,
+  });
+}
+
+for (const select of [excitedSource, excitedTarget]) {
+  select.addEventListener("change", () => {
+    if (excitedSource.value === excitedTarget.value) {
+      const states = excitedAnalysis?.states ?? [];
+      const current = Number(excitedSource.value);
+      const alternative = states.find((state) => state.index !== current);
+      if (!alternative) return;
+      excitedTarget.value = String(alternative.index);
+    }
+    void loadExcitedAnalysis(selectedJob);
+  });
+}
+excitedMap.addEventListener("change", () => {
+  $<HTMLDivElement>("excitedPairWrap").style.display =
+    excitedMap.value.startsWith("nto_") ? "" : "none";
+});
+$<HTMLButtonElement>("excitedShow").addEventListener("click", () => void showExcitedMap());
+$<HTMLButtonElement>("excitedReset").addEventListener("click", () => {
+  if (!excitedAnalysis) return;
+  if (activeCubeUrl) {
+    URL.revokeObjectURL(activeCubeUrl);
+    activeCubeUrl = null;
+  }
+  fetch(`/api/jobs/${selectedJob}/molden/${encodeURIComponent(excitedAnalysis.molden_file)}/geom.xyz`)
+    .then((response) => response.text())
+    .then((xyz) => pushToResultViewer({ type: "oqp-structure", xyz }));
+});
 
 const resultFrame = $<HTMLIFrameElement>("resultFrame");
 const orbitalCard = $<HTMLDivElement>("orbitalCard");
