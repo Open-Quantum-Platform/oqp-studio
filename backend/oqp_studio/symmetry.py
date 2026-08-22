@@ -34,6 +34,7 @@ MAX_MATCH_WORK = 40_000_000
 MAX_ASSIGNMENT_EDGES = 10_000
 MAX_ASSIGNMENT_VISITS = 100_000
 MAX_XYZ_CHARACTERS = 1_000_000
+MAX_ROTATION_SCREEN_WORK = 3_000_000
 
 
 @dataclass
@@ -337,7 +338,15 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
 
     rotations: dict[int, list[tuple[np.ndarray, Operation]]] = {}
     improper: dict[int, list[tuple[np.ndarray, Operation]]] = {}
+    rotation_screen_work = 0
+    maximum_order = max(Counter(symbols).values(), default=1)
     for axis in axes:
+        rotation_screen_work += len(atoms) * max(0, maximum_order - 1)
+        if rotation_screen_work > MAX_ROTATION_SCREEN_WORK:
+            raise ValueError(
+                "symmetry rotation screening exceeded its work limit; "
+                "use fewer atoms or a tighter tolerance"
+            )
         for order in _rotation_orders(symbols, coordinates, axis, tolerance):
             reflection = np.eye(3) - 2 * np.outer(axis, axis)
             matrix = _rotation(axis, 2 * pi / order)

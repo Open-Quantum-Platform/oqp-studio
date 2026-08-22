@@ -1452,6 +1452,29 @@ def test_cube_geometry_is_extracted_in_angstrom():
         cube.parse_header(StringIO("x" * (cube.MAX_HEADER_LINE + 1) + "\n" + text))
     orbital_header = text.replace("1 0.0 0.0 0.0", "-1 0.0 0.0 0.0 2000000", 1)
     assert cube.geometry_xyz(cube.parse_header(StringIO(orbital_header))) == xyz
+    fractional = text.replace("8 0.0 1.0 0.0 0.0", "1.6 0.0 1.0 0.0 0.0")
+    with pytest.raises(ValueError, match="nonintegral atomic number"):
+        cube.geometry_xyz(cube.parse(fractional))
+
+
+def test_cube_header_has_an_aggregate_size_limit():
+    from io import StringIO
+
+    import pytest
+
+    from oqp_studio import cube
+
+    atom_line = "1" + " " * (cube.MAX_HEADER_LINE - 16) + "0 0 0 0\n"
+    text = (
+        "cube\nvalues\n"
+        "300 0 0 0\n1 1 0 0\n1 0 1 0\n1 0 0 1\n"
+        + atom_line * 300
+    )
+
+    with pytest.raises(ValueError, match="header is limited to 4 MiB"):
+        cube.parse_header(StringIO(text))
+    with pytest.raises(ValueError, match="header is limited to 4 MiB"):
+        cube.parse(text)
 
 
 def test_cube_arithmetic_rejects_different_grids():
@@ -1864,6 +1887,20 @@ def test_symmetry_stops_before_assignment_work_can_block_the_sidecar(monkeypatch
 
     with pytest.raises(ValueError, match="work limit"):
         symmetry.analyze(xyz, tolerance=0.01)
+
+
+def test_symmetry_budgets_rotation_order_screening(monkeypatch):
+    import pytest
+
+    from oqp_studio import symmetry
+
+    monkeypatch.setattr(symmetry, "MAX_ROTATION_SCREEN_WORK", 0)
+
+    with pytest.raises(ValueError, match="rotation screening exceeded"):
+        symmetry.analyze(
+            "C 1.0 0.0 0.0\nC -1.0 0.0 0.0\nC 0.0 1.0 0.0\n",
+            tolerance=0.001,
+        )
 
 
 def test_symmetry_finds_rotated_ammonia_mirror_planes():

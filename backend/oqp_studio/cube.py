@@ -13,6 +13,7 @@ MAX_GRID_VALUES = 2_000_000
 MAX_CUBE_DATASETS = 10_000
 MAX_CUBE_ATOMS = 10_000
 MAX_HEADER_LINE = 16 * 1024
+MAX_CUBE_HEADER = 4 * 1024 * 1024
 
 
 @dataclass
@@ -73,6 +74,8 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
     header_end = 6 + atoms
     if len(lines) < header_end:
         raise ValueError("cube atom header is incomplete")
+    if sum(len(line) + 1 for line in lines[:header_end]) > MAX_CUBE_HEADER:
+        raise ValueError(f"cube header is limited to {MAX_CUBE_HEADER // (1024 * 1024)} MiB")
     try:
         atom_records = [_record(line, (5,)) for line in lines[6:header_end]]
     except ValueError as exc:
@@ -157,10 +160,16 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
 
 def parse_header(stream: TextIOBase) -> Cube:
     """Read only the bounded Gaussian cube header from an open text stream."""
+    total = 0
+
     def header_line() -> str:
+        nonlocal total
         line = stream.readline(MAX_HEADER_LINE + 1)
         if len(line) > MAX_HEADER_LINE:
             raise ValueError(f"cube header lines are limited to {MAX_HEADER_LINE:,} characters")
+        total += len(line)
+        if total > MAX_CUBE_HEADER:
+            raise ValueError(f"cube header is limited to {MAX_CUBE_HEADER // (1024 * 1024)} MiB")
         return line
 
     lines = [header_line() for _ in range(6)]
@@ -224,7 +233,10 @@ def geometry_xyz(cube: Cube) -> str:
     factor = 1.0 if all(cube.axis_units) else BOHR_TO_ANGSTROM
     rows: list[str] = []
     for record in atom_records:
-        atomic_number = abs(round(record[0]))
+        atomic_value = record[0]
+        if not atomic_value.is_integer():
+            raise ValueError(f"cube atom has nonintegral atomic number {record[0]}")
+        atomic_number = int(atomic_value)
         if atomic_number < 1 or atomic_number >= len(SYMBOLS):
             raise ValueError(f"cube atom has unsupported atomic number {atomic_number}")
         x, y, z = (value * factor for value in record[2:5])
