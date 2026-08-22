@@ -475,18 +475,19 @@ document.querySelectorAll<HTMLInputElement | HTMLSelectElement>(".render-input")
 });
 
 // Orbital phase colours, opacity and surface kind, as MacMolPlt and IQmol offer.
-function pushOrbitalStyle(): void {
+function currentOrbitalStyle(): Record<string, unknown> {
   const [positive, negative] = $<HTMLSelectElement>("moColors").value.split(",");
-  pushToViewers({
-    type: "oqp-orbital-style",
-    orbital: {
-      positive: parseInt(positive, 16),
-      negative: parseInt(negative, 16),
-      alpha: +$<HTMLInputElement>("moAlpha").value,
-      visuals: $<HTMLSelectElement>("moVisual").value.split(","),
-      sides: $<HTMLSelectElement>("moSides").value,
-    },
-  });
+  return {
+    positive: parseInt(positive, 16),
+    negative: parseInt(negative, 16),
+    alpha: +$<HTMLInputElement>("moAlpha").value,
+    visuals: $<HTMLSelectElement>("moVisual").value.split(","),
+    sides: $<HTMLSelectElement>("moSides").value,
+  };
+}
+
+function pushOrbitalStyle(): void {
+  pushToViewers({ type: "oqp-orbital-style", orbital: currentOrbitalStyle() });
 }
 
 // Ready-made orbital looks. "studio" is what the app has always drawn and
@@ -624,11 +625,21 @@ $<HTMLButtonElement>("symmetryAnalyze").addEventListener("click", async () => {
   symmetryResult = null;
   $<HTMLButtonElement>("symmetryAlign").disabled = true;
   status.textContent = "Analyzing coordinates…";
-  const response = await fetch("/api/symmetry", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ xyz: source, tolerance }),
-  });
+  let response: Response;
+  try {
+    response = await fetch("/api/symmetry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ xyz: source, tolerance }),
+    });
+  } catch (error) {
+    if (requestId !== symmetryRequestId || source !== xyzArea.value ||
+        tolerance !== +$<HTMLInputElement>("symmetryTolerance").value) return;
+    symmetryPendingSource = "";
+    symmetryPendingTolerance = null;
+    status.textContent = `symmetry analysis failed: ${error instanceof Error ? error.message : String(error)}`;
+    return;
+  }
   const payload = await response.json().catch(() => null);
   if (requestId !== symmetryRequestId || source !== xyzArea.value ||
       tolerance !== +$<HTMLInputElement>("symmetryTolerance").value) return;
@@ -2128,9 +2139,12 @@ function pushToResultViewer(message: Record<string, unknown>): void {
   const renderTypes = [
     "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
   ];
-  const outgoing = renderTypes.includes(String(message.type))
-    ? { ...message, renderGeneration: ++viewerRenderGeneration }
+  const styledMessage = message.type === "oqp-cube"
+    ? { ...message, orbital: currentOrbitalStyle() }
     : message;
+  const outgoing = renderTypes.includes(String(message.type))
+    ? { ...styledMessage, renderGeneration: ++viewerRenderGeneration }
+    : styledMessage;
   pendingResultMessage = outgoing;
   if (!resultFrame.src) {
     resultViewerReady = false;

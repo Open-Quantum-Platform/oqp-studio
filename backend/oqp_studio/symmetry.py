@@ -35,6 +35,7 @@ MAX_ASSIGNMENT_EDGES = 10_000
 MAX_ASSIGNMENT_VISITS = 100_000
 MAX_XYZ_CHARACTERS = 1_000_000
 MAX_ROTATION_SCREEN_WORK = 5_000_000
+MAX_MIXED_IMPROPER_ORDER = 12
 
 
 @dataclass
@@ -96,6 +97,23 @@ def _operation_orders(symbols: list[str], coordinates: np.ndarray, axis: np.ndar
             multiplicity = gcd(multiplicity, count)
         if multiplicity and multiplicity % order == 0:
             orders.append(order)
+        elif (improper and order <= MAX_MIXED_IMPROPER_ORDER and counts
+              and sum(counts.values()) <= 4 * order):
+            period = order if order % 2 == 0 else 2 * order
+            divisors = [value for value in range(2, period + 1) if period % value == 0]
+
+            def representable(count: int, allowed: tuple[int, ...] = tuple(divisors)) -> bool:
+                reachable = [True] + [False] * count
+                for total in range(1, count + 1):
+                    reachable[total] = any(
+                        divisor <= total and reachable[total - divisor] for divisor in allowed
+                    )
+                return reachable[count]
+
+            if (all(representable(count) for count in counts.values())
+                    and any(count >= order and representable(count - order)
+                            for count in counts.values())):
+                orders.append(order)
     return orders
 
 

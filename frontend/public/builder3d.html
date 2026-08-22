@@ -775,6 +775,7 @@
             report();
           } else if (message.type === "oqp-cube") {
             lastAtomicProperty = null;
+            if (message.orbital) orbital = { ...orbital, ...message.orbital };
             lastCube = { ...message };
             await drawCube(lastCube);
           }

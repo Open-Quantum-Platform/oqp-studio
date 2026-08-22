@@ -830,7 +830,7 @@ def _comparison_frame(paths: list[Path]):
             return (0, name)
         if name.endswith(".xyz") and any(word in name for word in ("result", "final", "optimized")):
             return (1, name)
-        if name.endswith((".log", ".out", ".txt")):
+        if name.endswith((".log", ".out")):
             return (2, name)
         if name.endswith((".molden", ".freq.molden")):
             return (3, name)
@@ -845,6 +845,8 @@ def _comparison_frame(paths: list[Path]):
             ".cdxml", ".cdx", ".smi", ".smiles",
         )):
             return (7, name)
+        if name.endswith(".txt"):
+            return (8, name)
         return None
 
     candidates = [(priority, path) for path in paths if (priority := rank(path)) is not None]

@@ -936,6 +936,23 @@ def test_comparison_geometry_prefers_an_explicit_result_xyz(tmp_path):
     assert main._comparison_frame([input_json, result_xyz]).atoms[0][1:] == (1.0, 2.0, 3.0)
 
 
+def test_comparison_geometry_ranks_generic_text_after_molden(tmp_path, monkeypatch):
+    from oqp_studio import main, structure_io
+
+    table = tmp_path / "charges.txt"
+    molden = tmp_path / "result.molden"
+    table.write_text("C 99.0 0.0 0.0\n")
+    molden.write_text("molden")
+
+    def parse(name, *_args, **_kwargs):
+        x = 1.0 if name.endswith(".molden") else 99.0
+        return structure_io.Structure("test", [structure_io.Frame([("C", x, 0.0, 0.0)])])
+
+    monkeypatch.setattr(structure_io, "parse", parse)
+
+    assert main._comparison_frame([table, molden]).atoms[0][1] == 1.0
+
+
 def test_project_comparison_rejects_an_active_calculation(monkeypatch):
     from datetime import datetime, timezone
 
@@ -2005,6 +2022,21 @@ def test_symmetry_screens_compact_improper_operations_by_their_full_displacement
 
     assert 4 not in symmetry._rotation_orders(symbols, xyz, axis, 0.5)
     assert 4 in symmetry._improper_orders(symbols, xyz, axis, 0.5)
+
+
+def test_symmetry_improper_screening_allows_mixed_cycle_lengths():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    coordinates = np.asarray([
+        [1.0, 0.0, 0.5], [0.0, 1.0, -0.5], [-1.0, 0.0, 0.5], [0.0, -1.0, -0.5],
+        [0.0, 0.0, 0.8], [0.0, 0.0, -0.8],
+    ])
+
+    assert 4 in symmetry._improper_orders(
+        ["C"] * 6, coordinates, np.asarray([0.0, 0.0, 1.0]), 0.01,
+    )
 
 
 def test_symmetry_distinguishes_an_icosahedral_structure():
