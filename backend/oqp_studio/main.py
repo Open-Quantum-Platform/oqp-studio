@@ -175,13 +175,7 @@ def bond_scan(group_id: str) -> dict:
     for info in manager.list():
         if info.group_id != group_id:
             continue
-        report = _job_summary(info.id) if info.status == "done" else {}
-        energy = report.get("energy", {})
-        scan_energy = energy.get("total", energy.get("components", {}).get("total"))
-        if info.scan_state is not None:
-            state = next((row for row in report.get("states", [])
-                          if row.get("index") == info.scan_state), None)
-            scan_energy = state.get("total") if state else None
+        scan_energy = _scan_point_energy(info) if info.status == "done" else None
         points.append({
             "job_id": info.id,
             "name": info.name,
@@ -243,6 +237,8 @@ def delete_job(job_id: str) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"could not delete project: {exc}") from exc
+    _summary_cache.pop(job_id, None)
+    _scan_energy_cache.pop(job_id, None)
     return {"deleted": job_id}
 
 
@@ -637,6 +633,7 @@ def molden_mode_vectors(job_id: str, name: str, mode: int) -> dict:
 
 
 _summary_cache: OrderedDict[str, dict] = OrderedDict()
+_scan_energy_cache: dict[str, float | None] = {}
 
 
 def _job_summary(job_id: str) -> dict:
@@ -657,6 +654,28 @@ def _job_summary(job_id: str) -> dict:
     return cached
 
 
+def _scan_point_energy(info: JobInfo) -> float | None:
+    """Read one terminal scan energy once, using the final optimized root."""
+    if info.id in _scan_energy_cache:
+        return _scan_energy_cache[info.id]
+    report = _job_summary(info.id)
+    energy = report.get("energy", {})
+    value = energy.get("total", energy.get("components", {}).get("total"))
+    if info.scan_state is not None:
+        from . import analysis
+
+        history = analysis.optimization_history(_job_paths(info.id)).get("steps", [])
+        final_states = next(
+            (step.get("states", []) for step in reversed(history) if step.get("states")),
+            [],
+        )
+        states = final_states or report.get("states", [])
+        state = next((row for row in states if row.get("index") == info.scan_state), None)
+        value = state.get("total") if state else None
+    _scan_energy_cache[info.id] = value
+    return value
+
+
 def _job_paths(job_id: str) -> list[Path]:
     return [
         path for entry in manager.files(job_id)
@@ -669,6 +688,7 @@ def job_summary(job_id: str, refresh: bool = False) -> dict:
     """Energies, states, frequencies, thermochemistry and properties."""
     if refresh:
         _summary_cache.pop(job_id, None)
+        _scan_energy_cache.pop(job_id, None)
     return _job_summary(job_id)
 
 

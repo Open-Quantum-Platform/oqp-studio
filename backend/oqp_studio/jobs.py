@@ -194,12 +194,16 @@ class JobManager:
         self._ensure()
         job_id = uuid.uuid4().hex[:12]
         job_dir = JOBS_ROOT / job_id
-        job_dir.mkdir(parents=True, exist_ok=True)
-        input_name = self._input_name(req)
-        (job_dir / input_name).write_text(req.input_text)
-        if req.pdb_text is not None:
-            pdb_name = self._pdb_name(req)
-            (job_dir / pdb_name).write_text(req.pdb_text)
+        try:
+            job_dir.mkdir(parents=True, exist_ok=True)
+            input_name = self._input_name(req)
+            (job_dir / input_name).write_text(req.input_text)
+            if req.pdb_text is not None:
+                pdb_name = self._pdb_name(req)
+                (job_dir / pdb_name).write_text(req.pdb_text)
+        except Exception:
+            rmtree(job_dir, ignore_errors=True)
+            raise
         info = JobInfo(
             id=job_id,
             name=req.name,
@@ -230,11 +234,20 @@ class JobManager:
             raise ValueError("scan requests and coordinate values must have equal non-zero length")
         for request in requests:
             self._validate_request(request)
-        infos = [
-            self._prepare(request, group_id=group_id, scan_value=value, scan_unit=unit,
-                          scan_state=state)
-            for request, value in zip(requests, values)
-        ]
+        infos: list[JobInfo] = []
+        try:
+            for request, value in zip(requests, values):
+                infos.append(self._prepare(
+                    request, group_id=group_id, scan_value=value, scan_unit=unit,
+                    scan_state=state,
+                ))
+        except Exception:
+            with self._lock:
+                for info in infos:
+                    self._jobs.pop(info.id, None)
+            for info in infos:
+                rmtree(JOBS_ROOT / info.id, ignore_errors=True)
+            raise
         threading.Thread(
             target=self._run_batch, args=([info.id for info in infos],), daemon=True
         ).start()
@@ -377,12 +390,13 @@ class JobManager:
                     continue
                 self._cancel_requested.add(candidate.id)
                 process = self._processes.get(candidate.id)
-                if process is None:
+                if process is None and candidate.status == JobStatus.queued:
                     candidate.status = JobStatus.cancelled
                     candidate.error = "Cancelled with scan group" if info.group_id else "Cancelled by user"
                 else:
                     candidate.status = JobStatus.cancelling
-                    processes.append(process)
+                    if process is not None:
+                        processes.append(process)
                 self._write_metadata(JOBS_ROOT / candidate.id, candidate)
         for process in processes:
             self._terminate_process(process)

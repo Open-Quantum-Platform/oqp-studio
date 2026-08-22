@@ -55,6 +55,10 @@ def _ensure_distance_constraint(text: str, atom_a: int, atom_b: int) -> str:
     line = lines[driver_index].strip()
     freeze = f"freeze=distance({atom_a},{atom_b})"
     if re.search(r"\bfreeze\s*=", line, re.IGNORECASE):
+        if not re.search(r"\bfreeze\s*=\s*distance\([^)]*\)", line, re.IGNORECASE):
+            raise ValueError(
+                "a relaxed bond scan cannot replace an existing non-distance freeze"
+            )
         line = re.sub(r"freeze\s*=\s*distance\([^)]*\)", freeze, line,
                       count=1, flags=re.IGNORECASE)
     elif line.endswith(")"):
