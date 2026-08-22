@@ -56,6 +56,10 @@ def test_zip_extracts_safe_relative_symlinks(tmp_path):
     assert link.read_bytes() == b"library"
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows normalizes '..' before following directory symlinks",
+)
 def test_zip_revalidates_the_completed_symlink_graph(tmp_path):
     payload = io.BytesIO()
     with zipfile.ZipFile(payload, "w") as archive:
@@ -103,6 +107,10 @@ def test_tar_extracts_safe_relative_symlinks(tmp_path):
     assert link.read_bytes() == b"library"
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows normalizes '..' before following directory symlinks",
+)
 def test_tar_revalidates_the_completed_symlink_graph(tmp_path):
     payload = io.BytesIO()
     with tarfile.open(fileobj=payload, mode="w") as archive:
