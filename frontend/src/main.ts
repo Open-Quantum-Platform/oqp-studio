@@ -2022,6 +2022,10 @@ async function showSurface(): Promise<void> {
   const primary = $<HTMLSelectElement>("surfacePrimary").value;
   const secondary = $<HTMLSelectElement>("surfaceSecondary").value;
   const operation = $<HTMLSelectElement>("surfaceOperation").value;
+  const selectionIsCurrent = () => jobId === selectedJob &&
+    primary === $<HTMLSelectElement>("surfacePrimary").value &&
+    secondary === $<HTMLSelectElement>("surfaceSecondary").value &&
+    operation === $<HTMLSelectElement>("surfaceOperation").value;
   const status = $<HTMLDivElement>("surfaceStatus");
   if (!primary || (operation !== "display" && !secondary)) return;
   let cubeUrl = `/api/jobs/${jobId}/files/${encodeURIComponent(primary)}`;
@@ -2031,24 +2035,24 @@ async function showSurface(): Promise<void> {
     fetch(operation === "display" ? cubeUrl : `/api/jobs/${jobId}/cube-combine?${query}`),
     fetch(`/api/jobs/${jobId}/cube-geometry?name=${encodeURIComponent(primary)}`),
   ]);
-  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
-    if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+    if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
     status.textContent = detail?.detail ?? `surface operation failed (${response.status})`;
     return;
   }
   const cube = await response.text();
-  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   const geometry = geometryResponse.ok ? await geometryResponse.json() : null;
-  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
   activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
   cubeUrl = activeCubeUrl;
   if (operation !== "display") {
     status.textContent = `${operation}: ${primary} and ${secondary}`;
   }
-  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   activeMapSource = "surface";
   pushOrbitalStyle();
   pushToResultViewer({
@@ -2060,7 +2064,13 @@ async function showSurface(): Promise<void> {
   });
 }
 
-$<HTMLSelectElement>("surfaceOperation").addEventListener("change", syncSurfaceOperation);
+$<HTMLSelectElement>("surfaceOperation").addEventListener("change", () => {
+  volumetricRequestId += 1;
+  syncSurfaceOperation();
+});
+for (const id of ["surfacePrimary", "surfaceSecondary"]) {
+  $<HTMLSelectElement>(id).addEventListener("change", () => { volumetricRequestId += 1; });
+}
 $<HTMLButtonElement>("surfaceShow").addEventListener("click", () => { void showSurface(); });
 $<HTMLSelectElement>("surfaceSides").addEventListener("change", () => { void showSurface(); });
 
@@ -2099,8 +2109,7 @@ function pushToResultViewer(message: Record<string, unknown>): void {
     }
   }
   const renderTypes = [
-    "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-atomic-property",
-    "oqp-nmr-shielding", "oqp-file", "oqp-cube",
+    "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
   ];
   const outgoing = renderTypes.includes(String(message.type))
     ? { ...message, renderGeneration: ++viewerRenderGeneration }

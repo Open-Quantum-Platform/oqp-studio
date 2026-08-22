@@ -31,6 +31,9 @@ _MASSES = [
 ]
 ATOMIC_MASS = dict(zip(SYMBOLS, _MASSES))
 MAX_MATCH_WORK = 40_000_000
+MAX_ASSIGNMENT_EDGES = 10_000
+MAX_ASSIGNMENT_VISITS = 100_000
+MAX_XYZ_CHARACTERS = 1_000_000
 
 
 @dataclass
@@ -100,14 +103,21 @@ def _face_normal_axes(coordinates: np.ndarray) -> list[np.ndarray]:
 def _assignment(distances: np.ndarray, tolerance: float) -> list[int] | None:
     """Find a same-element one-to-one assignment within the stated tolerance."""
     choices = [list(np.flatnonzero(row <= tolerance)) for row in distances]
+    if sum(map(len, choices)) > MAX_ASSIGNMENT_EDGES:
+        raise ValueError("symmetry assignment exceeded its work limit; use a tighter tolerance")
     order = sorted(range(len(choices)), key=lambda index: len(choices[index]))
     if any(not choices[index] for index in order):
         return None
     mapping = [-1] * len(choices)
     owner = [-1] * len(choices)
+    visits = 0
 
     def augment(source: int, seen: set[int]) -> bool:
+        nonlocal visits
         for target in sorted(choices[source], key=lambda index: distances[source, index]):
+            visits += 1
+            if visits > MAX_ASSIGNMENT_VISITS:
+                raise ValueError("symmetry assignment exceeded its work limit; use a tighter tolerance")
             if target in seen:
                 continue
             seen.add(target)
@@ -172,6 +182,8 @@ def _matrix_key(matrix: np.ndarray) -> bytes:
 
 
 def _strict_xyz(xyz: str) -> list[Atom]:
+    if len(xyz) > MAX_XYZ_CHARACTERS:
+        raise ValueError(f"symmetry input is limited to {MAX_XYZ_CHARACTERS:,} characters")
     lines = xyz.splitlines()
     while lines and not lines[0].strip():
         lines.pop(0)
@@ -184,6 +196,8 @@ def _strict_xyz(xyz: str) -> list[Atom]:
     except ValueError:
         declared = None
     if declared is not None:
+        if declared > 300:
+            raise ValueError("symmetry analysis supports at most 300 atoms")
         if declared < 1 or len(lines) < declared + 2:
             raise ValueError("XYZ atom count or coordinate rows are invalid")
         if any(line.strip() for line in lines[declared + 2:]):
@@ -193,6 +207,8 @@ def _strict_xyz(xyz: str) -> list[Atom]:
         expected = declared
     else:
         rows = [line for line in lines if line.strip()]
+        if len(rows) > 300:
+            raise ValueError("symmetry analysis supports at most 300 atoms")
         frames = parse_xyz("\n".join(rows))
         expected = len(rows)
     if len(frames) != 1 or len(frames[0].atoms) != expected:

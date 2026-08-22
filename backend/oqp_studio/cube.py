@@ -50,6 +50,8 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
         shape = tuple(abs(count) for count in voxel_counts)
         if any(size == 0 for size in shape):
             raise ValueError
+        if len({count < 0 for count in voxel_counts}) != 1:
+            raise ValueError
     except (IndexError, ValueError) as exc:
         raise ValueError("cube header is invalid") from exc
     header_end = 6 + atoms
@@ -142,18 +144,9 @@ def parse_header(stream: TextIOBase) -> Cube:
             raise ValueError("cube atom header is incomplete")
         lines.append(line)
     if atom_count < 0:
-        identifiers: list[str] = []
-        while not identifiers or len(identifiers) < int(identifiers[0]) + 1:
-            line = header_line()
-            if not line:
-                raise ValueError("cube dataset identifier record is incomplete")
-            lines.append(line)
-            identifiers.extend(line.split())
-            try:
-                if identifiers and int(identifiers[0]) > MAX_GRID_VALUES:
-                    raise ValueError("cube dataset identifier record is invalid")
-            except ValueError as exc:
-                raise ValueError("cube dataset identifiers are invalid") from exc
+        origin = lines[2].split()
+        origin[0] = str(atoms)
+        lines[2] = " ".join(origin) + "\n"
     return parse("".join(lines), header_only=True)
 
 

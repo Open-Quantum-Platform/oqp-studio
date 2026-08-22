@@ -1450,6 +1450,8 @@ def test_cube_geometry_is_extracted_in_angstrom():
     assert cube.geometry_xyz(cube.parse_header(StringIO(text[:-4] + "not-grid-data\n"))) == xyz
     with pytest.raises(ValueError, match="header lines are limited"):
         cube.parse_header(StringIO("x" * (cube.MAX_HEADER_LINE + 1) + "\n" + text))
+    orbital_header = text.replace("1 0.0 0.0 0.0", "-1 0.0 0.0 0.0 2000000", 1)
+    assert cube.geometry_xyz(cube.parse_header(StringIO(orbital_header))) == xyz
 
 
 def test_cube_arithmetic_rejects_different_grids():
@@ -1542,12 +1544,16 @@ def test_cube_arithmetic_rejects_excessive_grids_and_mixed_axis_units():
     oversized = _cube([1.0, 2.0]).replace("2 1.0 0.0 0.0", "2000001 1.0 0.0 0.0")
     with pytest.raises(ValueError, match="limited to 2,000,000"):
         cube.parse(oversized)
+    angstrom_cube = (
+        _cube([1.0, 2.0])
+        .replace("2 1.0 0.0 0.0", "-2 1.0 0.0 0.0")
+        .replace("1 0.0 1.0 0.0", "-1 0.0 1.0 0.0")
+        .replace("1 0.0 0.0 1.0", "-1 0.0 0.0 1.0")
+    )
     with pytest.raises(ValueError, match="different coordinate units"):
-        cube.combine(
-            _cube([1.0, 2.0]),
-            _cube([1.0, 2.0]).replace("2 1.0 0.0 0.0", "-2 1.0 0.0 0.0"),
-            "difference",
-        )
+        cube.combine(_cube([1.0, 2.0]), angstrom_cube, "difference")
+    with pytest.raises(ValueError, match="header is invalid"):
+        cube.parse(_cube([1.0, 2.0]).replace("2 1.0 0.0 0.0", "-2 1.0 0.0 0.0"))
 
 
 def test_cube_arithmetic_endpoint_uses_only_job_files(tmp_path, monkeypatch):
@@ -1663,6 +1669,8 @@ def test_symmetry_rejects_incomplete_or_malformed_coordinate_rows():
         symmetry.analyze("3\nwater\nO 0 0 0\nH 0 1 0\nnot-an-atom\n")
     with pytest.raises(ValueError, match="every coordinate row"):
         symmetry.analyze("O 0 0 0\nH invalid 1 0\n")
+    with pytest.raises(ValueError, match="at most 300"):
+        symmetry.analyze("301\ntoo many\n")
 
 
 def test_symmetry_rejects_a_structure_containing_only_dummy_sites():
@@ -1689,6 +1697,7 @@ def test_symmetry_rejects_rotations_indistinguishable_at_the_tolerance():
 
 def test_symmetry_assignment_handles_dense_hall_deficiency_without_backtracking():
     import numpy as np
+    import pytest
 
     from oqp_studio import symmetry
 
@@ -1696,6 +1705,8 @@ def test_symmetry_assignment_handles_dense_hall_deficiency_without_backtracking(
     distances[:, -1] = 2.0
 
     assert symmetry._assignment(distances, 1.0) is None
+    with pytest.raises(ValueError, match="work limit"):
+        symmetry._assignment(np.zeros((101, 101)), 1.0)
 
 
 def test_symmetry_stops_before_assignment_work_can_block_the_sidecar(monkeypatch):

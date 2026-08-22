@@ -645,15 +645,18 @@
           if (event.origin !== window.location.origin) return;
           const message = event.data || {};
           const replacementTypes = new Set([
-            "oqp-structure", "oqp-atomic-property", "oqp-nmr-shielding",
-            "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
+            "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
           ]);
+          const dependentTypes = new Set(["oqp-atomic-property", "oqp-nmr-shielding"]);
           let releaseRender = null;
-          if (replacementTypes.has(message.type)) {
+          if (replacementTypes.has(message.type) || dependentTypes.has(message.type)) {
             const supplied = Number(message.renderGeneration);
-            const generation = Number.isFinite(supplied)
-              ? supplied : newestRenderGeneration + 1;
-            newestRenderGeneration = Math.max(newestRenderGeneration, generation);
+            const generation = dependentTypes.has(message.type)
+              ? newestRenderGeneration
+              : (Number.isFinite(supplied) ? supplied : newestRenderGeneration + 1);
+            if (replacementTypes.has(message.type)) {
+              newestRenderGeneration = Math.max(newestRenderGeneration, generation);
+            }
             const previousRender = renderQueue;
             renderQueue = new Promise((resolve) => { releaseRender = resolve; });
             await previousRender;
