@@ -1965,6 +1965,7 @@ let resultViewerReady = false;
 let pendingResultMessage: Record<string, unknown> | null = null;
 let displayedResultAtomCount = 0;
 let volumetricRequestId = 0;
+let viewerRenderGeneration = 0;
 let activeMapSource: "direct" | "excited" | "orbital" | "surface" | null = null;
 let activeDirectCube: { jobId: string; url: string } | null = null;
 
@@ -2080,6 +2081,8 @@ function pushToResultViewer(message: Record<string, unknown>): void {
   if (typeof message.xyz === "string") {
     const displayedAtoms = parseAtoms(message.xyz);
     if (displayedAtoms.length) displayedResultAtomCount = displayedAtoms.length;
+  } else if (message.type === "oqp-cube") {
+    displayedResultAtomCount = 0;
   }
   if ((message.type === "oqp-structure" || message.type === "oqp-normal-mode") &&
       typeof message.xyz === "string") {
@@ -2089,14 +2092,21 @@ function pushToResultViewer(message: Record<string, unknown>): void {
       pushToArt();
     }
   }
-  pendingResultMessage = message;
+  const renderTypes = [
+    "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-atomic-property",
+    "oqp-nmr-shielding", "oqp-file", "oqp-cube",
+  ];
+  const outgoing = renderTypes.includes(String(message.type))
+    ? { ...message, renderGeneration: ++viewerRenderGeneration }
+    : message;
+  pendingResultMessage = outgoing;
   if (!resultFrame.src) {
     resultViewerReady = false;
     resultFrame.src = "/builder3d.html";
     return;
   }
   if (resultViewerReady) {
-    resultFrame.contentWindow?.postMessage(message, window.location.origin);
+    resultFrame.contentWindow?.postMessage(outgoing, window.location.origin);
     pendingResultMessage = null;
   }
 }

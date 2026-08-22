@@ -638,9 +638,31 @@
           report(measure());
         });
 
+        let renderQueue = Promise.resolve();
+        let newestRenderGeneration = 0;
+
         window.addEventListener("message", async (event) => {
           if (event.origin !== window.location.origin) return;
           const message = event.data || {};
+          const replacementTypes = new Set([
+            "oqp-structure", "oqp-atomic-property", "oqp-nmr-shielding",
+            "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
+          ]);
+          let releaseRender = null;
+          if (replacementTypes.has(message.type)) {
+            const supplied = Number(message.renderGeneration);
+            const generation = Number.isFinite(supplied)
+              ? supplied : newestRenderGeneration + 1;
+            newestRenderGeneration = Math.max(newestRenderGeneration, generation);
+            const previousRender = renderQueue;
+            renderQueue = new Promise((resolve) => { releaseRender = resolve; });
+            await previousRender;
+            if (generation !== newestRenderGeneration) {
+              releaseRender();
+              return;
+            }
+          }
+          try {
           if (message.type === "oqp-structure") {
             picked.length = 0;
             report();
@@ -715,6 +737,7 @@
           } else if (message.type === "oqp-cube") {
             await viewer.plugin.clear();
             if (message.xyz) await drawStructure(message.xyz);
+            else last = null;
             const url = sameOriginHref(message.cube);
             if (url) {
               await viewer.loadVolumeFromUrl(
@@ -723,6 +746,9 @@
               );
               await applyOrbitalVisuals();
             }
+          }
+          } finally {
+            if (releaseRender) releaseRender();
           }
         });
         window.parent.postMessage({ type: "oqp-viewer-ready" }, window.location.origin);

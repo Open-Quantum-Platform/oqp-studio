@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from io import TextIOBase
 from math import isfinite, prod
 
 from .molden import BOHR_TO_ANGSTROM, SYMBOLS
 
 MAX_GRID_VALUES = 2_000_000
+MAX_CUBE_ATOMS = 10_000
 
 
 @dataclass
@@ -28,9 +30,9 @@ def _number(token: str) -> float:
     return value
 
 
-def parse(text: str) -> Cube:
+def parse(text: str, *, header_only: bool = False) -> Cube:
     lines = text.splitlines()
-    if len(lines) < 7:
+    if len(lines) < 6:
         raise ValueError("cube file is incomplete")
     try:
         origin_record = lines[2].split()
@@ -38,6 +40,8 @@ def parse(text: str) -> Cube:
             raise ValueError
         atom_count = int(origin_record[0])
         atoms = abs(atom_count)
+        if atoms > MAX_CUBE_ATOMS:
+            raise ValueError
         axis_records = [lines[index].split() for index in (3, 4, 5)]
         if any(len(record) != 4 for record in axis_records):
             raise ValueError
@@ -83,18 +87,20 @@ def parse(text: str) -> Cube:
         if datasets != 1 and datasets != dataset_ids:
             raise ValueError("cube dataset counts disagree")
         datasets = dataset_ids
-    expected = prod(shape) * datasets
-    if expected > MAX_GRID_VALUES:
-        raise ValueError(f"cube grid is limited to {MAX_GRID_VALUES:,} values")
-    try:
-        values = [_number(token)
-                  for line in lines[header_end:] for token in line.split()]
-    except ValueError as exc:
-        if "non-finite" in str(exc):
-            raise
-        raise ValueError("cube grid contains a nonnumeric value") from exc
-    if len(values) != expected:
-        raise ValueError(f"cube grid has {len(values)} values; expected {expected}")
+    values: list[float] = []
+    if not header_only:
+        expected = prod(shape) * datasets
+        if expected > MAX_GRID_VALUES:
+            raise ValueError(f"cube grid is limited to {MAX_GRID_VALUES:,} values")
+        try:
+            values = [_number(token)
+                      for line in lines[header_end:] for token in line.split()]
+        except ValueError as exc:
+            if "non-finite" in str(exc):
+                raise
+            raise ValueError("cube grid contains a nonnumeric value") from exc
+        if len(values) != expected:
+            raise ValueError(f"cube grid has {len(values)} values; expected {expected}")
     try:
         geometry = (
             tuple(_number(token) for token in origin_record[1:4]),
@@ -109,6 +115,39 @@ def parse(text: str) -> Cube:
     return Cube(
         lines[:header_end], values, shape, datasets, geometry, dataset_id_values, axis_units,
     )
+
+
+def parse_header(stream: TextIOBase) -> Cube:
+    """Read only the bounded Gaussian cube header from an open text stream."""
+    lines = [stream.readline() for _ in range(6)]
+    if any(line == "" for line in lines):
+        raise ValueError("cube file is incomplete")
+    try:
+        atom_count = int(lines[2].split()[0])
+    except (IndexError, ValueError) as exc:
+        raise ValueError("cube header is invalid") from exc
+    atoms = abs(atom_count)
+    if atoms > MAX_CUBE_ATOMS:
+        raise ValueError(f"cube geometry is limited to {MAX_CUBE_ATOMS:,} atoms")
+    for _index in range(atoms):
+        line = stream.readline()
+        if not line:
+            raise ValueError("cube atom header is incomplete")
+        lines.append(line)
+    if atom_count < 0:
+        identifiers: list[str] = []
+        while not identifiers or len(identifiers) < int(identifiers[0]) + 1:
+            line = stream.readline()
+            if not line:
+                raise ValueError("cube dataset identifier record is incomplete")
+            lines.append(line)
+            identifiers.extend(line.split())
+            try:
+                if identifiers and int(identifiers[0]) > MAX_GRID_VALUES:
+                    raise ValueError("cube dataset identifier record is invalid")
+            except ValueError as exc:
+                raise ValueError("cube dataset identifiers are invalid") from exc
+    return parse("".join(lines), header_only=True)
 
 
 def combine(left_text: str, right_text: str, operation: str) -> str:

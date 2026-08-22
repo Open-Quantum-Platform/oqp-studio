@@ -79,7 +79,7 @@ def _face_normal_axes(coordinates: np.ndarray) -> list[np.ndarray]:
     """Candidate axes through polygon centers, ranked by repeated local support."""
     if len(coordinates) < 4:
         return []
-    clusters: list[tuple[np.ndarray, int]] = []
+    clusters: dict[tuple[float, float, float], tuple[np.ndarray, int]] = {}
     neighbor_count = min(7, len(coordinates) - 1)
     for index, point in enumerate(coordinates):
         distance = np.linalg.norm(coordinates - point, axis=1)
@@ -88,15 +88,13 @@ def _face_normal_axes(coordinates: np.ndarray) -> list[np.ndarray]:
             axis = _unit(np.cross(coordinates[first] - point, coordinates[second] - point))
             if axis is None:
                 continue
-            for cluster_index, (existing, support) in enumerate(clusters):
-                if abs(float(np.dot(axis, existing))) > 1 - 1.0e-6:
-                    clusters[cluster_index] = (existing, support + 1)
-                    break
-            else:
-                if len(clusters) < 480:
-                    clusters.append((axis, 1))
-    clusters.sort(key=lambda item: item[1], reverse=True)
-    return [axis for axis, _support in clusters[:240]]
+            first_nonzero = next((value for value in axis if abs(value) > 1.0e-10), 1.0)
+            canonical = axis if first_nonzero > 0 else -axis
+            key = tuple(float(round(value, 6)) for value in canonical)
+            existing, support = clusters.get(key, (canonical, 0))
+            clusters[key] = (existing, support + 1)
+    ranked = sorted(clusters.items(), key=lambda item: (-item[1][1], item[0]))
+    return [axis for _key, (axis, _support) in ranked[:240]]
 
 
 def _assignment(distances: np.ndarray, tolerance: float) -> list[int] | None:
@@ -106,23 +104,20 @@ def _assignment(distances: np.ndarray, tolerance: float) -> list[int] | None:
     if any(not choices[index] for index in order):
         return None
     mapping = [-1] * len(choices)
-    used: set[int] = set()
+    owner = [-1] * len(choices)
 
-    def visit(position: int) -> bool:
-        if position == len(order):
-            return True
-        source = order[position]
+    def augment(source: int, seen: set[int]) -> bool:
         for target in sorted(choices[source], key=lambda index: distances[source, index]):
-            if target in used:
+            if target in seen:
                 continue
-            used.add(target)
-            mapping[source] = target
-            if visit(position + 1):
+            seen.add(target)
+            if owner[target] < 0 or augment(owner[target], seen):
+                owner[target] = source
+                mapping[source] = target
                 return True
-            used.remove(target)
         return False
 
-    return mapping if visit(0) else None
+    return mapping if all(augment(source, set()) for source in order) else None
 
 
 def _match(symbols: list[str], coordinates: np.ndarray, matrix: np.ndarray,

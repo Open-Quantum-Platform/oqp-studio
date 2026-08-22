@@ -326,7 +326,8 @@ def cube_file_geometry(job_id: str, name: str) -> dict:
     if path.suffix.lower() not in {".cube", ".cub"}:
         raise HTTPException(status_code=422, detail="cube geometry requires a .cube or .cub file")
     try:
-        return {"xyz": cube.geometry_xyz(cube.parse(path.read_text(errors="replace")))}
+        with path.open(errors="replace") as stream:
+            return {"xyz": cube.geometry_xyz(cube.parse_header(stream))}
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

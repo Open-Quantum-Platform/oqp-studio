@@ -1431,6 +1431,8 @@ def test_cube_arithmetic_preserves_the_grid_and_combines_values():
 
 
 def test_cube_geometry_is_extracted_in_angstrom():
+    from io import StringIO
+
     from oqp_studio import cube
 
     text = (
@@ -1443,6 +1445,7 @@ def test_cube_geometry_is_extracted_in_angstrom():
 
     assert xyz.startswith("1\ncube geometry\nO ")
     assert "0.5291772109 0.0000000000 0.0000000000" in xyz
+    assert cube.geometry_xyz(cube.parse_header(StringIO(text[:-4] + "not-grid-data\n"))) == xyz
 
 
 def test_cube_arithmetic_rejects_different_grids():
@@ -1680,6 +1683,17 @@ def test_symmetry_rejects_rotations_indistinguishable_at_the_tolerance():
     assert not symmetry._moves_coordinates(np.asarray([[7.0, 0.0, 0.0]]), high_order, 0.5)
 
 
+def test_symmetry_assignment_handles_dense_hall_deficiency_without_backtracking():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    distances = np.zeros((20, 20))
+    distances[:, -1] = 2.0
+
+    assert symmetry._assignment(distances, 1.0) is None
+
+
 def test_symmetry_stops_before_assignment_work_can_block_the_sidecar(monkeypatch):
     import pytest
 
@@ -1804,6 +1818,10 @@ def test_symmetry_finds_face_centered_fivefold_axes_in_c60():
     xyz = "\n".join(f"C {x} {y} {z}" for x, y, z in sorted(vertices))
 
     assert symmetry.analyze(xyz, tolerance=0.001)["point_group"] == "Ih"
+    reversed_xyz = "\n".join(
+        f"C {x} {y} {z}" for x, y, z in sorted(vertices, reverse=True)
+    )
+    assert symmetry.analyze(reversed_xyz, tolerance=0.001)["point_group"] == "Ih"
 
 
 def test_symmetry_falls_back_to_c1_and_centers_aligned_coordinates():
