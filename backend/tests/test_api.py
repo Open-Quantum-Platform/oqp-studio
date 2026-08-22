@@ -180,6 +180,176 @@ def test_cancel_terminates_the_running_process_group(tmp_path, monkeypatch):
     assert manager.get("slow").status == jobs.JobStatus.cancelled
 
 
+def test_cancelling_one_scan_point_cancels_the_queued_group(tmp_path, monkeypatch):
+    import json
+    from datetime import datetime, timezone
+
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    for index in range(3):
+        job_id = f"point-{index}"
+        (tmp_path / job_id).mkdir()
+        manager._jobs[job_id] = jobs.JobInfo(
+            id=job_id, name=job_id, status=jobs.JobStatus.queued, runner="bundled",
+            created_at=datetime.now(timezone.utc).isoformat(), group_id="scan",
+            scan_value=float(index), scan_unit="A",
+        )
+
+    manager.cancel("point-0")
+
+    assert {info.status for info in manager.list()} == {jobs.JobStatus.cancelled}
+    assert all(json.loads((tmp_path / info.id / ".oqp-studio.json").read_text())["status"]
+               == "cancelled" for info in manager.list())
+
+
+def test_cancel_keeps_a_starting_process_in_cancelling_state(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    job_dir = tmp_path / "starting"
+    job_dir.mkdir()
+    (job_dir / "input.oqp").write_text("hf/sto-3g\nenergy\n")
+    manager._jobs["starting"] = jobs.JobInfo(
+        id="starting", name="starting", status=jobs.JobStatus.queued,
+        runner="local", created_at="2026-08-22T00:00:00+00:00",
+    )
+    runner_entered = threading.Event()
+    allow_start = threading.Event()
+
+    class StartingRunner:
+        def run(self, _job_dir, _threads, on_start):
+            runner_entered.set()
+            allow_start.wait(timeout=3)
+            process = subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                start_new_session=True,
+            )
+            on_start(process)
+            return process.wait()
+
+    monkeypatch.setattr(jobs, "get_runner", lambda _name: StartingRunner())
+    worker = threading.Thread(target=manager._run, args=("starting",))
+    worker.start()
+    assert runner_entered.wait(timeout=3)
+
+    manager.cancel("starting")
+    assert manager.get("starting").status == jobs.JobStatus.cancelling
+    allow_start.set()
+    worker.join(timeout=3)
+
+    assert not worker.is_alive()
+    assert manager.get("starting").status == jobs.JobStatus.cancelled
+
+
+def test_batch_preparation_failure_removes_earlier_points(tmp_path, monkeypatch):
+    import pytest
+
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    monkeypatch.setattr(manager, "_validate_request", lambda _request: None)
+    original_prepare = manager._prepare
+    calls = 0
+
+    def prepare(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("disk full")
+        return original_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(manager, "_prepare", prepare)
+    requests = [jobs.JobRequest(input_text="hf/sto-3g\nenergy\n") for _ in range(3)]
+
+    with pytest.raises(OSError, match="disk full"):
+        manager.submit_batch(requests, group_id="scan", values=[1.0, 1.1, 1.2], unit="A")
+
+    assert manager.list() == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_prepare_rolls_back_the_current_point_when_metadata_write_fails(tmp_path, monkeypatch):
+    import pytest
+
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    def fail_write(_path, _info):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(manager, "_write_metadata", fail_write)
+
+    with pytest.raises(OSError, match="disk full"):
+        manager._prepare(jobs.JobRequest(input_text="hf/sto-3g\nenergy\n"))
+
+    assert manager.list() == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_running_metadata_failure_leaves_a_terminal_failed_job(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    manager._ready = True
+    job_dir = tmp_path / "metadata-failure"
+    job_dir.mkdir()
+    manager._jobs["metadata-failure"] = jobs.JobInfo(
+        id="metadata-failure", name="metadata failure", status=jobs.JobStatus.queued,
+        runner="local", created_at="2026-08-22T00:00:00+00:00",
+    )
+    runner_called = False
+
+    class Runner:
+        def run(self, *_args, **_kwargs):
+            nonlocal runner_called
+            runner_called = True
+            return 0
+
+    monkeypatch.setattr(jobs, "get_runner", lambda _name: Runner())
+    def fail_write(_path, _info):
+        raise OSError("read only")
+
+    monkeypatch.setattr(manager, "_write_metadata", fail_write)
+
+    manager._run("metadata-failure")
+
+    assert not runner_called
+    assert manager.get("metadata-failure").status == jobs.JobStatus.failed
+    assert manager.get("metadata-failure").error == "read only"
+
+
+def test_recovery_does_not_mark_an_unstarted_scan_point_done(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    point = tmp_path / "queued-point"
+    point.mkdir()
+    (point / "point.oqp").write_text("hf/sto-3g\nenergy\n")
+    (point / ".oqp-studio.json").write_text(
+        '{"name":"queued point","runner":"bundled","threads":1,'
+        '"created_at":"2026-08-22T00:00:00+00:00","status":"queued",'
+        '"group_id":"scan","scan_value":0.9,"scan_unit":"A"}'
+    )
+
+    manager = jobs.JobManager()
+    manager._ready = True
+    manager._recover()
+
+    recovered = manager.get("queued-point")
+    assert recovered.status == jobs.JobStatus.cancelled
+    assert "Interrupted" in recovered.error
+
+
 def test_completed_project_can_be_deleted_with_its_result_files(tmp_path, monkeypatch):
     from oqp_studio import jobs
 
@@ -401,6 +571,237 @@ def test_arbitrary_ao_density_matrix_can_be_exported_as_cube():
 
     assert cube.startswith("test excited density\ndensity\n")
     assert int(cube.splitlines()[2].split()[0]) == 3
+
+
+def test_relaxed_bond_scan_generates_target_geometries_and_native_constraints():
+    from oqp_studio import scans
+    from oqp_studio.structure_io import parse_oqp
+
+    request = scans.BondScanRequest(
+        input_text=(
+            "dft/b3lyp/6-31g*\nopt(maxit=20)\ngeom=\"\"\"\n"
+            "H 0 0 0\nH 0 0 0.7\n\"\"\"\n"
+        ),
+        atom_a=1, atom_b=2, start=0.8, end=1.2, points=3, relaxed=True,
+    )
+
+    group_id, jobs, values = scans.build(request)
+
+    assert len(group_id) == 12
+    assert values == [0.8, 1.0, 1.2]
+    assert len(jobs) == 3
+    for job, target in zip(jobs, values):
+        atoms = parse_oqp(job.input_text)[0].atoms
+        assert abs(atoms[1][3] - target) < 1.0e-12
+        assert job.input_text.count("freeze=distance(1,2)") == 1
+
+
+def test_relaxed_bond_scan_rejects_an_existing_non_distance_freeze():
+    import pytest
+
+    from oqp_studio import scans
+
+    request = scans.BondScanRequest(
+        input_text=(
+            "dft/b3lyp/6-31g*\nopt(freeze=angle(1,2,3))\ngeom=\"\"\"\n"
+            "H 0 0 0\nO 0 0 1\nH 1 0 1\n\"\"\"\n"
+        ),
+        atom_a=1, atom_b=2, start=0.8, end=1.2, points=3, relaxed=True,
+    )
+
+    with pytest.raises(ValueError, match="existing non-distance freeze"):
+        scans.build(request)
+
+
+def test_bond_scan_rejects_an_atom_outside_the_geometry():
+    import pytest
+
+    from oqp_studio import scans
+
+    request = scans.BondScanRequest(
+        input_text="hf/sto-3g\nenergy\ngeom=\"\"\"\nH 0 0 0\n\"\"\"\n",
+        atom_a=1, atom_b=2, start=0.8, end=1.0,
+    )
+    with pytest.raises(ValueError, match="exceeds the 1-atom geometry"):
+        scans.build(request)
+
+
+def test_bond_scan_api_submits_one_persisted_job_per_point(monkeypatch):
+    from datetime import datetime, timezone
+
+    from oqp_studio import jobs, main
+
+    class ScanManager:
+        def __init__(self):
+            self.infos = []
+
+        def submit_batch(self, requests, *, group_id, values, unit, state=None):
+            self.infos = [
+                jobs.JobInfo(
+                    id=f"point-{index}", name=request.name, status=jobs.JobStatus.queued,
+                    runner=request.runner, threads=request.threads,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                    group_id=group_id, scan_value=value, scan_unit=unit, scan_state=state,
+                )
+                for index, (request, value) in enumerate(zip(requests, values), start=1)
+            ]
+            return self.infos
+
+        def list(self):
+            return self.infos
+
+    scan_manager = ScanManager()
+    monkeypatch.setattr(main, "manager", scan_manager)
+    response = client.post("/api/scans", json={
+        "input_text": "hf/sto-3g\nenergy\ngeom=\"\"\"\nH 0 0 0\nH 0 0 0.7\n\"\"\"\n",
+        "name": "H2 stretch", "atom_a": 1, "atom_b": 2,
+        "start": 0.7, "end": 1.1, "points": 3, "relaxed": False,
+    })
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert len(payload["jobs"]) == 3
+    assert {job["group_id"] for job in payload["jobs"]} == {payload["group_id"]}
+    status = client.get(f"/api/scans/{payload['group_id']}")
+    assert [point["value"] for point in status.json()["points"]] == [0.7, 0.9, 1.1]
+
+
+def test_bond_scan_api_reads_total_energy_from_an_openqp_log(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+
+    from oqp_studio import jobs, main
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    job_dir = tmp_path / "scan-point"
+    job_dir.mkdir()
+    (job_dir / "point.oqp").write_text("hf/sto-3g\nenergy\n")
+    (job_dir / "point.log").write_text("TOTAL energy = -1.12000000\n")
+    manager = jobs.JobManager()
+    manager._ready = True
+    manager._jobs["scan-point"] = jobs.JobInfo(
+        id="scan-point", name="H2 0.9 A", status=jobs.JobStatus.done,
+        runner="bundled", created_at=datetime.now(timezone.utc).isoformat(),
+        group_id="energy-scan", scan_value=0.9, scan_unit="A",
+    )
+    monkeypatch.setattr(main, "manager", manager)
+
+    response = client.get("/api/scans/energy-scan")
+
+    assert response.status_code == 200
+    assert response.json()["points"][0]["energy"] == -1.12
+
+
+def test_rigid_scan_replaces_an_optimization_driver_with_energy():
+    from oqp_studio import scans
+
+    request = scans.BondScanRequest(
+        input_text=("mrsf(nstate=3)/bhhlyp/6-31g*\nopt(S1,maxit=20)\n"
+                    "geom=\"\"\"\nH 0 0 0\nH 0 0 0.7\n\"\"\"\n"),
+        atom_a=1, atom_b=2, start=0.8, end=1.0, points=2, relaxed=False,
+    )
+
+    _, jobs, _ = scans.build(request)
+
+    assert all("\nenergy(S1)\n" in job.input_text for job in jobs)
+    assert all("\nopt" not in job.input_text for job in jobs)
+    assert scans.target_state(request.input_text) == 1
+
+
+def test_scan_endpoint_uses_the_requested_excited_state_energy(monkeypatch):
+    from datetime import datetime, timezone
+
+    from oqp_studio import jobs, main
+
+    class ExcitedScanManager:
+        def list(self):
+            return [jobs.JobInfo(
+                id="excited", name="S1 scan", status=jobs.JobStatus.done,
+                runner="bundled", created_at=datetime.now(timezone.utc).isoformat(),
+                group_id="s1-scan", scan_value=1.0, scan_unit="A", scan_state=1,
+            )]
+
+        def get(self, job_id):
+            return self.list()[0] if job_id == "excited" else None
+
+    monkeypatch.setattr(main, "manager", ExcitedScanManager())
+    monkeypatch.setattr(main, "_job_summary", lambda _job_id: {
+        "energy": {"total": -76.3},
+        "states": [{"index": 0, "total": -76.3}, {"index": 1, "total": -76.0}],
+    })
+    monkeypatch.setattr(main, "_job_paths", lambda _job_id: [])
+    main._scan_energy_cache.clear()
+
+    response = client.get("/api/scans/s1-scan")
+
+    assert response.status_code == 200
+    assert response.json()["points"][0]["energy"] == -76.0
+
+
+def test_relaxed_scan_uses_the_final_optimized_state_energy(monkeypatch):
+    from datetime import datetime, timezone
+
+    from oqp_studio import analysis, jobs, main
+
+    info = jobs.JobInfo(
+        id="relaxed", name="S1 relaxed", status=jobs.JobStatus.done,
+        runner="bundled", created_at=datetime.now(timezone.utc).isoformat(),
+        group_id="relaxed-scan", scan_value=1.0, scan_unit="A", scan_state=1,
+    )
+
+    class RelaxedManager:
+        def list(self):
+            return [info]
+
+        def get(self, job_id):
+            return info if job_id == info.id else None
+
+    monkeypatch.setattr(main, "manager", RelaxedManager())
+    monkeypatch.setattr(main, "_job_summary", lambda _job_id: {
+        "energy": {"total": -76.3},
+        "states": [{"index": 1, "total": -76.0}],
+    })
+    monkeypatch.setattr(main, "_job_paths", lambda _job_id: [])
+    monkeypatch.setattr(analysis, "optimization_history", lambda _paths: {"steps": [
+        {"index": 1, "states": [{"index": 1, "total": -76.0}]},
+        {"index": 2, "states": [{"index": 1, "total": -76.2}]},
+    ]})
+    main._scan_energy_cache.clear()
+
+    response = client.get("/api/scans/relaxed-scan")
+
+    assert response.status_code == 200
+    assert response.json()["points"][0]["energy"] == -76.2
+
+
+def test_scan_polling_parses_each_completed_point_only_once(monkeypatch):
+    from datetime import datetime, timezone
+
+    from oqp_studio import jobs, main
+
+    infos = [jobs.JobInfo(
+        id=f"point-{index}", name=f"point {index}", status=jobs.JobStatus.done,
+        runner="bundled", created_at=datetime.now(timezone.utc).isoformat(),
+        group_id="long-scan", scan_value=float(index), scan_unit="A",
+    ) for index in range(12)]
+
+    class LongScanManager:
+        def list(self):
+            return infos
+
+    calls = 0
+
+    def summary(_job_id):
+        nonlocal calls
+        calls += 1
+        return {"energy": {"total": -float(calls)}}
+
+    monkeypatch.setattr(main, "manager", LongScanManager())
+    monkeypatch.setattr(main, "_job_summary", summary)
+    main._scan_energy_cache.clear()
+
+    assert client.get("/api/scans/long-scan").status_code == 200
+    assert client.get("/api/scans/long-scan").status_code == 200
+    assert calls == len(infos)
 
 
 def test_dyson_strength_is_reported_as_twice_its_occupation(monkeypatch):

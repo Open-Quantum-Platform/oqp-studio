@@ -225,6 +225,7 @@
 
       .wf-opt { display: none; }
       .wf-opt.on { display: flex; }
+      .wf-opt.scan-options.on { display: block; }
       .wf-detail { display: none; }
       .wf-detail.on { display: block; }
 
@@ -240,6 +241,13 @@
       .workflow-description { margin-top: 0.55rem; }
       .workflow-description .summary { color: var(--text); font-size: 13px; }
       .workflow-description .detail { margin-top: 0.25rem; color: var(--text-dim); font-size: 12.5px; line-height: 1.45; }
+      .path-plot { min-height: 190px; margin-top: .5rem; }
+      .path-plot svg { display: block; width: 100%; height: auto; overflow: visible; }
+      .path-axis { stroke: var(--border); stroke-width: 1; }
+      .path-line { fill: none; stroke: var(--accent); stroke-width: 2; }
+      .path-point { fill: var(--panel); stroke: var(--accent); stroke-width: 2; cursor: pointer; }
+      .path-point:hover, .path-point.selected { fill: var(--accent); }
+      .path-label { fill: var(--text-dim); font: 11px system-ui, sans-serif; }
 
       /* Viewer plus its measurement read-out. */
       .viewer-wrap { position: relative; min-width: 0; height: 100%; }
@@ -701,12 +709,31 @@
                 <div><label>Multiplicity</label><input type="number" id="mult" value="1" min="1" /></div>
                 <div><label># excited states</label><input type="number" id="nstate" value="3" min="1" /></div>
               </div>
-              <div class="row wf-opt" data-for="grad opt exgrad exopt ts irc mep neb prop" data-theories="tddft tda sf mrsf umrsf">
+              <div class="row wf-opt" data-for="grad opt scan exgrad exopt ts irc mep neb prop" data-theories="tddft tda sf mrsf umrsf">
                 <div>
                   <label>Target state</label>
                   <input type="number" id="targetState" value="1" min="0" />
                 </div>
                 <div></div>
+              </div>
+              <div class="wf-opt scan-options" data-for="scan">
+                <div class="row">
+                  <div><label>Atom A</label><input type="number" id="scanAtomA" value="1" min="1" step="1" /></div>
+                  <div><label>Atom B</label><input type="number" id="scanAtomB" value="2" min="1" step="1" /></div>
+                  <div>
+                    <label>Scan mode</label>
+                    <select id="scanMode">
+                      <option value="relaxed">Relaxed, fixed distance</option>
+                      <option value="rigid">Rigid single points</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="row">
+                  <div><label>Start distance (Å)</label><input type="number" id="scanStart" value="0.8" min="0.01" step="0.05" /></div>
+                  <div><label>End distance (Å)</label><input type="number" id="scanEnd" value="2.0" min="0.01" step="0.05" /></div>
+                  <div><label>Points</label><input type="number" id="scanPoints" value="7" min="2" max="101" step="1" /></div>
+                </div>
+                <div class="hint">Relaxed scans optimize every structure while OpenQP holds the selected bond distance fixed.</div>
               </div>
               <div class="row wf-opt" data-for="hess">
                 <div>
@@ -908,7 +935,7 @@
                   <div><label>Decoherence</label><select id="namdDecoherence"><option value="edc">EDC</option><option value="off">Off</option></select></div>
                 </div>
               </details>
-              <details class="wf-detail" data-for="energy grad opt hess prop abs exgrad exopt meci mecp tci ts irc mep nac nacme soc ekt" data-theories="fci casci casscf sa-casscf caspt2 ms-caspt2 xms-caspt2 nevpt2 sc-nevpt2 mrmp2 mcqdpt2 xmcqdpt2" style="margin-top:1rem">
+              <details class="wf-detail" data-for="energy grad opt scan hess prop abs exgrad exopt meci mecp tci ts irc mep nac nacme soc ekt" data-theories="fci casci casscf sa-casscf caspt2 ms-caspt2 xms-caspt2 nevpt2 sc-nevpt2 mrmp2 mcqdpt2 xmcqdpt2" style="margin-top:1rem">
                 <summary>Active space and CI solver</summary>
                 <div class="row" style="margin-top:.8rem">
                   <div><label>Active electrons</label><input type="number" id="activeElectrons" value="0" min="0" /></div>
@@ -1011,6 +1038,11 @@
               <label>Frame <span id="resultFrameLabel" class="hint"></span></label>
               <input type="range" id="resultFrameRange" min="1" max="1" value="1" />
               <div class="actions"><button class="ghost" id="editResultStructure" type="button">Edit in Builder</button></div>
+            </div>
+            <div class="card" id="pathCard" style="display:none">
+              <h3 id="pathTitle">Reaction path</h3>
+              <div class="path-plot" id="pathPlot"></div>
+              <div class="hint" id="pathNote"></div>
             </div>
             <div class="card" id="summaryCard" style="display:none">
               <h3>Results summary</h3>

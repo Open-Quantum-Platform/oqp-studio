@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import __version__, engine, environment, host, network
+from . import __version__, engine, environment, host, network, scans
 from .jobs import JobInfo, JobRequest, manager
 from .runners import available_runners
 
@@ -154,6 +154,42 @@ def submit_job(req: JobRequest) -> JobInfo:
         ) from exc
 
 
+@app.post("/api/scans")
+def submit_bond_scan(req: scans.BondScanRequest) -> dict:
+    """Create a bond-distance scan whose calculation points run serially."""
+    try:
+        group_id, requests, values = scans.build(req)
+        jobs = manager.submit_batch(
+            requests, group_id=group_id, values=values, unit="A",
+            state=scans.target_state(req.input_text),
+        )
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"group_id": group_id, "jobs": jobs}
+
+
+@app.get("/api/scans/{group_id}")
+def bond_scan(group_id: str) -> dict:
+    """Current energies and statuses for one persisted scan group."""
+    points = []
+    for info in manager.list():
+        if info.group_id != group_id:
+            continue
+        scan_energy = _scan_point_energy(info) if info.status == "done" else None
+        points.append({
+            "job_id": info.id,
+            "name": info.name,
+            "status": info.status,
+            "value": info.scan_value,
+            "unit": info.scan_unit,
+            "energy": scan_energy,
+        })
+    points.sort(key=lambda point: float(point["value"] or 0.0))
+    if not points:
+        raise HTTPException(status_code=404, detail="scan not found")
+    return {"group_id": group_id, "points": points}
+
+
 @app.get("/api/jobs")
 def list_jobs() -> list[JobInfo]:
     return manager.list()
@@ -201,6 +237,8 @@ def delete_job(job_id: str) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"could not delete project: {exc}") from exc
+    _summary_cache.pop(job_id, None)
+    _scan_energy_cache.pop(job_id, None)
     return {"deleted": job_id}
 
 
@@ -595,6 +633,7 @@ def molden_mode_vectors(job_id: str, name: str, mode: int) -> dict:
 
 
 _summary_cache: OrderedDict[str, dict] = OrderedDict()
+_scan_energy_cache: dict[str, float | None] = {}
 
 
 def _job_summary(job_id: str) -> dict:
@@ -615,6 +654,28 @@ def _job_summary(job_id: str) -> dict:
     return cached
 
 
+def _scan_point_energy(info: JobInfo) -> float | None:
+    """Read one terminal scan energy once, using the final optimized root."""
+    if info.id in _scan_energy_cache:
+        return _scan_energy_cache[info.id]
+    report = _job_summary(info.id)
+    energy = report.get("energy", {})
+    value = energy.get("total", energy.get("components", {}).get("total"))
+    if info.scan_state is not None:
+        from . import analysis
+
+        history = analysis.optimization_history(_job_paths(info.id)).get("steps", [])
+        final_states = next(
+            (step.get("states", []) for step in reversed(history) if step.get("states")),
+            [],
+        )
+        states = final_states or report.get("states", [])
+        state = next((row for row in states if row.get("index") == info.scan_state), None)
+        value = state.get("total") if state else None
+    _scan_energy_cache[info.id] = value
+    return value
+
+
 def _job_paths(job_id: str) -> list[Path]:
     return [
         path for entry in manager.files(job_id)
@@ -627,6 +688,7 @@ def job_summary(job_id: str, refresh: bool = False) -> dict:
     """Energies, states, frequencies, thermochemistry and properties."""
     if refresh:
         _summary_cache.pop(job_id, None)
+        _scan_energy_cache.pop(job_id, None)
     return _job_summary(job_id)
 
 

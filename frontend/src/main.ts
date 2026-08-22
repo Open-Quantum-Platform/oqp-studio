@@ -216,6 +216,26 @@ function qmmmValidation(): string | null {
 }
 
 function workflowValidation(inputText = ""): string | null {
+  if (currentWf.key === "scan") {
+    if (pdbSource) return "Bond scans currently require an inline molecular geometry, not a PDB QM/MM structure.";
+    const atoms = parseAtoms(xyzArea.value);
+    const atomA = +fieldValue("scanAtomA");
+    const atomB = +fieldValue("scanAtomB");
+    const start = +fieldValue("scanStart");
+    const end = +fieldValue("scanEnd");
+    const points = +fieldValue("scanPoints");
+    if (!Number.isInteger(atomA) || !Number.isInteger(atomB) || atomA < 1 || atomB < 1 ||
+        atomA > atoms.length || atomB > atoms.length || atomA === atomB) {
+      return `Choose two different atom numbers between 1 and ${atoms.length}.`;
+    }
+    if (!(start > 0) || !(end > 0) || start === end) {
+      return "Scan start and end distances must be positive and different.";
+    }
+    if (!Number.isInteger(points) || points < 2 || points > 101) {
+      return "A scan requires 2 to 101 points.";
+    }
+    return null;
+  }
   if (currentWf.key !== "nacme") return null;
   const hasPreviousGeometry = Boolean(fieldValue("nacmeGeometry")) || /(?:^|\n)geom2\s*=/.test(inputText);
   return hasPreviousGeometry
@@ -582,6 +602,7 @@ const WORKFLOWS: Workflow[] = [
   { key: "energy", title: "Single-point energy", desc: "Electronic energy at the supplied geometry.", detail: "Keeps the nuclear coordinates fixed and reports the energy and electronic-state data required for subsequent analysis.", theories: ALL_THEORIES, defaultTheory: "dft" },
   { key: "grad", title: "Energy gradient", desc: "Nuclear energy gradient for the ground or selected electronic state.", detail: "Use the gradient to characterize forces at a fixed geometry or as the derivative input for structural optimization and path calculations.", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
   { key: "opt", title: "Geometry optimization", desc: "Optimize the molecular structure on the selected potential-energy surface.", detail: "For response theories, choose S0 or a specified excited state. Convergence is assessed from energy changes, gradients, and nuclear displacements.", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
+  { key: "scan", title: "Bond-distance scan", desc: "Map the energy while changing one internuclear distance.", detail: "Choose two atoms, a distance interval, and the number of points. A rigid scan evaluates fixed structures; a relaxed scan optimizes every point while OpenQP holds the selected bond distance fixed.", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
   { key: "hess", title: "Frequencies (Hessian)", desc: "Vibrational frequencies, normal modes, and thermochemical quantities.", detail: "Calculates the second derivative matrix at the supplied structure, then obtains IR intensities, zero-point energy, and temperature-dependent thermochemistry.", theories: ["hf", "dft", ...LABELED_RESPONSE], defaultTheory: "dft" },
   { key: "prop", title: "Molecular properties", desc: "Electronic populations, multipoles, and selected state properties.", detail: "Use this fixed-geometry calculation to inspect charge distribution and electrostatic or state-resolved quantities without changing the molecular structure.", theories: MRSF_ONLY, defaultTheory: "mrsf" },
   { key: "nmr", title: "NMR shielding", desc: "Ground-state nuclear magnetic shielding constants.", detail: "Computes the shielding tensor at the supplied geometry; isotropic shifts and tensor components can then be compared among chemically distinct nuclei.", theories: ["hf", "dft"], defaultTheory: "dft" },
@@ -893,6 +914,13 @@ function generateInp(): string {
     case "energy": driver = `energy${stateArg}`; break;
     case "grad": driver = `grad${stateArg}`; break;
     case "opt": driver = usesStates ? `opt(S${target})` : "opt"; break;
+    case "scan": {
+      const state = usesStates && target > 0 ? `S${target}` : "";
+      driver = fieldValue("scanMode") === "relaxed"
+        ? `opt(${[state, `freeze=distance(${fieldValue("scanAtomA")},${fieldValue("scanAtomB")})`].filter(Boolean).join(",")})`
+        : `energy${state ? `(${state})` : ""}`;
+      break;
+    }
     case "hess": {
       const hessState = stateArg ? `${stateArg.slice(0, -1)},` : "(";
       driver = withOptions(`hess${hessState}type=${hessTypeSel.value})`, hessianOptions());
@@ -982,7 +1010,8 @@ function generateInp(): string {
     ], CI_DEFAULTS);
     if (ciOptions) lines.push(`ci(${ciOptions})`);
   }
-  if (["opt", "exopt", "ts"].includes(currentWf.key)) {
+  if (["opt", "exopt", "ts"].includes(currentWf.key) ||
+      (currentWf.key === "scan" && fieldValue("scanMode") === "relaxed")) {
     const opts = [optimisationOptions(), geometryOptions()].filter(Boolean).join(",");
     lines[1] = withOptions(driver, opts);
   }
@@ -1078,7 +1107,8 @@ for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCus
                   "hessDx", "hessNproc", "hessTemperature", "hessSymmetry", "nacType", "nacDx", "nacNproc",
                   "namdState", "namdSteps", "namdDt", "namdDecoherence", "activeElectrons", "activeOrbitals", "frozenCore", "ciRoots", "ciSolver", "ciTolerance", "ciMaxit",
                   "geomMaxit", "rmsdGrad", "maxGrad", "rmsdStep", "maxStep", "energyShift",
-                  "energyGap", "trustRadius", "crossingAlgorithm"]) {
+                  "energyGap", "trustRadius", "crossingAlgorithm", "scanAtomA", "scanAtomB",
+                  "scanMode", "scanStart", "scanEnd", "scanPoints"]) {
   $<HTMLElement>(id).addEventListener("input", () => {
     syncFieldStates();
     if (id === "pcmSolvent") syncPcmSolvent();
@@ -1276,6 +1306,35 @@ async function pollJob(jobId: string): Promise<void> {
   }
 }
 
+async function pollScan(groupId: string): Promise<void> {
+  const response = await fetch(`/api/scans/${groupId}`);
+  if (!response.ok) {
+    runStatus.textContent = `scan lookup failed (${response.status})`;
+    return;
+  }
+  const data: { points: ScanPoint[] } = await response.json();
+  const running = data.points.find((point) => point.status === "running");
+  const done = data.points.filter((point) => point.status === "done").length;
+  const terminal = new Set(["done", "failed", "not_converged", "cancelled"]);
+  runStatus.textContent = running
+    ? `scan ${done}/${data.points.length} complete · ${running.value.toFixed(4)} Å running`
+    : `scan ${done}/${data.points.length} complete`;
+  if (running) {
+    const logResponse = await fetch(`/api/jobs/${running.job_id}/log`);
+    const tail = logResponse.ok ? await logResponse.json() : { log: "" };
+    runLog.textContent = tail.log || "(no output yet)";
+  }
+  await refreshJobs();
+  if (data.points.some((point) => !terminal.has(point.status))) {
+    window.setTimeout(() => { void pollScan(groupId); }, 1000);
+    return;
+  }
+  const completed = [...data.points].reverse().find((point) => point.status === "done");
+  showTab("analysis");
+  if (completed) await selectJob(completed.job_id);
+  else runStatus.textContent += " · no point completed successfully";
+}
+
 runButton.addEventListener("click", async () => {
   const inputError = inputValidation($<HTMLTextAreaElement>("input").value);
   if (inputError) {
@@ -1292,7 +1351,8 @@ runButton.addEventListener("click", async () => {
     return;
   }
   runStatus.textContent = "submitting…";
-  const res = await fetch("/api/jobs", {
+  const isScan = currentWf.key === "scan";
+  const res = await fetch(isScan ? "/api/scans" : "/api/jobs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1301,6 +1361,11 @@ runButton.addEventListener("click", async () => {
       name: projectName.value.trim() || "job",
       runner: runnerSelect.value,
       threads: threadCount(),
+      ...(isScan ? {
+        atom_a: +fieldValue("scanAtomA"), atom_b: +fieldValue("scanAtomB"),
+        start: +fieldValue("scanStart"), end: +fieldValue("scanEnd"),
+        points: +fieldValue("scanPoints"), relaxed: fieldValue("scanMode") === "relaxed",
+      } : {}),
       ...(pdbSource ? { pdb_text: pdbSource.text, pdb_name: pdbSource.name } : {}),
     }),
   });
@@ -1310,12 +1375,19 @@ runButton.addEventListener("click", async () => {
     runStatus.textContent = detail ?? `submit failed (${res.status})`;
     return;
   }
-  pollJob((await res.json()).id);
+  const submitted = await res.json();
+  if (isScan) void pollScan(submitted.group_id);
+  else void pollJob(submitted.id);
 });
 
 // ---------- results ----------
 let selectedJob = "";
 let resultMoldenFiles: string[] = [];
+
+type ScanPoint = {
+  job_id: string; name: string; status: string;
+  value: number; unit: string; energy: number | null;
+};
 
 async function refreshJobs(): Promise<void> {
   const jobs: { id: string; name: string; runner: string; status: string; error?: string | null }[] =
@@ -1453,10 +1525,18 @@ async function selectJob(jobId: string): Promise<void> {
   selectedJob = jobId;
   resetAnalysisProject();
   refreshJobs();
+  let scanGroup = "";
+  const infoResponse = await fetch(`/api/jobs/${jobId}`);
+  if (infoResponse.ok && jobId === selectedJob) {
+    const info: { group_id?: string | null } = await infoResponse.json();
+    scanGroup = info.group_id ?? "";
+    if (scanGroup) void loadScanGroup(scanGroup);
+  }
   loadSummary(jobId).catch(() => {});
-  loadOptimizationHistory(jobId).catch(() => {});
+  const optimization = loadOptimizationHistory(jobId).catch(() => false);
   const files: { name: string; size: number }[] =
     await (await fetch(`/api/jobs/${jobId}/files`)).json();
+  const hasOptimization = await optimization;
   if (jobId !== selectedJob) return;
   resultMoldenFiles = files
     .map((file) => file.name)
@@ -1484,8 +1564,11 @@ async function selectJob(jobId: string): Promise<void> {
   // Show something straight away. Picking a job, or importing one, is the
   // user saying "let me see this" -- making them hunt for a "view" link
   // first is a step that never had a reason to exist.
-  const best = bestFileToShow(files.map((f) => f.name));
-  if (best) {
+  const names = files.map((f) => f.name);
+  const best = scanGroup
+    ? names.find((name) => /\.(?:oqp|inp)$/i.test(name)) ?? bestFileToShow(names)
+    : bestFileToShow(names);
+  if (best && !(scanGroup && hasOptimization)) {
     await viewResultFile(jobId, best,
                          `/api/jobs/${jobId}/files/${encodeURIComponent(best)}`);
   }
@@ -1497,6 +1580,7 @@ function resetAnalysisProject(): void {
   resultMoldenFiles = [];
   resultFrames = [];
   optimizationSteps = [];
+  selectedScanGroup = "";
   pendingResultMessage = null;
   if (activeCubeUrl) {
     URL.revokeObjectURL(activeCubeUrl);
@@ -1532,6 +1616,9 @@ function resetAnalysisProject(): void {
   $<HTMLSelectElement>("optimizationStepSelect").innerHTML = "";
   $<HTMLDivElement>("optimizationStepValues").textContent = "";
   $<HTMLHeadingElement>("resultFrameTitle").textContent = "Trajectory";
+  $<HTMLDivElement>("pathCard").style.display = "none";
+  $<HTMLDivElement>("pathPlot").innerHTML = "";
+  $<HTMLDivElement>("pathNote").textContent = "";
 }
 
 // What to open of its own accord, best first: a molden file carries orbitals
@@ -1702,6 +1789,7 @@ type OptimizationStep = {
   states: Summary["states"]; transitions: Summary["transitions"];
 };
 let optimizationSteps: OptimizationStep[] = [];
+let selectedScanGroup = "";
 let resultViewerReady = false;
 let pendingResultMessage: Record<string, unknown> | null = null;
 
@@ -1774,11 +1862,11 @@ $<HTMLButtonElement>("editResultStructure").addEventListener("click", () => {
   showTab("builder");
 });
 
-async function loadOptimizationHistory(jobId: string): Promise<void> {
+async function loadOptimizationHistory(jobId: string): Promise<boolean> {
   const response = await fetch(`/api/jobs/${jobId}/optimization`);
-  if (!response.ok || jobId !== selectedJob) return;
+  if (!response.ok || jobId !== selectedJob) return false;
   const data: { steps: OptimizationStep[] } = await response.json();
-  if (!data.steps.length || jobId !== selectedJob) return;
+  if (!data.steps.length || jobId !== selectedJob) return false;
   optimizationSteps = data.steps;
   resultFrames = data.steps.map((step) => ({ label: step.label, atoms: step.atoms }));
   const select = $<HTMLSelectElement>("optimizationStepSelect");
@@ -1789,7 +1877,9 @@ async function loadOptimizationHistory(jobId: string): Promise<void> {
   $<HTMLDivElement>("resultFrameCard").style.display = "";
   $<HTMLHeadingElement>("resultFrameTitle").textContent = "Optimization path";
   $<HTMLElement>("optimizationStepControls").style.display = "";
+  if (!selectedScanGroup) renderOptimizationPath();
   selectOptimizationStep(data.steps.length);
+  return true;
 }
 
 function selectOptimizationStep(position: number): void {
@@ -1810,7 +1900,87 @@ function selectOptimizationStep(position: number): void {
     value("RMS gradient", step.rmsd_grad), value("Max gradient", step.max_grad),
     value("RMS step", step.rmsd_step), value("Max step", step.max_step),
   ].filter(Boolean).join("  |  ");
+  if (!selectedScanGroup) renderOptimizationPath(position);
   void loadSpectrum();
+}
+
+type EnergyPathPoint = { x: number; energy: number; label: string; id: string };
+
+function escapeMarkup(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character] ?? character);
+}
+
+function renderEnergyPath(
+  points: EnergyPathPoint[], title: string, xLabel: string, selectedId: string,
+  onSelect: (id: string) => void,
+): void {
+  const card = $<HTMLDivElement>("pathCard");
+  const plot = $<HTMLDivElement>("pathPlot");
+  if (!points.length) {
+    card.style.display = "none";
+    plot.innerHTML = "";
+    return;
+  }
+  const width = 640;
+  const height = 230;
+  const left = 58;
+  const right = 18;
+  const top = 18;
+  const bottom = 45;
+  const energies = points.map((point) => point.energy);
+  const minimum = Math.min(...energies);
+  const relative = energies.map((energy) => (energy - minimum) * 627.509474);
+  const xMin = Math.min(...points.map((point) => point.x));
+  const xMax = Math.max(...points.map((point) => point.x));
+  const yMax = Math.max(...relative, 0.1);
+  const xAt = (x: number) => left + (x - xMin) / (xMax - xMin || 1) * (width - left - right);
+  const yAt = (y: number) => top + (1 - y / yMax) * (height - top - bottom);
+  const coords = points.map((point, index) => `${xAt(point.x).toFixed(1)},${yAt(relative[index]).toFixed(1)}`);
+  const circles = points.map((point, index) =>
+    `<circle class="path-point${point.id === selectedId ? " selected" : ""}" data-path-id="${escapeMarkup(point.id)}" cx="${xAt(point.x).toFixed(1)}" cy="${yAt(relative[index]).toFixed(1)}" r="5"><title>${escapeMarkup(point.label)}: ${relative[index].toFixed(3)} kcal/mol</title></circle>`,
+  ).join("");
+  plot.innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${title}">
+    <line class="path-axis" x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" />
+    <line class="path-axis" x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" />
+    <polyline class="path-line" points="${coords.join(" ")}" />${circles}
+    <text class="path-label" x="${left}" y="${height - 18}" text-anchor="middle">${xMin.toFixed(2)}</text>
+    <text class="path-label" x="${width - right}" y="${height - 18}" text-anchor="middle">${xMax.toFixed(2)}</text>
+    <text class="path-label" x="${(left + width - right) / 2}" y="${height - 3}" text-anchor="middle">${xLabel}</text>
+    <text class="path-label" x="${left - 8}" y="${height - bottom + 4}" text-anchor="end">0</text>
+    <text class="path-label" x="${left - 8}" y="${top + 4}" text-anchor="end">${yMax.toFixed(2)}</text>
+    <text class="path-label" transform="translate(13 ${(top + height - bottom) / 2}) rotate(-90)" text-anchor="middle">Relative energy (kcal/mol)</text>
+  </svg>`;
+  plot.querySelectorAll<SVGCircleElement>("[data-path-id]").forEach((circle) => {
+    circle.addEventListener("click", () => onSelect(circle.dataset.pathId ?? ""));
+  });
+  $<HTMLHeadingElement>("pathTitle").textContent = title;
+  $<HTMLDivElement>("pathNote").textContent = "Energy is referenced to the lowest displayed structure. Select a point to inspect it.";
+  card.style.display = "";
+}
+
+function renderOptimizationPath(selectedPosition = optimizationSteps.length): void {
+  const points = optimizationSteps.flatMap((step, position) => step.energy == null ? [] : [{
+    x: step.index, energy: step.energy, label: `Step ${step.index}`, id: String(position + 1),
+  }]);
+  renderEnergyPath(points, "Reaction path", "Structure step", String(selectedPosition), (id) => {
+    selectOptimizationStep(+id);
+  });
+}
+
+async function loadScanGroup(groupId: string): Promise<void> {
+  selectedScanGroup = groupId;
+  const response = await fetch(`/api/scans/${groupId}`);
+  if (!response.ok || selectedScanGroup !== groupId) return;
+  const data: { points: ScanPoint[] } = await response.json();
+  if (selectedScanGroup !== groupId) return;
+  const points = data.points.flatMap((point) => point.energy == null ? [] : [{
+    x: point.value, energy: point.energy, label: point.name, id: point.job_id,
+  }]);
+  renderEnergyPath(points, "Bond-distance scan", "Distance (Å)", selectedJob, (id) => {
+    if (id !== selectedJob) void selectJob(id);
+  });
 }
 
 function hideResultPanels(): void {

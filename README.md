@@ -44,6 +44,13 @@ installs an application that computes with no network afterwards. The WSL and
 SSH adapters remain, for running against a cluster or an OpenQP you installed
 yourself.
 
+Bond-distance scans are available from the Workflow menu. A rigid scan runs
+single-point calculations at the requested distances; a relaxed scan uses
+OpenQP's native `freeze=distance(i,j)` constraint while optimizing every point.
+Analysis plots relative energies in kcal/mol, and selecting a point opens that
+calculation and structure. Optimization, IRC, and NEB histories use the same
+interactive reaction-path plot when their step energies are present.
+
 Until OpenQP's native continuum solver is merged, the bundled engine also
 contains the external ddX library required for PCM calculations.
 
