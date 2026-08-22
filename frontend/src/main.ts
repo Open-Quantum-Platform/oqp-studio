@@ -957,10 +957,6 @@ function generateInp(): string {
     const nativeOptions = nativeOptimiserOptions();
     if (nativeOptions) lines.push(`oqp(${nativeOptions})`);
   }
-  if (["opt", "exopt", "ts", "meci", "mecp", "tci"].includes(currentWf.key)) {
-    const nativeOptions = nativeOptimiserOptions();
-    if (nativeOptions) lines.push(`oqp(${nativeOptions})`);
-  }
   if (charge !== 0) lines.push(`charge=${charge}`);
   if (currentWf.key === "nacme") {
     const previousGeometry = fieldValue("nacmeGeometry");
