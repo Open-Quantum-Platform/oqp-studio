@@ -436,7 +436,7 @@ class JobManager:
         if log_file is None:
             return ""
         data = log_file.read_bytes()
-        return data[-max_bytes:].decode(errors="replace")
+        return data[-max_bytes:].decode(errors="replace").replace("\r\n", "\n").replace("\r", "\n")
 
 
 manager = JobManager()
