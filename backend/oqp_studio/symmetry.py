@@ -241,8 +241,8 @@ def _strict_xyz(xyz: str) -> list[Atom]:
     if len(xyz) > MAX_XYZ_CHARACTERS:
         raise ValueError(f"symmetry input is limited to {MAX_XYZ_CHARACTERS:,} characters")
     lines = xyz.splitlines()
-    while lines and not lines[0].strip():
-        lines.pop(0)
+    first = next((index for index, line in enumerate(lines) if line.strip()), len(lines))
+    lines = lines[first:]
     while lines and not lines[-1].strip():
         lines.pop()
     if not lines:

@@ -953,6 +953,21 @@ def test_comparison_geometry_ranks_generic_text_after_molden(tmp_path, monkeypat
     assert main._comparison_frame([table, molden]).atoms[0][1] == 1.0
 
 
+def test_comparison_geometry_promotes_a_verified_openqp_text_log(tmp_path):
+    from oqp_studio import main
+
+    input_file = tmp_path / "input.oqp"
+    input_file.write_text('hf/sto-3g\nenergy\ngeom="""\nH 0.0 0.0 0.0\n"""\n')
+    output_file = tmp_path / "results.txt"
+    output_file.write_text(
+        "Cartesian Coordinate in Angstrom\n"
+        "--------------------------------\n"
+        "1 1.0 2.0 0.0 0.0\n"
+    )
+
+    assert main._comparison_frame([input_file, output_file]).atoms[0][1] == 2.0
+
+
 def test_comparison_geometry_uses_unknown_result_suffix_as_a_last_resort(tmp_path):
     from oqp_studio import main
 
@@ -1588,6 +1603,25 @@ def test_cube_parser_stops_at_the_first_grid_value_beyond_the_declared_shape(mon
         cube.parse(_cube([1.0, 2.0, *([0.0] * 10_000)]))
 
     assert converted == 2
+
+
+def test_cube_parser_does_not_materialize_every_grid_line():
+    import pytest
+
+    from oqp_studio import cube
+
+    class NoSplit(str):
+        def splitlines(self, *_args, **_kwargs):
+            raise AssertionError("the complete cube was split into a line list")
+
+    with pytest.raises(ValueError, match="more than the expected 2"):
+        cube.parse(NoSplit(_cube([1.0, 2.0]) + "0\n" * 10_000))
+
+
+def test_symmetry_handles_many_leading_blank_rows():
+    from oqp_studio import symmetry
+
+    assert symmetry.analyze("\n" * 50_000 + "He 0 0 0\n")["point_group"] == "Kh"
 
 
 def test_cube_parser_rejects_a_negative_dataset_count():

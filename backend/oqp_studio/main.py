@@ -824,6 +824,8 @@ def _summary_energy(summary: dict) -> float | None:
 def _comparison_frame(paths: list[Path]):
     from . import structure_io
 
+    parsed_text: dict[Path, object] = {}
+
     def rank(path: Path) -> tuple[int, str] | None:
         name = path.name.lower()
         if name in {"opt.xyz", "opt_geom.xyz"} or name.endswith((".namd.trj", ".trj")):
@@ -846,6 +848,14 @@ def _comparison_frame(paths: list[Path]):
         )):
             return (7, name)
         if name.endswith(".txt"):
+            try:
+                payload = path.read_bytes()
+                structure = structure_io.parse(path.name, payload, path=str(path))
+            except (OSError, ValueError):
+                return (8, name)
+            parsed_text[path] = structure
+            if structure.format == "log":
+                return (2, name)
             return (8, name)
         if name.endswith((".cube", ".cub")):
             return None
@@ -854,8 +864,13 @@ def _comparison_frame(paths: list[Path]):
     candidates = [(priority, path) for path in paths if (priority := rank(path)) is not None]
     for _priority, path in sorted(candidates):
         try:
-            payload = b"" if path.name.lower().endswith((".namd.trj", ".trj")) else path.read_bytes()
-            structure = structure_io.parse(path.name, payload, path=str(path))
+            structure = parsed_text.get(path)
+            if structure is None:
+                payload = (
+                    b"" if path.name.lower().endswith((".namd.trj", ".trj"))
+                    else path.read_bytes()
+                )
+                structure = structure_io.parse(path.name, payload, path=str(path))
         except (OSError, ValueError):
             continue
         if structure.frames and structure.frames[-1].atoms:

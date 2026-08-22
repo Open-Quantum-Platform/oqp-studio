@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from io import TextIOBase
+from io import StringIO, TextIOBase
 from math import isfinite, prod
 
 from .molden import BOHR_TO_ANGSTROM, SYMBOLS
@@ -53,7 +53,31 @@ def _record(line: str, lengths: tuple[int, ...]) -> list[str]:
 
 
 def parse(text: str, *, header_only: bool = False) -> Cube:
-    lines = text.splitlines()
+    stream = StringIO(text)
+    lines: list[str] = []
+    header_size = 0
+
+    def header_line() -> str:
+        nonlocal header_size
+        line = stream.readline()
+        if not line:
+            raise ValueError("cube file is incomplete")
+        header_size += len(line)
+        if header_size > MAX_CUBE_HEADER:
+            raise ValueError(
+                f"cube header is limited to {MAX_CUBE_HEADER // (1024 * 1024)} MiB"
+            )
+        value = line.rstrip("\r\n")
+        lines.append(value)
+        return value
+
+    try:
+        for _index in range(6):
+            header_line()
+    except ValueError as exc:
+        if "incomplete" in str(exc):
+            raise ValueError("cube file is incomplete") from exc
+        raise
     if len(lines) < 6:
         raise ValueError("cube file is incomplete")
     try:
@@ -71,15 +95,13 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
             raise ValueError
     except (IndexError, ValueError) as exc:
         raise ValueError("cube header is invalid") from exc
-    header_end = 6 + atoms
-    if len(lines) < header_end:
-        raise ValueError("cube atom header is incomplete")
-    header_size = sum(len(line) + 1 for line in lines[:header_end])
-    if header_size > MAX_CUBE_HEADER:
-        raise ValueError(f"cube header is limited to {MAX_CUBE_HEADER // (1024 * 1024)} MiB")
     try:
-        atom_records = [_record(line, (5,)) for line in lines[6:header_end]]
+        atom_records = [_record(header_line(), (5,)) for _index in range(atoms)]
     except ValueError as exc:
+        if "header is limited" in str(exc):
+            raise
+        if "incomplete" in str(exc):
+            raise ValueError("cube atom header is incomplete") from exc
         raise ValueError("cube atom header is invalid") from exc
     if any(len(record) != 5 for record in atom_records):
         raise ValueError("cube atom header is invalid")
@@ -95,15 +117,14 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
     if atom_count < 0:
         dataset_ids: int | None = None
         identifiers: list[int] = []
-        while header_end < len(lines):
-            identifier_line = lines[header_end]
-            header_size += len(identifier_line) + 1
-            if header_size > MAX_CUBE_HEADER:
-                raise ValueError(
-                    f"cube header is limited to {MAX_CUBE_HEADER // (1024 * 1024)} MiB"
-                )
+        while True:
+            try:
+                identifier_line = header_line()
+            except ValueError as exc:
+                if "incomplete" in str(exc):
+                    raise ValueError("cube dataset identifier record is incomplete") from exc
+                raise
             tokens = _tokens(identifier_line)
-            header_end += 1
             for token in tokens:
                 if dataset_ids is None:
                     try:
@@ -136,7 +157,7 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
         if expected > MAX_GRID_VALUES:
             raise ValueError(f"cube grid is limited to {MAX_GRID_VALUES:,} values")
         try:
-            for line in lines[header_end:]:
+            for line in stream:
                 for token in _tokens(line):
                     if len(values) >= expected:
                         raise ValueError(
@@ -163,7 +184,7 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
         raise ValueError("cube atom header contains a nonintegral atomic number")
     axis_units = tuple(count < 0 for count in voxel_counts)
     return Cube(
-        lines[:header_end], values, shape, datasets, geometry, dataset_id_values, axis_units,
+        lines, values, shape, datasets, geometry, dataset_id_values, axis_units,
     )
 
 
