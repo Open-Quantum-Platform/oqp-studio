@@ -109,9 +109,16 @@
         font-size: 11.5px; flex: none;
       }
 
-      main { grid-area: main; overflow: auto; padding: 1.1rem 1.3rem; }
-      .panel { display: none; height: 100%; }
-      .panel.active { display: block; }
+      main { grid-area: main; position: relative; overflow: hidden; padding: 0; }
+      .panel {
+        display: block; position: absolute; inset: 1.1rem 1.3rem;
+        visibility: hidden; pointer-events: none; overflow: auto;
+      }
+      .panel.active { visibility: visible; pointer-events: auto; }
+      #panel-art { inset: 0; overflow: hidden; }
+      #panel-art iframe {
+        display: block; width: 100%; height: 100%; border: 0; background: #111318;
+      }
       .cols {
         display: grid;
         grid-template-columns: var(--split, 44%) 16px minmax(0, 1fr);
@@ -298,6 +305,13 @@
         color: var(--text); font: inherit; padding: .5rem .7rem; cursor: pointer;
       }
       .menu-item:hover { background: var(--accent-soft); color: var(--accent); }
+      @media (max-width: 700px) {
+        body { grid-template-columns: 0 1fr; }
+        nav { display: none; }
+        header .title { display: none; }
+        main .panel { inset: .75rem; }
+        main #panel-art { inset: 0; }
+      }
     </style>
   </head>
   <body>
@@ -347,6 +361,7 @@
             <button class="menu-item" data-cmd="tab-method">2 &nbsp;Workflow</button>
             <button class="menu-item" data-cmd="tab-run">3 &nbsp;Execution</button>
             <button class="menu-item" data-cmd="tab-analysis">4 &nbsp;Analysis</button>
+            <button class="menu-item" data-cmd="tab-art">5 &nbsp;Art</button>
           </div>
         </div>
 
@@ -381,6 +396,7 @@
       <button data-tab="method"><span class="step">2</span> Workflow</button>
       <button data-tab="run"><span class="step">3</span> Execution</button>
       <button data-tab="analysis"><span class="step">4</span> Analysis</button>
+      <button data-tab="art"><span class="step">5</span> Art</button>
       <div class="grip" id="navGrip" title="Drag to resize"></div>
     </nav>
 
@@ -469,6 +485,32 @@
                 <div>
                   <label><input type="checkbox" class="render-input" data-render="outline"
                                 checked style="width:auto;margin-right:.4rem" />Outline</label>
+                </div>
+                <div>
+                  <label><input type="checkbox" class="render-input" data-render="shadow"
+                                style="width:auto;margin-right:.4rem" />Soft shadow</label>
+                </div>
+                <div>
+                  <label><input type="checkbox" class="render-input" data-render="depthCue"
+                                checked style="width:auto;margin-right:.4rem" />Depth cue</label>
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label>Edge smoothing</label>
+                  <select class="render-input" data-render="antialiasing">
+                    <option value="smaa">SMAA</option>
+                    <option value="fxaa">FXAA (fast)</option>
+                    <option value="off">Off</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Occlusion quality</label>
+                  <select class="render-input" data-render="occlusionQuality">
+                    <option value="balanced">Balanced</option>
+                    <option value="high">High</option>
+                    <option value="draft">Draft</option>
+                  </select>
                 </div>
                 <div>
                   <label>Background</label>
@@ -1069,6 +1111,32 @@
                                 checked style="width:auto;margin-right:.4rem" />Outline</label>
                 </div>
                 <div>
+                  <label><input type="checkbox" class="render-input" data-render="shadow"
+                                style="width:auto;margin-right:.4rem" />Soft shadow</label>
+                </div>
+                <div>
+                  <label><input type="checkbox" class="render-input" data-render="depthCue"
+                                checked style="width:auto;margin-right:.4rem" />Depth cue</label>
+                </div>
+              </div>
+              <div class="row">
+                <div>
+                  <label>Edge smoothing</label>
+                  <select class="render-input" data-render="antialiasing">
+                    <option value="smaa">SMAA</option>
+                    <option value="fxaa">FXAA (fast)</option>
+                    <option value="off">Off</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Occlusion quality</label>
+                  <select class="render-input" data-render="occlusionQuality">
+                    <option value="balanced">Balanced</option>
+                    <option value="high">High</option>
+                    <option value="draft">Draft</option>
+                  </select>
+                </div>
+                <div>
                   <label>Background</label>
                   <select class="render-input" data-render="background">
                     <option value="1b1e24">Studio dark</option>
@@ -1099,6 +1167,11 @@
                     title="Save the 3D view as a PNG image">⤓ PNG</button>
           </div>
         </div>
+      </section>
+
+      <!-- 5. Art -->
+      <section class="panel" id="panel-art">
+        <iframe id="artFrame" title="ray-traced molecular artwork"></iframe>
       </section>
     </main>
 

@@ -450,11 +450,15 @@
           if (!canvas3d) return;
           const post = {};
           if ("occlusion" in options) {
+            const quality = options.occlusionQuality || "balanced";
+            const samples = quality === "high" ? 64 : quality === "draft" ? 16 : 32;
+            const resolutionScale = quality === "draft" ? 0.5 : 1;
             post.occlusion = options.occlusion
               ? { name: "on", params: {
-                    samples: 32, multiScale: { name: "off", params: {} },
+                    samples, multiScale: { name: "off", params: {} },
                     radius: 5, bias: 0.8, blurKernelSize: 15, blurDepthBias: 0.5,
-                    resolutionScale: 1, color: 0x000000 } }
+                    resolutionScale, color: 0x000000,
+                    transparentThreshold: 0.4 } }
               : { name: "off", params: {} };
           }
           if ("outline" in options) {
@@ -463,8 +467,26 @@
                                         includeTransparent: true } }
               : { name: "off", params: {} };
           }
+          if ("shadow" in options) {
+            post.shadow = options.shadow
+              ? { name: "on", params: { steps: 16, maxDistance: 7, tolerance: 1.1 } }
+              : { name: "off", params: {} };
+          }
+          if ("antialiasing" in options) {
+            post.antialiasing = options.antialiasing === "off"
+              ? { name: "off", params: {} }
+              : options.antialiasing === "fxaa"
+                ? { name: "fxaa", params: { edgeThresholdMin: 0.0312,
+                    edgeThresholdMax: 0.125, iterations: 12, subpixelQuality: 0.75 } }
+                : { name: "smaa", params: { edgeThreshold: 0.08, maxSearchSteps: 24 } };
+          }
           const props = {};
           if (Object.keys(post).length) props.postprocessing = post;
+          if ("depthCue" in options) {
+            props.cameraFog = options.depthCue
+              ? { name: "on", params: { intensity: 18 } }
+              : { name: "off", params: {} };
+          }
           if ("background" in options) {
             props.renderer = { backgroundColor: options.background };
           }

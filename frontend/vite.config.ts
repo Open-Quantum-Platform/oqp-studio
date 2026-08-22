@@ -13,6 +13,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
+        art: resolve(__dirname, "art.html"),
         sketcher: resolve(__dirname, "sketcher.html"),
       },
     },
