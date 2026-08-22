@@ -1398,7 +1398,8 @@ async function showMode(): Promise<void> {
 
 modeSel.addEventListener("change", showMode);
 amplitudeRange.addEventListener("change", showMode);
-modeArrows.addEventListener("change", showMode);
+modeArrows.addEventListener("change", () =>
+  pushToResultViewer({ type: "oqp-normal-mode-arrows", arrows: modeArrows.checked }));
 modePlay.addEventListener("click", () =>
   pushToResultViewer({ type: "oqp-normal-mode-play" }));
 modePause.addEventListener("click", () =>

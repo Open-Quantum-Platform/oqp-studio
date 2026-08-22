@@ -536,6 +536,12 @@
             await playNormalMode();
           } else if (message.type === "oqp-normal-mode-pause") {
             stopNormalMode();
+          } else if (message.type === "oqp-normal-mode-arrows") {
+            if (!normalMode) return;
+            // Arrow visibility is a visual overlay, not a new vibration.
+            // Keep the active timer and show the current vibration phase.
+            normalMode.arrows = !!message.arrows;
+            await drawNormalModeFrame((2 * Math.PI * normalModeFrame) / 24);
           } else if (message.type === "oqp-normal-mode-reset") {
             stopNormalMode();
             normalMode = null;
