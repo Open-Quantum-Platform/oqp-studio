@@ -358,7 +358,10 @@
           if (!animation) return;
           normalModePlaying = true;
           await viewer.plugin.managers.animation.play(animation, {
-            mode: { name: "palindrome", params: {} },
+            // The coordinates already trace sin(0..2π). A palindrome here
+            // reverses direction at the end of that complete cycle, which
+            // looks like a bounce rather than a normal vibration.
+            mode: { name: "loop", params: { direction: "forward" } },
             duration: { name: "fixed", params: { durationInS: 2 } },
           });
         }
