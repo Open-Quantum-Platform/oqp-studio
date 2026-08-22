@@ -1521,7 +1521,9 @@ function syncComparisonProjects(): void {
   $<HTMLButtonElement>("comparisonRun").disabled = !currentIsTerminal || !select.value;
 }
 
+let comparisonRequestId = 0;
 $<HTMLSelectElement>("comparisonReference").addEventListener("change", (event) => {
+  comparisonRequestId += 1;
   $<HTMLButtonElement>("comparisonRun").disabled = !(event.target as HTMLSelectElement).value;
 });
 
@@ -1529,19 +1531,22 @@ $<HTMLButtonElement>("comparisonRun").addEventListener("click", async () => {
   const left = $<HTMLSelectElement>("comparisonReference").value;
   const right = selectedJob;
   if (!left || !right) return;
+  const requestId = ++comparisonRequestId;
+  const isCurrent = () => requestId === comparisonRequestId && right === selectedJob &&
+    left === $<HTMLSelectElement>("comparisonReference").value;
   const response = await fetch(
     `/api/comparison?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`,
   );
-  if (right !== selectedJob) return;
+  if (!isCurrent()) return;
   const body = $<HTMLDivElement>("comparisonBody");
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
-    if (right !== selectedJob) return;
+    if (!isCurrent()) return;
     body.innerHTML = `<div class="hint">${escapeMarkup(detail?.detail ?? `comparison failed (${response.status})`)}</div>`;
     return;
   }
   const data = await response.json();
-  if (right !== selectedJob) return;
+  if (!isCurrent()) return;
   const values: [string, string][] = [];
   if (data.left.energy != null) values.push([escapeMarkup(`${data.left.name} energy (Ha)`), fixed(data.left.energy, 8)]);
   if (data.right.energy != null) values.push([escapeMarkup(`${data.right.name} energy (Ha)`), fixed(data.right.energy, 8)]);
@@ -2050,7 +2055,8 @@ window.addEventListener("message", (event) => {
 });
 
 function pushToResultViewer(message: Record<string, unknown>): void {
-  if (["oqp-structure", "oqp-normal-mode", "oqp-atomic-property"].includes(String(message.type))) {
+  if (["oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-atomic-property"]
+      .includes(String(message.type))) {
     volumetricRequestId += 1;
     activeMapSource = null;
     activeDirectCube = null;
@@ -2481,10 +2487,15 @@ function modeEquilibriumXyz(mode: { atoms: { element: string; position: number[]
 
 async function showMode(): Promise<void> {
   if (!currentMolden || !modeSel.value) return;
-  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
-  const vectors = await fetch(`${base}/mode?mode=${modeSel.value}`);
+  const molden = currentMolden;
+  const selectedMode = modeSel.value;
+  const requestId = ++volumetricRequestId;
+  const base = `/api/jobs/${molden.jobId}/molden/${encodeURIComponent(molden.name)}`;
+  const vectors = await fetch(`${base}/mode?mode=${selectedMode}`);
+  if (requestId !== volumetricRequestId || currentMolden !== molden || modeSel.value !== selectedMode) return;
   if (!vectors.ok) return;
   const mode = await vectors.json();
+  if (requestId !== volumetricRequestId || currentMolden !== molden || modeSel.value !== selectedMode) return;
   pushToResultViewer({
     type: "oqp-normal-mode",
     xyz: modeEquilibriumXyz(mode),
@@ -2508,10 +2519,15 @@ modePause.addEventListener("click", () =>
   pushToResultViewer({ type: "oqp-normal-mode-pause" }));
 modeReset.addEventListener("click", async () => {
   if (!currentMolden) return;
-  const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
+  const molden = currentMolden;
+  const requestId = ++volumetricRequestId;
+  const base = `/api/jobs/${molden.jobId}/molden/${encodeURIComponent(molden.name)}`;
   const response = await fetch(`${base}/geom.xyz`);
+  if (requestId !== volumetricRequestId || currentMolden !== molden) return;
   if (!response.ok) return;
-  pushToResultViewer({ type: "oqp-normal-mode-reset", xyz: await response.text() });
+  const xyz = await response.text();
+  if (requestId !== volumetricRequestId || currentMolden !== molden) return;
+  pushToResultViewer({ type: "oqp-normal-mode-reset", xyz });
   modeSel.value = "";
   modePlay.disabled = true;
   modePause.disabled = true;

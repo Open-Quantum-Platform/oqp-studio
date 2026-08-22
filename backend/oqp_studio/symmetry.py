@@ -148,6 +148,26 @@ def _moves_coordinates(coordinates: np.ndarray, matrix: np.ndarray, tolerance: f
     return bool(len(displacement) and float(np.max(displacement)) > tolerance)
 
 
+def _operation_powers(label: str, matrix: np.ndarray, matched: tuple[list[int], float],
+                      order: int, coordinates: np.ndarray,
+                      tolerance: float) -> list[Operation]:
+    """Close a matched generator by composing its atom mapping."""
+    generator_mapping, generator_residual = matched
+    result = [Operation(label, matrix, generator_mapping, generator_residual)]
+    mapping = generator_mapping
+    for power in range(2, order):
+        mapping = [generator_mapping[target] for target in mapping]
+        powered = np.linalg.matrix_power(matrix, power)
+        transformed = coordinates @ powered.T
+        residual = max(
+            float(np.linalg.norm(transformed[source] - coordinates[target]))
+            for source, target in enumerate(mapping)
+        )
+        if residual <= tolerance:
+            result.append(Operation(f"{label}^{power}", powered, mapping.copy(), residual))
+    return result
+
+
 def _strict_xyz(xyz: str) -> list[Atom]:
     lines = xyz.splitlines()
     while lines and not lines[0].strip():
@@ -184,6 +204,8 @@ def _principal_axes(atoms: list[Atom]) -> tuple[list[str], np.ndarray, np.ndarra
     symbols = [atom[0] for atom in atoms]
     coordinates = np.asarray([atom[1:] for atom in atoms], dtype=float)
     weights = np.asarray([ATOMIC_MASS[symbol] for symbol in symbols])
+    if float(np.sum(weights)) <= 0:
+        raise ValueError("symmetry analysis requires at least one atom with positive mass")
     center = np.average(coordinates, axis=0, weights=weights)
     centered = coordinates - center
     inertia = sum(
@@ -251,19 +273,24 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
     improper: dict[int, list[tuple[np.ndarray, Operation]]] = {}
     for axis in axes:
         for order in _rotation_orders(symbols, coordinates, axis, tolerance):
+            reflection = np.eye(3) - 2 * np.outer(axis, axis)
             matrix = _rotation(axis, 2 * pi / order)
             matched = (_match(symbols, coordinates, matrix, tolerance)
                        if _moves_coordinates(coordinates, matrix, tolerance) else None)
             if matched:
-                operation = Operation(f"C{order}", matrix, *matched)
-                rotations.setdefault(order, []).append((axis, operation))
-                operations.append(operation)
-            improper_matrix = matrix @ (np.eye(3) - 2 * np.outer(axis, axis))
+                powers = _operation_powers(
+                    f"C{order}", matrix, matched, order, coordinates, tolerance,
+                )
+                rotations.setdefault(order, []).append((axis, powers[0]))
+                operations.extend(powers)
+            improper_matrix = matrix @ reflection
             improper_match = _match(symbols, coordinates, improper_matrix, tolerance)
             if improper_match:
-                operation = Operation(f"S{order}", improper_matrix, *improper_match)
-                improper.setdefault(order, []).append((axis, operation))
-                operations.append(operation)
+                powers = _operation_powers(
+                    f"S{order}", improper_matrix, improper_match, order, coordinates, tolerance,
+                )
+                improper.setdefault(order, []).append((axis, powers[0]))
+                operations.extend(powers)
 
     mirrors: list[tuple[np.ndarray, Operation]] = []
     for normal in axes:
@@ -289,7 +316,11 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
         if principal_order == 1:
             point_group = "Ci" if inversion else "Cs" if mirrors else "C1"
         else:
-            principal_axis = rotations[principal_order][0][0]
+            improper_order = max(improper, default=1)
+            principal_axis = (
+                improper[improper_order][0][0]
+                if improper_order > principal_order else rotations[principal_order][0][0]
+            )
             perpendicular_c2 = any(
                 abs(float(np.dot(axis, principal_axis))) < 0.2
                 for axis, _operation in rotations.get(2, [])
@@ -303,7 +334,6 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
                 for normal, _operation in mirrors
             )
             family = "D" if perpendicular_c2 else "C"
-            improper_order = max(improper, default=1)
             if (not perpendicular_c2 and not horizontal and not vertical
                     and improper_order > principal_order):
                 point_group = f"S{improper_order}"

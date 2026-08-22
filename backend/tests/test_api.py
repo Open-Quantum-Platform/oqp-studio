@@ -869,6 +869,22 @@ def test_comparison_geometry_skips_cube_files(tmp_path, monkeypatch):
     assert main._comparison_frame([cube]) is None
 
 
+def test_comparison_geometry_includes_supported_import_formats(tmp_path, monkeypatch):
+    from oqp_studio import main, structure_io
+
+    structure = tmp_path / "reference.sdf"
+    structure.write_text("structure")
+    monkeypatch.setattr(
+        structure_io,
+        "parse",
+        lambda *_args, **_kwargs: structure_io.Structure(
+            "sdf", [structure_io.Frame([("C", 0.0, 0.0, 0.0)])],
+        ),
+    )
+
+    assert main._comparison_frame([structure]).atoms[0][0] == "C"
+
+
 def test_comparison_geometry_does_not_eagerly_read_packed_trajectories(tmp_path, monkeypatch):
     from oqp_studio import main, structure_io
 
@@ -1598,6 +1614,15 @@ def test_symmetry_rejects_incomplete_or_malformed_coordinate_rows():
         symmetry.analyze("O 0 0 0\nH invalid 1 0\n")
 
 
+def test_symmetry_rejects_a_structure_containing_only_dummy_sites():
+    import pytest
+
+    from oqp_studio import symmetry
+
+    with pytest.raises(ValueError, match="positive mass"):
+        symmetry.analyze("X 0.0 0.0 0.0\nX 1.0 0.0 0.0\n")
+
+
 def test_symmetry_rejects_rotations_indistinguishable_at_the_tolerance():
     import numpy as np
 
@@ -1623,6 +1648,19 @@ def test_symmetry_finds_rotated_ammonia_mirror_planes():
     result = symmetry.analyze("\n".join(rows), tolerance=0.001)
 
     assert result["point_group"] == "C3v"
+    assert result["operation_count"] == 6
+
+
+def test_symmetry_uses_the_improper_axis_to_classify_d2d():
+    from oqp_studio import symmetry
+
+    allene = (
+        "C 0.0 0.0 -1.3\nC 0.0 0.0 0.0\nC 0.0 0.0 1.3\n"
+        "H 0.9 0.0 -1.8\nH -0.9 0.0 -1.8\n"
+        "H 0.0 0.9 1.8\nH 0.0 -0.9 1.8\n"
+    )
+
+    assert symmetry.analyze(allene, tolerance=0.001)["point_group"] == "D2d"
 
 
 def test_symmetry_searches_rotation_orders_above_eight():

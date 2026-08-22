@@ -757,7 +757,7 @@ def _comparison_frame(paths: list[Path]):
             return (0, name)
         if name.endswith(".xyz") and any(word in name for word in ("result", "final", "optimized")):
             return (1, name)
-        if name.endswith((".log", ".out")):
+        if name.endswith((".log", ".out", ".txt")):
             return (2, name)
         if name.endswith((".molden", ".freq.molden")):
             return (3, name)
@@ -767,7 +767,10 @@ def _comparison_frame(paths: list[Path]):
             return (5, name)
         if name.endswith(".json"):
             return (6, name)
-        if name.endswith((".oqp", ".inp", ".pdb", ".ent")):
+        if name.endswith((
+            ".oqp", ".inp", ".pdb", ".ent", ".mol", ".sdf", ".sd", ".mol2",
+            ".cdxml", ".cdx", ".smi", ".smiles",
+        )):
             return (7, name)
         return None
 
