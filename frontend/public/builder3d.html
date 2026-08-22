@@ -236,8 +236,7 @@
         }
 
         let normalMode = null;
-        let normalModeTimer = null;
-        let normalModeFrame = 0;
+        let normalModePlaying = false;
         const ELEMENT_COLORS = {
           H: "#ffffff", C: "#909090", N: "#3050f8", O: "#ff0d0d",
           F: "#90e050", P: "#ff8000", S: "#ffff30", Cl: "#1ff01f",
@@ -254,7 +253,16 @@
           }).join("\n") + "\n";
         }
 
-        function normalModeSpec(mode, amplitude, showArrows, phase = 0) {
+        function normalModeTrajectory(mode, amplitude) {
+          // Let Mol* animate a single multi-model trajectory. Replacing the
+          // entire scene on a JavaScript timer produces visible steps even at
+          // a modest molecular size.
+          return Array.from({ length: 48 }, (_, frame) =>
+            normalModeXyz(mode, amplitude, (2 * Math.PI * frame) / 48),
+          ).join("");
+        }
+
+        function normalModeSpec(mode, amplitude, showArrows) {
           const arrows = showArrows ? (mode.atoms || []).map((atom) => {
             const start = atom.position;
             const displacement = atom.displacement || [0, 0, 0];
@@ -291,7 +299,7 @@
                 { kind: "canvas", params: { background_color: "#15191e" } },
                 {
                   kind: "download",
-                  params: { url: trajectoryDataUrl(normalModeXyz(mode, amplitude, phase)) },
+                  params: { url: trajectoryDataUrl(normalModeTrajectory(mode, amplitude)) },
                   children: [{
                     kind: "parse",
                     params: { format: "xyz" },
@@ -327,16 +335,15 @@
         }
 
         function stopNormalMode() {
-          if (normalModeTimer !== null) window.clearTimeout(normalModeTimer);
-          normalModeTimer = null;
+          normalModePlaying = false;
           viewer.plugin.managers.animation.stop();
         }
 
-        async function drawNormalModeFrame(phase) {
+        async function drawNormalMode() {
           if (!normalMode) return;
           await viewer.loadMvsData(
             JSON.stringify(normalModeSpec(
-              normalMode.mode, normalMode.amplitude, normalMode.arrows, phase,
+              normalMode.mode, normalMode.amplitude, normalMode.arrows,
             )),
             "mvsj",
             { keepCamera: true, doNotReportErrors: false },
@@ -344,13 +351,16 @@
         }
 
         async function playNormalMode() {
-          if (!normalMode || normalModeTimer !== null) return;
-          const tick = async () => {
-            normalModeFrame = (normalModeFrame + 1) % 24;
-            await drawNormalModeFrame((2 * Math.PI * normalModeFrame) / 24);
-            normalModeTimer = window.setTimeout(tick, 110);
-          };
-          await tick();
+          if (!normalMode) return;
+          const animation = viewer.plugin.managers.animation.animations.find(
+            (item) => item.name === "built-in.animate-model-index",
+          );
+          if (!animation) return;
+          normalModePlaying = true;
+          await viewer.plugin.managers.animation.play(animation, {
+            mode: { name: "palindrome", params: {} },
+            duration: { name: "fixed", params: { durationInS: 2 } },
+          });
         }
 
         // Orbital appearance, in the spirit of MacMolPlt and IQmol: a phase
@@ -559,8 +569,7 @@
             report();
             stopNormalMode();
             normalMode = { mode: message.mode, amplitude: message.amplitude, arrows: message.arrows };
-            normalModeFrame = 0;
-            await drawNormalModeFrame(0);
+            await drawNormalMode();
             if (message.playing) await playNormalMode();
           } else if (message.type === "oqp-normal-mode-play") {
             await playNormalMode();
@@ -568,10 +577,13 @@
             stopNormalMode();
           } else if (message.type === "oqp-normal-mode-arrows") {
             if (!normalMode) return;
-            // Arrow visibility is a visual overlay, not a new vibration.
-            // Keep the active timer and show the current vibration phase.
+            // Arrow visibility is a visual overlay. Reload its static overlay
+            // but resume the model-index animation when it was playing.
+            const resume = normalModePlaying;
+            viewer.plugin.managers.animation.stop();
             normalMode.arrows = !!message.arrows;
-            await drawNormalModeFrame((2 * Math.PI * normalModeFrame) / 24);
+            await drawNormalMode();
+            if (resume) await playNormalMode();
           } else if (message.type === "oqp-normal-mode-reset") {
             stopNormalMode();
             normalMode = null;
