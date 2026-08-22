@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite, prod
 
+MAX_GRID_VALUES = 2_000_000
+
 
 @dataclass
 class Cube:
@@ -14,6 +16,7 @@ class Cube:
     datasets: int
     geometry: tuple[tuple[float, ...], ...]
     dataset_ids: tuple[int, ...]
+    axis_units: tuple[bool, bool, bool]
 
 
 def _number(token: str) -> float:
@@ -36,7 +39,8 @@ def parse(text: str) -> Cube:
         axis_records = [lines[index].split() for index in (3, 4, 5)]
         if any(len(record) != 4 for record in axis_records):
             raise ValueError
-        shape = tuple(abs(int(record[0])) for record in axis_records)
+        voxel_counts = tuple(int(record[0]) for record in axis_records)
+        shape = tuple(abs(count) for count in voxel_counts)
         if any(size == 0 for size in shape):
             raise ValueError
     except (IndexError, ValueError) as exc:
@@ -78,6 +82,8 @@ def parse(text: str) -> Cube:
             raise ValueError("cube dataset counts disagree")
         datasets = dataset_ids
     expected = prod(shape) * datasets
+    if expected > MAX_GRID_VALUES:
+        raise ValueError(f"cube grid is limited to {MAX_GRID_VALUES:,} values")
     try:
         values = [_number(token)
                   for line in lines[header_end:] for token in line.split()]
@@ -97,7 +103,10 @@ def parse(text: str) -> Cube:
         if "non-finite" in str(exc):
             raise
         raise ValueError("cube geometry header is invalid") from exc
-    return Cube(lines[:header_end], values, shape, datasets, geometry, dataset_id_values)
+    axis_units = tuple(count < 0 for count in voxel_counts)
+    return Cube(
+        lines[:header_end], values, shape, datasets, geometry, dataset_id_values, axis_units,
+    )
 
 
 def combine(left_text: str, right_text: str, operation: str) -> str:
@@ -107,6 +116,8 @@ def combine(left_text: str, right_text: str, operation: str) -> str:
         raise ValueError("cube grids have different dimensions")
     if left.datasets != right.datasets:
         raise ValueError("cube grids have different dataset counts")
+    if left.axis_units != right.axis_units:
+        raise ValueError("cube grids use different coordinate units")
     if left.dataset_ids != right.dataset_ids:
         raise ValueError("cube grids have different dataset identifiers")
     if len(left.geometry) != len(right.geometry) or any(

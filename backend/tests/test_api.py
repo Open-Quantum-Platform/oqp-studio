@@ -1479,6 +1479,22 @@ def test_cube_parser_rejects_malformed_geometry_records_and_empty_axes():
             cube.parse(text)
 
 
+def test_cube_arithmetic_rejects_excessive_grids_and_mixed_axis_units():
+    import pytest
+
+    from oqp_studio import cube
+
+    oversized = _cube([1.0, 2.0]).replace("2 1.0 0.0 0.0", "2000001 1.0 0.0 0.0")
+    with pytest.raises(ValueError, match="limited to 2,000,000"):
+        cube.parse(oversized)
+    with pytest.raises(ValueError, match="different coordinate units"):
+        cube.combine(
+            _cube([1.0, 2.0]),
+            _cube([1.0, 2.0]).replace("2 1.0 0.0 0.0", "-2 1.0 0.0 0.0"),
+            "difference",
+        )
+
+
 def test_cube_arithmetic_endpoint_uses_only_job_files(tmp_path, monkeypatch):
     from oqp_studio import cube, jobs, main
 
@@ -1561,6 +1577,16 @@ def test_symmetry_classifies_an_isolated_atom_as_spherical():
     assert symmetry.analyze("He 2.0 -3.0 4.0\n")["point_group"] == "Kh"
 
 
+def test_symmetry_uses_heavy_element_masses_for_principal_axes():
+    import pytest
+
+    from oqp_studio import symmetry
+
+    result = symmetry.analyze("H 0.0 0.0 0.0\nCs 1.0 0.0 0.0\n")
+
+    assert result["center_angstrom"][0] == pytest.approx(132.905 / (132.905 + 1.008))
+
+
 def test_symmetry_rejects_incomplete_or_malformed_coordinate_rows():
     import pytest
 
@@ -1636,6 +1662,30 @@ def test_symmetry_distinguishes_an_icosahedral_structure():
         for second in (-phi, phi):
             vertices.extend([(0.0, first, second), (first, second, 0.0), (second, 0.0, first)])
     xyz = "\n".join(f"C {x:.12f} {y:.12f} {z:.12f}" for x, y, z in vertices)
+
+    assert symmetry.analyze(xyz, tolerance=0.001)["point_group"] == "Ih"
+
+
+def test_symmetry_finds_face_centered_fivefold_axes_in_c60():
+    from itertools import product
+
+    from oqp_studio import symmetry
+
+    phi = (1 + 5 ** 0.5) / 2
+    seeds = [
+        (0.0, 1.0, 3 * phi),
+        (1.0, 2 + phi, 2 * phi),
+        (phi, 2.0, 2 * phi + 1),
+    ]
+    vertices = set()
+    for seed_index, seed in enumerate(seeds):
+        for signs in product((-1.0, 1.0), repeat=3):
+            signed = tuple(value * sign for value, sign in zip(seed, signs))
+            for shift in range(3):
+                vertex = signed[shift:] + signed[:shift]
+                vertices.add(tuple(round(value, 12) for value in vertex))
+    assert len(vertices) == 60
+    xyz = "\n".join(f"C {x} {y} {z}" for x, y, z in sorted(vertices))
 
     assert symmetry.analyze(xyz, tolerance=0.001)["point_group"] == "Ih"
 

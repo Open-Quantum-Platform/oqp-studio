@@ -9,7 +9,7 @@ from math import cos, gcd, isfinite, pi, sin
 
 import numpy as np
 
-from .molden import ATOMIC_NUMBER, SYMBOLS
+from .molden import SYMBOLS
 from .structure_io import Atom, parse_xyz
 
 _MASSES = [
@@ -19,7 +19,15 @@ _MASSES = [
     54.938, 55.845, 58.933, 58.693, 63.546, 65.38, 69.723, 72.630,
     74.922, 78.971, 79.904, 83.798, 85.468, 87.62, 88.906, 91.224,
     92.906, 95.95, 98.0, 101.07, 102.906, 106.42, 107.868, 112.414,
-    114.818, 118.710, 121.760, 127.60, 126.904, 131.293,
+    114.818, 118.710, 121.760, 127.60, 126.904, 131.293, 132.905, 137.327,
+    138.905, 140.116, 140.908, 144.242, 145.0, 150.36, 151.964, 157.25,
+    158.925, 162.500, 164.930, 167.259, 168.934, 173.045, 174.967, 178.49,
+    180.948, 183.84, 186.207, 190.23, 192.217, 195.084, 196.967, 200.592,
+    204.38, 207.2, 208.980, 209.0, 210.0, 222.0, 223.0, 226.0, 227.0,
+    232.038, 231.036, 238.029, 237.0, 244.0, 243.0, 247.0, 247.0, 251.0,
+    252.0, 257.0, 258.0, 259.0, 266.0, 267.0, 268.0, 269.0, 270.0,
+    277.0, 278.0, 281.0, 282.0, 285.0, 286.0, 289.0, 290.0, 293.0,
+    294.0, 294.0,
 ]
 ATOMIC_MASS = dict(zip(SYMBOLS, _MASSES))
 
@@ -64,6 +72,29 @@ def _rotation_orders(symbols: list[str], coordinates: np.ndarray, axis: np.ndarr
     for count in counts.values():
         multiplicity = gcd(multiplicity, count)
     return [order for order in range(2, multiplicity + 1) if multiplicity % order == 0]
+
+
+def _face_normal_axes(coordinates: np.ndarray) -> list[np.ndarray]:
+    """Candidate axes through polygon centers, ranked by repeated local support."""
+    if len(coordinates) < 4:
+        return []
+    clusters: list[tuple[np.ndarray, int]] = []
+    neighbor_count = min(7, len(coordinates) - 1)
+    for index, point in enumerate(coordinates):
+        distance = np.linalg.norm(coordinates - point, axis=1)
+        neighbors = [value for value in np.argsort(distance) if value != index][:neighbor_count]
+        for first, second in combinations(neighbors, 2):
+            axis = _unit(np.cross(coordinates[first] - point, coordinates[second] - point))
+            if axis is None:
+                continue
+            for cluster_index, (existing, support) in enumerate(clusters):
+                if abs(float(np.dot(axis, existing))) > 1 - 1.0e-6:
+                    clusters[cluster_index] = (existing, support + 1)
+                    break
+            else:
+                clusters.append((axis, 1))
+    clusters.sort(key=lambda item: item[1], reverse=True)
+    return [axis for axis, _support in clusters[:240]]
 
 
 def _assignment(distances: np.ndarray, tolerance: float) -> list[int] | None:
@@ -152,9 +183,7 @@ def _strict_xyz(xyz: str) -> list[Atom]:
 def _principal_axes(atoms: list[Atom]) -> tuple[list[str], np.ndarray, np.ndarray]:
     symbols = [atom[0] for atom in atoms]
     coordinates = np.asarray([atom[1:] for atom in atoms], dtype=float)
-    weights = np.asarray([
-        ATOMIC_MASS.get(symbol, float(ATOMIC_NUMBER.get(symbol, 1))) for symbol in symbols
-    ])
+    weights = np.asarray([ATOMIC_MASS[symbol] for symbol in symbols])
     center = np.average(coordinates, axis=0, weights=weights)
     centered = coordinates - center
     inertia = sum(
@@ -208,7 +237,8 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
         for a, b in combinations(atom_axes[:40], 2)
         for vector in (a + b, a - b)
     ])[:160]
-    axes = _unique_axes([*basis_axes, *cross_axes, *bisector_axes])
+    face_axes = _face_normal_axes(coordinates)
+    axes = _unique_axes([*basis_axes, *face_axes, *cross_axes, *bisector_axes])
 
     identity = Operation("E", np.eye(3), list(range(len(atoms))), 0.0)
     operations = [identity]
