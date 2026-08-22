@@ -440,6 +440,9 @@ RESULT_SUFFIXES = (
 # Ignore anything larger than this on a folder import: a stray checkpoint is
 # not analysable and copying it would only cost the user disk.
 MAX_IMPORT_BYTES = 512 * 1024 * 1024
+MAX_COMPARISON_TEXT_BYTES = 16 * 1024 * 1024
+MAX_COMPARISON_LINE = 64 * 1024
+MAX_COMPARISON_ATOMS = 100_000
 
 
 class ImportPathRequest(BaseModel):
@@ -864,8 +867,18 @@ def _comparison_frame(paths: list[Path]):
     def openqp_text_frame(path: Path):
         last = None
         step = 0
+
+        def bounded_lines(stream):
+            while line := stream.readline(MAX_COMPARISON_LINE + 1):
+                if len(line) <= MAX_COMPARISON_LINE:
+                    yield line
+                    continue
+                while line and not line.endswith("\n"):
+                    line = stream.readline(MAX_COMPARISON_LINE + 1)
+                yield ""
+
         with path.open(errors="replace") as stream:
-            rows = iter(stream)
+            rows = iter(bounded_lines(stream))
             for line in rows:
                 marker = re.search(r"Geometry Optimization Step\s+(\d+)", line)
                 if marker:
@@ -876,6 +889,7 @@ def _comparison_frame(paths: list[Path]):
                     if re.match(r"\s*-{5,}", line):
                         break
                 atoms = []
+                oversized = False
                 for line in rows:
                     row = re.match(
                         r"\s*\d+\s+(\d+(?:\.\d+)?)\s+([-+0-9.Ee]+)\s+"
@@ -884,6 +898,10 @@ def _comparison_frame(paths: list[Path]):
                     )
                     if not row:
                         break
+                    if oversized or len(atoms) >= MAX_COMPARISON_ATOMS:
+                        atoms = []
+                        oversized = True
+                        continue
                     atomic_number = int(float(row.group(1)))
                     if 0 < atomic_number < len(structure_io.SYMBOLS):
                         atoms.append(
@@ -892,9 +910,21 @@ def _comparison_frame(paths: list[Path]):
                                 float(row.group(2)), float(row.group(3)), float(row.group(4)),
                             )
                         )
-                if atoms:
+                if atoms and not oversized:
                     last = structure_io.Frame(atoms, f"step {step or 1}")
         return last
+
+    def generic_text_frame(path: Path):
+        with path.open("rb") as stream:
+            data = stream.read(MAX_COMPARISON_TEXT_BYTES + 1)
+        if len(data) > MAX_COMPARISON_TEXT_BYTES:
+            return None
+        text = data.decode(errors="replace")
+        for reader in (structure_io.parse_xyz, structure_io.parse_pdb):
+            frames = reader(text)
+            if frames and frames[-1].atoms:
+                return frames[-1]
+        return None
 
     for priority in (0, 1):
         for _rank, path in sorted(item for item in candidates if item[0][0] == priority):
@@ -925,12 +955,19 @@ def _comparison_frame(paths: list[Path]):
                 continue
             if frame := usable_frame(structure):
                 return frame
+    for _rank, path in sorted(item for item in candidates if item[0][0] == 8):
+        try:
+            frame = generic_text_frame(path)
+        except OSError:
+            continue
+        if frame:
+            return frame
     for _rank, path in sorted(item for item in candidates if item[0][0] == 9):
         try:
-            structure = parse_path(path)
-        except (OSError, ValueError):
+            frame = generic_text_frame(path)
+        except OSError:
             continue
-        if frame := usable_frame(structure):
+        if frame:
             return frame
     return None
 

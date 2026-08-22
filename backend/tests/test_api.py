@@ -1008,6 +1008,44 @@ def test_comparison_geometry_streams_openqp_logs(tmp_path, monkeypatch, suffix):
     assert main._comparison_frame([output]).atoms[0][1] == 4.0
 
 
+def test_comparison_geometry_uses_xyz_content_from_a_text_file(tmp_path):
+    from oqp_studio import main
+
+    structure = tmp_path / "geometry.txt"
+    structure.write_text("1\ngeometry\nH 3.0 2.0 1.0\n")
+
+    assert main._comparison_frame([structure]).atoms[0][1:] == (3.0, 2.0, 1.0)
+
+
+def test_comparison_geometry_discards_oversized_log_blocks(tmp_path, monkeypatch):
+    from oqp_studio import main
+
+    monkeypatch.setattr(main, "MAX_COMPARISON_ATOMS", 2)
+    output = tmp_path / "result.log"
+    output.write_text(
+        "Cartesian Coordinate in Angstrom\n-----\n"
+        "1 1.0 0.0 0.0 0.0\n2 1.0 1.0 0.0 0.0\n3 1.0 2.0 0.0 0.0\n\n"
+        "Cartesian Coordinate in Angstrom\n-----\n1 1.0 7.0 0.0 0.0\n"
+    )
+
+    frame = main._comparison_frame([output])
+    assert len(frame.atoms) == 1
+    assert frame.atoms[0][1] == 7.0
+
+
+def test_comparison_geometry_discards_overlong_log_lines(tmp_path, monkeypatch):
+    from oqp_studio import main
+
+    monkeypatch.setattr(main, "MAX_COMPARISON_LINE", 64)
+    output = tmp_path / "result.log"
+    output.write_text(
+        "x" * 1000 + "\n"
+        "Cartesian Coordinate in Angstrom\n-----\n1 1.0 5.0 0.0 0.0\n"
+    )
+
+    assert main._comparison_frame([output]).atoms[0][1] == 5.0
+
+
 def test_comparison_geometry_uses_unknown_result_suffix_as_a_last_resort(tmp_path):
     from oqp_studio import main
 
