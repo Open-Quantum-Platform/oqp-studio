@@ -964,6 +964,12 @@ def _comparison_frame(paths: list[Path]):
             return frame
     for _rank, path in sorted(item for item in candidates if item[0][0] == 9):
         try:
+            frame = openqp_text_frame(path)
+        except (OSError, ValueError):
+            continue
+        if frame:
+            return frame
+        try:
             frame = generic_text_frame(path)
         except OSError:
             continue

@@ -1055,6 +1055,20 @@ def test_comparison_geometry_uses_unknown_result_suffix_as_a_last_resort(tmp_pat
     assert main._comparison_frame([structure]).atoms[0][0] == "H"
 
 
+def test_comparison_geometry_detects_an_openqp_log_with_an_unknown_suffix(tmp_path):
+    from oqp_studio import main
+
+    output = tmp_path / "result.dat"
+    output.write_text(
+        "Cartesian Coordinate in Angstrom\n"
+        "--------------------------------\n"
+        "1 8.0 4.0 0.0 0.0\n"
+    )
+
+    frame = main._comparison_frame([output])
+    assert frame.atoms == [("O", 4.0, 0.0, 0.0)]
+
+
 def test_project_comparison_rejects_an_active_calculation(monkeypatch):
     from datetime import datetime, timezone
 

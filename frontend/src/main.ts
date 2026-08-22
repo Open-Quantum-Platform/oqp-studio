@@ -3214,7 +3214,11 @@ const COMMANDS: Record<string, () => void> = {
     download("molecule.xyz", `${atoms.length}\nOQP Studio\n${atomsToText(atoms)}\n`);
   },
   "save-oqp": () => download("job.oqp", $<HTMLTextAreaElement>("input").value),
-  "clear-geom": () => { xyzArea.value = ""; builderStatus.textContent = "geometry cleared"; },
+  "clear-geom": () => {
+    xyzArea.value = "";
+    invalidateSymmetry("Geometry cleared; analyze symmetry again.");
+    builderStatus.textContent = "geometry cleared";
+  },
   sketch: () => $<HTMLButtonElement>("sketchBtn").click(),
   preview: () => { void updatePreview(); },
   generate: () => $<HTMLButtonElement>("generate").click(),
