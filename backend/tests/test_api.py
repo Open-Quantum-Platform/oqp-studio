@@ -1649,6 +1649,25 @@ def test_symmetry_rejects_rotations_indistinguishable_at_the_tolerance():
     almost_identity = symmetry._rotation(np.asarray([0.0, 0.0, 1.0]), 1.0e-6)
 
     assert not symmetry._moves_coordinates(coordinates, almost_identity, 0.01)
+    high_order = symmetry._rotation(np.asarray([0.0, 0.0, 1.0]), 2 * np.pi / 100)
+    assert not symmetry._moves_coordinates(np.asarray([[7.0, 0.0, 0.0]]), high_order, 0.5)
+
+
+def test_symmetry_stops_before_assignment_work_can_block_the_sidecar(monkeypatch):
+    import pytest
+
+    from oqp_studio import symmetry
+
+    monkeypatch.setattr(symmetry, "MAX_MATCH_WORK", 0)
+    monkeypatch.setattr(symmetry, "_match", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(symmetry, "_rotation_orders", lambda *_args, **_kwargs: list(range(2, 20)))
+    xyz = "\n".join(
+        f"C {index * 0.37:.6f} {(index ** 2) * 0.013:.6f} {(index ** 3) * 0.001:.6f}"
+        for index in range(10)
+    )
+
+    with pytest.raises(ValueError, match="work limit"):
+        symmetry.analyze(xyz, tolerance=0.01)
 
 
 def test_symmetry_finds_rotated_ammonia_mirror_planes():

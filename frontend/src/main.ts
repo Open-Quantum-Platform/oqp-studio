@@ -2005,25 +2005,22 @@ async function showSurface(): Promise<void> {
   if (!primary || (operation !== "display" && !secondary)) return;
   let cubeUrl = `/api/jobs/${jobId}/files/${encodeURIComponent(primary)}`;
   status.textContent = operation === "display" ? `Displaying ${primary}` : `Computing ${operation}…`;
-  if (operation === "display" && activeCubeUrl) {
-    URL.revokeObjectURL(activeCubeUrl);
-    activeCubeUrl = null;
+  const query = new URLSearchParams({ left: primary, right: secondary, operation });
+  const response = await fetch(operation === "display"
+    ? cubeUrl : `/api/jobs/${jobId}/cube-combine?${query}`);
+  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+    status.textContent = detail?.detail ?? `surface operation failed (${response.status})`;
+    return;
   }
+  const cube = await response.text();
+  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
+  activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
+  cubeUrl = activeCubeUrl;
   if (operation !== "display") {
-    const query = new URLSearchParams({ left: primary, right: secondary, operation });
-    const response = await fetch(`/api/jobs/${jobId}/cube-combine?${query}`);
-    if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
-    if (!response.ok) {
-      const detail = await response.json().catch(() => null);
-      if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
-      status.textContent = detail?.detail ?? `surface operation failed (${response.status})`;
-      return;
-    }
-    const cube = await response.text();
-    if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
-    if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
-    activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
-    cubeUrl = activeCubeUrl;
     status.textContent = `${operation}: ${primary} and ${secondary}`;
   }
   if (requestId !== volumetricRequestId || jobId !== selectedJob) return;

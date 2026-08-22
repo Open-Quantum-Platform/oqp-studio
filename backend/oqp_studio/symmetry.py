@@ -30,6 +30,7 @@ _MASSES = [
     294.0, 294.0,
 ]
 ATOMIC_MASS = dict(zip(SYMBOLS, _MASSES))
+MAX_MATCH_WORK = 40_000_000
 
 
 @dataclass
@@ -92,7 +93,8 @@ def _face_normal_axes(coordinates: np.ndarray) -> list[np.ndarray]:
                     clusters[cluster_index] = (existing, support + 1)
                     break
             else:
-                clusters.append((axis, 1))
+                if len(clusters) < 480:
+                    clusters.append((axis, 1))
     clusters.sort(key=lambda item: item[1], reverse=True)
     return [axis for axis, _support in clusters[:240]]
 
@@ -268,9 +270,21 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
     face_axes = _face_normal_axes(coordinates)
     axes = _unique_axes([*basis_axes, *face_axes, *cross_axes, *bisector_axes])
 
+    match_tests = 0
+    max_match_tests = max(100, MAX_MATCH_WORK // (len(atoms) ** 2))
+
+    def bounded_match(matrix: np.ndarray) -> tuple[list[int], float] | None:
+        nonlocal match_tests
+        if match_tests >= max_match_tests:
+            raise ValueError(
+                "symmetry search exceeded its work limit; use fewer atoms or a tighter tolerance"
+            )
+        match_tests += 1
+        return _match(symbols, coordinates, matrix, tolerance)
+
     identity = Operation("E", np.eye(3), list(range(len(atoms))), 0.0)
     operations = [identity]
-    inversion_match = _match(symbols, coordinates, -np.eye(3), tolerance)
+    inversion_match = bounded_match(-np.eye(3))
     inversion = inversion_match is not None
     if inversion_match:
         operations.append(Operation("i", -np.eye(3), *inversion_match))
@@ -281,7 +295,7 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
         for order in _rotation_orders(symbols, coordinates, axis, tolerance):
             reflection = np.eye(3) - 2 * np.outer(axis, axis)
             matrix = _rotation(axis, 2 * pi / order)
-            matched = (_match(symbols, coordinates, matrix, tolerance)
+            matched = (bounded_match(matrix)
                        if _moves_coordinates(coordinates, matrix, tolerance) else None)
             if matched:
                 powers = _operation_powers(
@@ -290,7 +304,8 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
                 rotations.setdefault(order, []).append((axis, powers[0]))
                 operations.extend(powers)
             improper_matrix = matrix @ reflection
-            improper_match = _match(symbols, coordinates, improper_matrix, tolerance)
+            improper_match = (bounded_match(improper_matrix)
+                              if _moves_coordinates(coordinates, matrix, tolerance) else None)
             if improper_match:
                 powers = _operation_powers(
                     f"S{order}", improper_matrix, improper_match,
@@ -302,7 +317,7 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
     mirrors: list[tuple[np.ndarray, Operation]] = []
     for normal in axes:
         matrix = np.eye(3) - 2 * np.outer(normal, normal)
-        matched = _match(symbols, coordinates, matrix, tolerance)
+        matched = bounded_match(matrix)
         if matched:
             operation = Operation("sigma", matrix, *matched)
             mirrors.append((normal, operation))
