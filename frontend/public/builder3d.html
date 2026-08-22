@@ -192,6 +192,38 @@
           });
         }
 
+        async function addShieldingMap(xyz, shielding) {
+          const rows = xyz.split("\n");
+          const count = parseInt(rows[0], 10);
+          if (!Number.isFinite(count) || !Array.isArray(shielding) || shielding.length !== count) return;
+          const pdb = [];
+          for (let i = 0; i < count; i += 1) {
+            const parts = (rows[i + 2] || "").trim().split(/\s+/);
+            if (parts.length < 4) return;
+            const value = Number(shielding[i].total_coupled);
+            const [element, x, y, z] = parts;
+            pdb.push("HETATM" + String(i + 1).padStart(5) + " " +
+              String(Math.round(value)).padStart(4).slice(0, 4) + " NMR A   1    " +
+              Number(x).toFixed(3).padStart(8) + Number(y).toFixed(3).padStart(8) +
+              Number(z).toFixed(3).padStart(8) + "  1.00" + value.toFixed(2).padStart(6) +
+              "          " + element.toUpperCase().padStart(2));
+          }
+          pdb.push("END");
+          const plugin = viewer.plugin;
+          const raw = await plugin.builders.data.rawData({ data: pdb.join("\n") });
+          const trajectory = await plugin.builders.structure.parseTrajectory(raw, "pdb");
+          const model = await plugin.builders.structure.createModel(trajectory);
+          const structure = await plugin.builders.structure.createStructure(model);
+          const component = await plugin.builders.structure.tryCreateComponentStatic(structure, "all");
+          if (!component) return;
+          await plugin.builders.structure.representation.addRepresentation(component, {
+            type: "spacefill", color: "bfactor", typeParams: { sizeFactor: 0.42 },
+          });
+          await plugin.builders.structure.representation.addRepresentation(component, {
+            type: "label", typeParams: { level: "element", attachment: "middle-center", sizeFactor: 0.55, backgroundOpacity: 0.45 },
+          });
+        }
+
         async function drawStructure(data, format = "xyz") {
           last = { data, format };
           // "auto" hands over to Mol*'s own preset, which draws proteins and
@@ -567,6 +599,8 @@
             report();
             await viewer.plugin.clear();
             await drawStructure(message.xyz);
+          } else if (message.type === "oqp-nmr-shielding") {
+            if (last && last.format === "xyz") await addShieldingMap(last.data, message.shielding);
           } else if (message.type === "oqp-normal-mode") {
             picked.length = 0;
             report();

@@ -133,7 +133,7 @@ jobs:
             --config-settings=cmake.define.USE_LIBINT=OFF `
             --config-settings=cmake.define.ENABLE_OPENTRAH=OFF `
             --config-settings=cmake.define.BUILD_TESTING=OFF
-          python -m pip install scipy "numpy<2.2" basis_set_exchange geometric
+          python -m pip install scipy "numpy<2.2" basis_set_exchange
 
           # Fail here, where the build log is, rather than three steps later
           # with an unhelpful "missing DLL".
@@ -209,13 +209,12 @@ jobs:
             '--distpath C:\oqpdist --workpath C:\oqpwork --specpath C:\oqpwork',
             '--collect-data oqp --collect-submodules oqp',
             '--collect-data basis_set_exchange --collect-submodules basis_set_exchange',
-            '--collect-data geometric --collect-submodules geometric',
             '--collect-submodules scipy --collect-submodules numpy',
             # basis_set_exchange asks importlib.metadata for its own version at
             # import time, which needs the .dist-info that --collect-data does
             # not carry.  Recursive so its dependencies are covered too.
             '--recursive-copy-metadata basis_set_exchange',
-            '--copy-metadata OpenQP --copy-metadata geometric',
+            '--copy-metadata OpenQP',
             ($addBin -join ' '),
             "`"$entry`""
           ) -join ' '

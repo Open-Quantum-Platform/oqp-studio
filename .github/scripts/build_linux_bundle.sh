@@ -64,7 +64,7 @@ cd /src
 "$PY" -m pip install cmake ninja numpy cffi scikit-build-core pyinstaller
 CMAKE_ARGS="-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH -DLINALG_LIB=OpenBLAS -DENABLE_MPI=OFF -DENABLE_DDX=ON -DUSE_LIBINT=OFF -DENABLE_OPENTRAH=OFF -DBUILD_TESTING=OFF" \
   "$PY" -m pip install -v . --no-build-isolation
-"$PY" -m pip install scipy "numpy<2.2" basis_set_exchange geometric
+"$PY" -m pip install scipy "numpy<2.2" basis_set_exchange
 echo "::endgroup::"
 
 # `import oqp` prints "Failed to import mpi4py" on a non-MPI build, so take
@@ -113,10 +113,9 @@ printf 'bundling: %s\n' "${add[@]}" | head -40
   --distpath /tmp/oqpdist --workpath /tmp/oqpwork --specpath /tmp/oqpwork \
   --collect-data oqp --collect-submodules oqp \
   --collect-data basis_set_exchange --collect-submodules basis_set_exchange \
-  --collect-data geometric --collect-submodules geometric \
   --collect-submodules scipy --collect-submodules numpy \
   --recursive-copy-metadata basis_set_exchange \
-  --copy-metadata OpenQP --copy-metadata geometric \
+  --copy-metadata OpenQP \
   "${add[@]}" /tmp/oqpwork/openqp_entry.py
 echo "::endgroup::"
 

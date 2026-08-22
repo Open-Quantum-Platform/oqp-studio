@@ -146,7 +146,7 @@ jobs:
             --config-settings=cmake.define.USE_LIBINT=OFF \
             --config-settings=cmake.define.ENABLE_OPENTRAH=OFF \
             --config-settings=cmake.define.BUILD_TESTING=OFF
-          python -m pip install scipy "numpy<2.2" basis_set_exchange geometric
+          python -m pip install scipy "numpy<2.2" basis_set_exchange
 
       - name: Freeze into a standalone directory
         run: |
@@ -195,10 +195,9 @@ jobs:
             --distpath /tmp/oqpdist --workpath /tmp/oqpwork --specpath /tmp/oqpwork \
             --collect-data oqp --collect-submodules oqp \
             --collect-data basis_set_exchange --collect-submodules basis_set_exchange \
-            --collect-data geometric --collect-submodules geometric \
             --collect-submodules scipy --collect-submodules numpy \
             --recursive-copy-metadata basis_set_exchange \
-            --copy-metadata OpenQP --copy-metadata geometric \
+            --copy-metadata OpenQP \
             "${add[@]}" /tmp/oqpwork/openqp_entry.py
 
       - name: Add the data tree and a README
