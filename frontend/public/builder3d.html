@@ -238,6 +238,11 @@
         let normalMode = null;
         let normalModeTimer = null;
         let normalModeFrame = 0;
+        const ELEMENT_COLORS = {
+          H: "#ffffff", C: "#909090", N: "#3050f8", O: "#ff0d0d",
+          F: "#90e050", P: "#ff8000", S: "#ffff30", Cl: "#1ff01f",
+          Br: "#a62929", I: "#940094",
+        };
 
         function normalModeXyz(mode, amplitude, phase = 0) {
           const factor = amplitude * Math.sin(phase);
@@ -258,8 +263,8 @@
             // Start outside the atom sphere; arrows beginning at a nucleus are
             // hidden by the ball-and-stick representation.
             const direction = displacement.map((value) => value / magnitude);
-            const offset = atom.element === "H" ? 0.38 : 0.65;
-            const length = Math.max(0.9, 1.7 * amplitude);
+            const offset = atom.element === "H" ? 0.32 : 0.48;
+            const length = Math.max(0.35, Math.min(0.75, 0.65 * amplitude));
             const arrowStart = start.map((value, index) => value + offset * direction[index]);
             return {
               kind: "primitive",
@@ -267,12 +272,16 @@
                 kind: "arrow",
                 start: arrowStart,
                 end: arrowStart.map((value, index) => value + length * direction[index]),
-                tube_radius: 0.075,
+                tube_radius: 0.045,
                 show_end_cap: true,
                 color: "yellow",
               },
             };
           }).filter(Boolean) : [];
+          const colorLayers = [...new Set((mode.atoms || []).map(atom => atom.element))].map(element => ({
+            kind: "color",
+            params: { color: ELEMENT_COLORS[element] || "#b0b0b0", selector: { type_symbol: element } },
+          }));
           return {
             kind: "single",
             metadata: { version: "1.0.0", title: "OQP normal mode" },
@@ -296,6 +305,7 @@
                           children: [{
                             kind: "representation",
                             params: { type: "ball_and_stick" },
+                            children: colorLayers,
                           }],
                         },
                       ],
@@ -320,7 +330,6 @@
 
         async function drawNormalModeFrame(phase) {
           if (!normalMode) return;
-          await viewer.plugin.clear();
           await viewer.loadMvsData(
             JSON.stringify(normalModeSpec(
               normalMode.mode, normalMode.amplitude, normalMode.arrows, phase,
