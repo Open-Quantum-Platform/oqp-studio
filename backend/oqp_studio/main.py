@@ -824,8 +824,6 @@ def _summary_energy(summary: dict) -> float | None:
 def _comparison_frame(paths: list[Path]):
     from . import structure_io
 
-    parsed_text: dict[Path, object] = {}
-
     def rank(path: Path) -> tuple[int, str] | None:
         name = path.name.lower()
         if name in {"opt.xyz", "opt_geom.xyz"} or name.endswith((".namd.trj", ".trj")):
@@ -848,33 +846,96 @@ def _comparison_frame(paths: list[Path]):
         )):
             return (7, name)
         if name.endswith(".txt"):
-            try:
-                payload = path.read_bytes()
-                structure = structure_io.parse(path.name, payload, path=str(path))
-            except (OSError, ValueError):
-                return (8, name)
-            parsed_text[path] = structure
-            if structure.format == "log":
-                return (2, name)
             return (8, name)
         if name.endswith((".cube", ".cub")):
             return None
         return (9, name)
 
     candidates = [(priority, path) for path in paths if (priority := rank(path)) is not None]
-    for _priority, path in sorted(candidates):
-        try:
-            structure = parsed_text.get(path)
-            if structure is None:
-                payload = (
-                    b"" if path.name.lower().endswith((".namd.trj", ".trj"))
-                    else path.read_bytes()
-                )
-                structure = structure_io.parse(path.name, payload, path=str(path))
-        except (OSError, ValueError):
-            continue
+    def parse_path(path: Path):
+        payload = b"" if path.name.lower().endswith((".namd.trj", ".trj")) else path.read_bytes()
+        return structure_io.parse(path.name, payload, path=str(path))
+
+    def usable_frame(structure):
         if structure.frames and structure.frames[-1].atoms:
             return structure.frames[-1]
+        return None
+
+    def openqp_text_frame(path: Path):
+        last = None
+        step = 0
+        with path.open(errors="replace") as stream:
+            rows = iter(stream)
+            for line in rows:
+                marker = re.search(r"Geometry Optimization Step\s+(\d+)", line)
+                if marker:
+                    step = int(marker.group(1))
+                if "Cartesian Coordinate in Angstrom" not in line:
+                    continue
+                for line in rows:
+                    if re.match(r"\s*-{5,}", line):
+                        break
+                atoms = []
+                for line in rows:
+                    row = re.match(
+                        r"\s*\d+\s+(\d+(?:\.\d+)?)\s+([-+0-9.Ee]+)\s+"
+                        r"([-+0-9.Ee]+)\s+([-+0-9.Ee]+)",
+                        line,
+                    )
+                    if not row:
+                        break
+                    atomic_number = int(float(row.group(1)))
+                    if 0 < atomic_number < len(structure_io.SYMBOLS):
+                        atoms.append(
+                            (
+                                structure_io.SYMBOLS[atomic_number],
+                                float(row.group(2)), float(row.group(3)), float(row.group(4)),
+                            )
+                        )
+                if atoms:
+                    last = structure_io.Frame(atoms, f"step {step or 1}")
+        return last
+
+    for priority in (0, 1):
+        for _rank, path in sorted(item for item in candidates if item[0][0] == priority):
+            try:
+                structure = parse_path(path)
+            except (OSError, ValueError):
+                continue
+            if frame := usable_frame(structure):
+                return frame
+
+    # A .txt file is promoted beside .log/.out only after its contents identify
+    # it as an OpenQP log. Do this only after explicit result geometry tiers fail.
+    log_candidates = [item for item in candidates if item[0][0] == 2]
+    text_candidates = [item for item in candidates if item[0][0] == 8]
+    for _rank, path in sorted([*log_candidates, *text_candidates], key=lambda item: item[1].name):
+        try:
+            if path.name.lower().endswith(".txt"):
+                if frame := openqp_text_frame(path):
+                    return frame
+                continue
+            structure = parse_path(path)
+        except (OSError, ValueError):
+            continue
+        if frame := usable_frame(structure):
+            return frame
+
+    for priority in range(3, 8):
+        for _rank, path in sorted(item for item in candidates if item[0][0] == priority):
+            try:
+                structure = parse_path(path)
+            except (OSError, ValueError):
+                continue
+            if frame := usable_frame(structure):
+                return frame
+    for _rank, path in sorted(item for item in candidates if item[0][0] == 9):
+        try:
+            structure = parse_path(path)
+        except (OSError, ValueError):
+            continue
+        if frame := usable_frame(structure):
+            return frame
     return None
 
 

@@ -968,6 +968,24 @@ def test_comparison_geometry_promotes_a_verified_openqp_text_log(tmp_path):
     assert main._comparison_frame([input_file, output_file]).atoms[0][1] == 2.0
 
 
+def test_comparison_geometry_does_not_read_text_when_result_xyz_exists(tmp_path, monkeypatch):
+    from oqp_studio import main
+
+    result_xyz = tmp_path / "result.xyz"
+    result_xyz.write_text("1\nfinal\nH 1.0 2.0 3.0\n")
+    large_text = tmp_path / "results.txt"
+    large_text.write_text("must not be read")
+    original_read_bytes = type(large_text).read_bytes
+
+    def guarded_read(path):
+        if path == large_text:
+            raise AssertionError("lower-priority text was read eagerly")
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(type(large_text), "read_bytes", guarded_read)
+    assert main._comparison_frame([large_text, result_xyz]).atoms[0][1] == 1.0
+
+
 def test_comparison_geometry_uses_unknown_result_suffix_as_a_last_resort(tmp_path):
     from oqp_studio import main
 

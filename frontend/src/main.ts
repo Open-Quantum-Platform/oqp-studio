@@ -1862,6 +1862,7 @@ const excitedTarget = $<HTMLSelectElement>("excitedTarget");
 const excitedMap = $<HTMLSelectElement>("excitedMap");
 const excitedPair = $<HTMLSelectElement>("excitedPair");
 let excitedAnalysis: ExcitedAnalysis | null = null;
+let excitedAnalysisRequestId = 0;
 
 function stateOptions(states: ExcitedAnalysis["states"]): string {
   return states.map((state) =>
@@ -1897,11 +1898,16 @@ async function loadExcitedAnalysis(jobId: string): Promise<void> {
   const ref = excitedSource.value || "0";
   const target = excitedTarget.value || "1";
   if (ref === target) return;
+  const requestId = ++excitedAnalysisRequestId;
   const response = await fetch(
     `/api/jobs/${jobId}/excited-analysis?ref=${encodeURIComponent(ref)}&target=${encodeURIComponent(target)}`
   );
-  if (!response.ok || jobId !== selectedJob) return;
-  renderExcitedAnalysis(await response.json());
+  if (!response.ok || requestId !== excitedAnalysisRequestId || jobId !== selectedJob ||
+      ref !== excitedSource.value || target !== excitedTarget.value) return;
+  const data = await response.json();
+  if (requestId !== excitedAnalysisRequestId || jobId !== selectedJob ||
+      ref !== excitedSource.value || target !== excitedTarget.value) return;
+  renderExcitedAnalysis(data);
 }
 
 async function showExcitedMap(): Promise<void> {
@@ -1909,20 +1915,38 @@ async function showExcitedMap(): Promise<void> {
   const jobId = selectedJob;
   const requestId = ++volumetricRequestId;
   const kind = excitedMap.value;
+  const ref = excitedSource.value;
+  const target = excitedTarget.value;
+  const rank = excitedPair.value || "0";
+  const moldenFile = excitedAnalysis.molden_file;
+  const selectionIsCurrent = () => jobId === selectedJob && kind === excitedMap.value &&
+    ref === excitedSource.value && target === excitedTarget.value &&
+    rank === (excitedPair.value || "0") && moldenFile === excitedAnalysis?.molden_file;
   const query = new URLSearchParams({
     kind,
-    ref: excitedSource.value,
-    target: excitedTarget.value,
-    rank: excitedPair.value || "0",
+    ref,
+    target,
+    rank,
   });
   const base = `/api/jobs/${jobId}`;
-  const [geometryResponse, cubeResponse] = await Promise.all([
-    fetch(`${base}/molden/${encodeURIComponent(excitedAnalysis.molden_file)}/geom.xyz`),
-    fetch(`${base}/excited-analysis/cube?${query}`),
-  ]);
+  let geometryResponse: Response;
+  let cubeResponse: Response;
+  try {
+    [geometryResponse, cubeResponse] = await Promise.all([
+      fetch(`${base}/molden/${encodeURIComponent(moldenFile)}/geom.xyz`),
+      fetch(`${base}/excited-analysis/cube?${query}`),
+    ]);
+  } catch (error) {
+    if (requestId === volumetricRequestId && selectionIsCurrent()) {
+      $<HTMLDivElement>("excitedMetrics").textContent =
+        `map generation failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    return;
+  }
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   if (!geometryResponse.ok || !cubeResponse.ok) return;
   const [xyz, cube] = await Promise.all([geometryResponse.text(), cubeResponse.text()]);
-  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
+  if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
   activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
   activeMapSource = "excited";
@@ -1938,6 +1962,7 @@ async function showExcitedMap(): Promise<void> {
 
 for (const select of [excitedSource, excitedTarget]) {
   select.addEventListener("change", () => {
+    volumetricRequestId += 1;
     if (excitedSource.value === excitedTarget.value) {
       const states = excitedAnalysis?.states ?? [];
       const current = Number(excitedSource.value);
@@ -1949,9 +1974,11 @@ for (const select of [excitedSource, excitedTarget]) {
   });
 }
 excitedMap.addEventListener("change", () => {
+  volumetricRequestId += 1;
   $<HTMLDivElement>("excitedPairWrap").style.display =
     excitedMap.value.startsWith("nto_") ? "" : "none";
 });
+excitedPair.addEventListener("change", () => { volumetricRequestId += 1; });
 $<HTMLButtonElement>("excitedShow").addEventListener("click", () => void showExcitedMap());
 $<HTMLButtonElement>("excitedReset").addEventListener("click", () => {
   if (!excitedAnalysis) return;
