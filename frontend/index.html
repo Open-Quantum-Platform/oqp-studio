@@ -228,6 +228,9 @@
         color: var(--text-dim); font-size: 12px;
       }
       .hint { color: var(--text-dim); font-size: 12.5px; margin-top: 0.5rem; }
+      .workflow-description { margin-top: 0.55rem; }
+      .workflow-description .summary { color: var(--text); font-size: 13px; }
+      .workflow-description .detail { margin-top: 0.25rem; color: var(--text-dim); font-size: 12.5px; line-height: 1.45; }
 
       /* Viewer plus its measurement read-out. */
       .viewer-wrap { position: relative; min-width: 0; height: 100%; }
@@ -526,7 +529,10 @@
               <h3>Workflow</h3>
               <label for="workflowSel">Workflow</label>
               <select id="workflowSel"></select>
-              <div class="hint" id="workflowDescription" style="margin-top:.45rem"></div>
+              <div class="workflow-description" id="workflowDescription">
+                <div class="summary" id="workflowSummary"></div>
+                <div class="detail" id="workflowDetail"></div>
+              </div>
             </div>
             <div class="card" id="optionsCard" style="display:none">
               <h3>Options <span class="hint" id="wfLabel" style="text-transform:none;letter-spacing:0"></span></h3>

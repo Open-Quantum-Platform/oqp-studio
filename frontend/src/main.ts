@@ -512,6 +512,7 @@ interface Workflow {
   key: string;
   title: string;
   desc: string;
+  detail: string;
   theories: string[];
   defaultTheory?: string;
 }
@@ -525,28 +526,28 @@ const DFT_RESPONSE = ["tddft", "tda", "sf", "mrsf", "umrsf"];
 const GRADIENT_THEORIES = ["hf", "dft", "mp2", ...DFT_RESPONSE, "casscf", "sa-casscf", "caspt2", "ms-caspt2", "xms-caspt2", "nevpt2", "sc-nevpt2"];
 
 const WORKFLOWS: Workflow[] = [
-  { key: "energy", title: "Single-point energy", desc: "Electronic energy at the supplied geometry", theories: ALL_THEORIES, defaultTheory: "dft" },
-  { key: "grad", title: "Energy gradient", desc: "Ground- or state-specific gradient", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
-  { key: "opt", title: "Geometry optimization", desc: "Minimum on a ground or excited-state surface", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
-  { key: "hess", title: "Frequencies (Hessian)", desc: "Vibrational frequencies, IR, and thermochemistry", theories: ["hf", "dft", ...DFT_RESPONSE], defaultTheory: "dft" },
-  { key: "prop", title: "Molecular properties", desc: "Population, multipoles, and state properties", theories: ["hf", "dft", "mrsf", "umrsf"], defaultTheory: "dft" },
-  { key: "nmr", title: "NMR shielding", desc: "Ground-state NMR properties", theories: ["hf", "dft"], defaultTheory: "dft" },
-  { key: "pcm", title: "PCM solvation", desc: "ddX reference-SCF energy in a dielectric continuum", theories: ["hf", "dft"], defaultTheory: "hf" },
-  { key: "abs", title: "Vertical excited states", desc: "Excitation energies and oscillator strengths at the S0 geometry", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
-  { key: "exgrad", title: "Excited-state gradient", desc: "Gradient of a selected electronic state", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
-  { key: "exopt", title: "Excited-state optimization", desc: "Optimize a selected excited state", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
-  { key: "meci", title: "MECI search", desc: "Minimum-energy conical intersection between singlet states", theories: ["tddft", "tda", "sf", "mrsf", "umrsf", "casscf", "sa-casscf"], defaultTheory: "mrsf" },
-  { key: "mecp", title: "MECP search", desc: "Minimum-energy crossing between states of different spin", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "tci", title: "Three-state intersection", desc: "Three-state conical-intersection search", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "ts", title: "Transition-state search", desc: "First-order saddle point on a selected surface", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
-  { key: "irc", title: "Intrinsic reaction coordinate", desc: "Follow the path downhill from a transition state", theories: ["hf", "dft"], defaultTheory: "dft" },
-  { key: "mep", title: "Minimum-energy path", desc: "Trace a path from a selected state", theories: GRADIENT_THEORIES, defaultTheory: "mrsf" },
-  { key: "neb", title: "Nudged elastic band", desc: "Reaction path between reactant and product geometries", theories: ["hf", "dft"], defaultTheory: "dft" },
-  { key: "nac", title: "Nonadiabatic coupling", desc: "State-to-state nonadiabatic coupling", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "nacme", title: "NACME", desc: "Nonadiabatic coupling matrix element", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "soc", title: "Spin-orbit coupling", desc: "Spin-orbit coupling between singlets and triplets", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "ekt", title: "Ionization / EA (EKT)", desc: "MRSF extended-Koopmans IP and EA with Dyson orbitals", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "namd", title: "Nonadiabatic dynamics", desc: "Surface-hopping molecular dynamics", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "energy", title: "Single-point energy", desc: "Electronic energy at the supplied geometry.", detail: "Keeps the nuclear coordinates fixed and reports the energy and electronic-state data required for subsequent analysis.", theories: ALL_THEORIES, defaultTheory: "dft" },
+  { key: "grad", title: "Energy gradient", desc: "Nuclear energy gradient for the ground or selected electronic state.", detail: "Use the gradient to characterize forces at a fixed geometry or as the derivative input for structural optimization and path calculations.", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
+  { key: "opt", title: "Geometry optimization", desc: "Optimize the molecular structure on the selected potential-energy surface.", detail: "For response theories, choose S0 or a specified excited state. Convergence is assessed from energy changes, gradients, and nuclear displacements.", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
+  { key: "hess", title: "Frequencies (Hessian)", desc: "Vibrational frequencies, normal modes, and thermochemical quantities.", detail: "Calculates the second derivative matrix at the supplied structure, then obtains IR intensities, zero-point energy, and temperature-dependent thermochemistry.", theories: ["hf", "dft", ...DFT_RESPONSE], defaultTheory: "dft" },
+  { key: "prop", title: "Molecular properties", desc: "Electronic populations, multipoles, and selected state properties.", detail: "Use this fixed-geometry calculation to inspect charge distribution and electrostatic or state-resolved quantities without changing the molecular structure.", theories: ["hf", "dft", "mrsf", "umrsf"], defaultTheory: "dft" },
+  { key: "nmr", title: "NMR shielding", desc: "Ground-state nuclear magnetic shielding constants.", detail: "Computes the shielding tensor at the supplied geometry; isotropic shifts and tensor components can then be compared among chemically distinct nuclei.", theories: ["hf", "dft"], defaultTheory: "dft" },
+  { key: "pcm", title: "PCM solvation", desc: "Reference-SCF energy in a polarizable continuum solvent.", detail: "Select a solvent to set its dielectric constant, then calculate the solvent reaction-field contribution at a fixed molecular geometry.", theories: ["hf", "dft"], defaultTheory: "hf" },
+  { key: "abs", title: "Vertical excited states", desc: "Excitation energies and oscillator strengths at the S0 geometry.", detail: "The nuclei remain at the reference structure, so the state energies and transition moments provide the stick spectrum used for absorption broadening.", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
+  { key: "exgrad", title: "Excited-state gradient", desc: "Nuclear gradient of a selected excited electronic state.", detail: "Evaluates the derivative on the chosen state at the present geometry; it is the starting point for excited-state structural relaxation or dynamics.", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
+  { key: "exopt", title: "Excited-state optimization", desc: "Optimize the geometry on a selected excited-state surface.", detail: "Choose the target state explicitly. The resulting relaxed structure is appropriate for emission or excited-state absorption analysis when the state remains well characterized.", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
+  { key: "meci", title: "MECI search", desc: "Locate a minimum-energy conical intersection between two electronic states.", detail: "Optimizes the mean energy while driving the selected state energy gap toward zero, yielding a crossing geometry relevant to internal conversion.", theories: ["tddft", "tda", "sf", "mrsf", "umrsf", "casscf", "sa-casscf"], defaultTheory: "mrsf" },
+  { key: "mecp", title: "MECP search", desc: "Locate a minimum-energy crossing point between states of different spin.", detail: "Optimizes the crossing geometry while enforcing equality of the selected state energies, for example between singlet and triplet surfaces.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "tci", title: "Three-state intersection", desc: "Search for a geometry where three selected electronic states approach degeneracy.", detail: "The calculation treats the three state energies together and is intended for multistate crossing regions rather than a single pairwise crossing.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "ts", title: "Transition-state search", desc: "Find a first-order saddle point on the selected potential-energy surface.", detail: "A successful structure has one unstable normal coordinate. Follow with a Hessian and an IRC calculation to verify the reaction connection.", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
+  { key: "irc", title: "Intrinsic reaction coordinate", desc: "Trace the steepest-descent path from a transition-state structure.", detail: "Integrates downhill in both directions to identify the connected reactant and product valleys on the same potential-energy surface.", theories: ["hf", "dft"], defaultTheory: "dft" },
+  { key: "mep", title: "Minimum-energy path", desc: "Trace a reaction path on the selected electronic-state surface.", detail: "Uses state-specific gradients to follow a path through nuclear-coordinate space and records the energy profile along that path.", theories: GRADIENT_THEORIES, defaultTheory: "mrsf" },
+  { key: "neb", title: "Nudged elastic band", desc: "Optimize a discretized path between reactant and product structures.", detail: "Uses intermediate images and spring forces to resolve a minimum-energy path when both endpoint geometries are available.", theories: ["hf", "dft"], defaultTheory: "dft" },
+  { key: "nac", title: "Nonadiabatic coupling", desc: "Derivative coupling vector between two selected electronic states.", detail: "The coupling identifies nuclear motions that mix the states and is needed near crossings or for nonadiabatic nuclear dynamics.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "nacme", title: "NACME", desc: "Nonadiabatic coupling matrix element between two selected states.", detail: "Reports the state-to-state coupling quantity for the specified electronic-state pair at the current nuclear geometry.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "soc", title: "Spin-orbit coupling", desc: "Spin-orbit matrix elements between singlet and triplet states.", detail: "Use the coupling and state energy gaps to assess intersystem crossing pathways and spin-mixed electronic states.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "ekt", title: "Ionization / EA (EKT)", desc: "Ionization and electron-affinity states from the extended Koopmans theorem.", detail: "Reports IP/EA state energies and Dyson orbitals. Dyson strength gives an orbital occupation contribution through twice the reported strength.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "namd", title: "Nonadiabatic dynamics", desc: "Surface-hopping nuclear dynamics across coupled electronic states.", detail: "Propagates nuclear trajectories while evaluating electronic populations and state transitions; choose the initial state, time step, and total number of steps.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
 ];
 
 let currentWf: Workflow = WORKFLOWS[0];
@@ -573,7 +574,8 @@ function selectWorkflow(wf: Workflow): void {
   const firstSelection = optionsCard.style.display === "none";
   currentWf = wf;
   $<HTMLSelectElement>("workflowSel").value = wf.key;
-  $<HTMLDivElement>("workflowDescription").textContent = wf.desc;
+  $<HTMLDivElement>("workflowSummary").textContent = wf.desc;
+  $<HTMLDivElement>("workflowDetail").textContent = wf.detail;
   for (const option of Array.from(theorySel.options)) {
     option.disabled = !wf.theories.includes(option.value);
   }
