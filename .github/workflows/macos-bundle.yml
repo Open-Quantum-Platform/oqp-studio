@@ -115,11 +115,18 @@ jobs:
           if [ ! -f "$root/lib/pkgconfig/openblas64.pc" ]; then
             rm -rf /tmp/OpenBLAS
             git clone --depth 1 --branch v0.3.30 https://github.com/OpenMathLib/OpenBLAS.git /tmp/OpenBLAS
+            openblas_arch=(DYNAMIC_ARCH=1)
+            if [ "${{ matrix.arch }}" = "arm64" ]; then
+              # DYNAMIC_ARCH attempts Linux-only SVE/complex-number kernels on
+              # Apple's assembler. ARMV8 is the compatible baseline for every
+              # supported Apple Silicon runner.
+              openblas_arch=(TARGET=ARMV8)
+            fi
             make -C /tmp/OpenBLAS -j"$(sysctl -n hw.ncpu)" CC=gcc-15 FC=gfortran-15 \
-              INTERFACE64=1 USE_OPENMP=1 DYNAMIC_ARCH=1 NO_STATIC=1
+              INTERFACE64=1 USE_OPENMP=1 "${openblas_arch[@]}" NO_STATIC=1
             make -C /tmp/OpenBLAS PREFIX="$root" CC=gcc-15 FC=gfortran-15 \
               INTERFACE64=1 USE_OPENMP=1 \
-              DYNAMIC_ARCH=1 NO_STATIC=1 install
+              "${openblas_arch[@]}" NO_STATIC=1 install
           fi
           test -f "$root/lib/pkgconfig/openblas64.pc"
           echo "OQP_OPENBLAS_ROOT=$root" >> "$GITHUB_ENV"
