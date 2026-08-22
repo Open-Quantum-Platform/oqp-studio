@@ -21,6 +21,7 @@ import urllib.request
 from pathlib import Path
 
 from . import network
+from .archive import extract_tar
 
 APP_NAME = "OQP Studio"
 
@@ -128,7 +129,7 @@ def install_macos(tarball: Path, progress=None) -> str:
     if progress:
         progress("unpacking the new version")
     with tarfile.open(tarball) as archive:
-        archive.extractall(staging)
+        extract_tar(archive, staging)
     staged = next((path for path in staging.iterdir() if path.suffix == ".app"), None)
     if staged is None:
         raise RuntimeError("the downloaded archive contained no application")

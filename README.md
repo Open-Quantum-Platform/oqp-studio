@@ -75,7 +75,7 @@ pip install -e ".[dev]"
 uvicorn oqp_studio.main:app --reload --port 8814
 ```
 
-Frontend (requires Node ≥ 20):
+Frontend (requires Node ≥ 24.14.1, matching Ketcher's supported runtime):
 
 ```bash
 cd frontend
@@ -186,3 +186,11 @@ code signing (see above). See the design proposal for the full roadmap.
 
 Picking the work up: [docs/handoff.md](docs/handoff.md) says where the project
 stands, which problems are open and what has already been ruled out on each.
+
+## License
+
+OQP Studio is source-available under the same dual-licensing model as OpenQP:
+the [OpenQP Research License 1.0](LICENSE) permits qualified non-commercial
+research use, while commercial use requires a separate written license. This
+research license is not an open-source license. Third-party components remain
+under their respective licenses.

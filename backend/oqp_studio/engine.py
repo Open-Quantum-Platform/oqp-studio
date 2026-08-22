@@ -28,6 +28,7 @@ import zipfile
 from pathlib import Path
 
 from . import network
+from .archive import extract_tar, extract_zip
 
 EXECUTABLE = "openqp.exe" if os.name == "nt" else "openqp"
 _VERSION_LINE = re.compile(r"^OpenQP version\s*:\s*(.+)$", re.MULTILINE)
@@ -255,46 +256,68 @@ def _strip_single_root(target: Path) -> None:
 
 
 def install(url: str, progress=None) -> str:
-    """Download and unpack the engine archive; returns the executable path."""
+    """Download and atomically install an engine archive.
+
+    The current engine remains available until the replacement has downloaded,
+    unpacked safely, and passed its executable check.
+    """
     target = data_dir()
-    if target.exists():
-        shutil.rmtree(target)
-    target.mkdir(parents=True, exist_ok=True)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{target.name}-", dir=target.parent))
+    backup = target.with_name(f".{target.name}-previous")
 
     suffix = ".zip" if url.endswith(".zip") else ".tar.gz"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
         archive = Path(handle.name)
-    with urllib.request.urlopen(url, timeout=300, context=network.context()) as response:
-        total = int(response.headers.get("Content-Length") or 0)
-        done = 0
-        with archive.open("wb") as out:
-            while True:
-                chunk = response.read(1 << 20)
-                if not chunk:
-                    break
-                out.write(chunk)
-                done += len(chunk)
-                if progress:
-                    progress(done, total)
+    try:
+        with urllib.request.urlopen(url, timeout=300, context=network.context()) as response:
+            total = int(response.headers.get("Content-Length") or 0)
+            done = 0
+            with archive.open("wb") as out:
+                while True:
+                    chunk = response.read(1 << 20)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    done += len(chunk)
+                    if progress:
+                        progress(done, total)
 
-    if suffix == ".zip":
-        with zipfile.ZipFile(archive) as zipped:
-            zipped.extractall(target)
-    else:
-        with tarfile.open(archive) as tarred:
-            tarred.extractall(target)
-    archive.unlink(missing_ok=True)
-    _strip_single_root(target)
+        if suffix == ".zip":
+            with zipfile.ZipFile(archive) as zipped:
+                extract_zip(zipped, staging)
+        else:
+            with tarfile.open(archive) as tarred:
+                extract_tar(tarred, staging)
+        _strip_single_root(staging)
 
-    executable = target / EXECUTABLE
-    if not executable.is_file():
-        raise RuntimeError(f"the archive contained no {EXECUTABLE}")
-    # Zip archives do not carry the executable bit on every platform.
-    executable.chmod(executable.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
-    if sys.platform == "darwin":
-        # Downloaded archives are quarantined; the engine is unsigned.
-        import subprocess
+        executable = staging / EXECUTABLE
+        if not executable.is_file():
+            raise RuntimeError(f"the archive contained no {EXECUTABLE}")
+        # Zip archives do not carry the executable bit on every platform.
+        executable.chmod(executable.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        if sys.platform == "darwin":
+            # Downloaded archives are quarantined; the engine is unsigned.
+            subprocess.run(
+                ["xattr", "-dr", "com.apple.quarantine", str(staging)],
+                check=False,
+                capture_output=True,
+            )
 
-        subprocess.run(["xattr", "-dr", "com.apple.quarantine", str(target)],
-                       check=False, capture_output=True)
-    return str(executable)
+        if backup.exists():
+            shutil.rmtree(backup)
+        if target.exists():
+            target.rename(backup)
+        try:
+            staging.rename(target)
+        except Exception:
+            if backup.exists() and not target.exists():
+                backup.rename(target)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
+        return str(target / EXECUTABLE)
+    finally:
+        archive.unlink(missing_ok=True)
+        if staging.exists():
+            shutil.rmtree(staging)

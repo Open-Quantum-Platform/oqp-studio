@@ -3,6 +3,8 @@ name = "oqp-studio"
 version = "0.2.3"
 description = "OQP Studio desktop shell"
 edition = "2021"
+license-file = "../../LICENSE"
+repository = "https://github.com/Open-Quantum-Platform/oqp-studio"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
