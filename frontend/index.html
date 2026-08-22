@@ -814,21 +814,19 @@
                 </div>
               </details>
               <details class="wf-detail" data-for="opt exopt ts irc mep neb meci mecp tci" style="margin-top:1rem">
-                <summary>Geometry optimizer</summary>
+                <summary>Geometry controls</summary>
                 <div class="row" style="margin-top:.8rem">
-                  <div><label>Backend</label><input id="geomBackend" value="OpenQP native (automatic)" readonly /></div>
-                  <div><label>Coordinates</label><select id="geomCoordsys"><option value="dlc">DLC</option><option value="tric">TRIC</option><option value="ric">RIC</option><option value="cart">Cartesian</option></select></div>
-                  <div><label>Trust radius</label><input type="text" id="geomTrust" value="0.1" /></div>
+                  <div><label>Coordinate system</label><select id="geomCoordsys"><option value="dlc">DLC</option><option value="tric">TRIC</option><option value="ric">RIC</option><option value="cart">Cartesian</option></select></div>
+                  <div><label>Initial trust radius</label><input type="text" id="geomTrust" value="0.1" /></div>
                   <div><label>Maximum trust radius</label><input type="text" id="geomTrustMax" value="0.3" /></div>
                 </div>
               </details>
               <details class="wf-detail" data-for="nac nacme" style="margin-top:1rem">
                 <summary>Nonadiabatic coupling</summary>
                 <div class="row" style="margin-top:.8rem">
-                  <div><label>Derivative</label><select id="nacType"><option value="numerical">Numerical</option><option value="analytical">Analytical</option></select></div>
+                  <div><label>Derivative</label><select id="nacType"><option value="numerical">Numerical</option></select></div>
                   <div><label>Displacement (Å)</label><input type="text" id="nacDx" value="0.0001" /></div>
                   <div><label>Workers</label><input type="number" id="nacNproc" value="1" min="1" /></div>
-                  <div><label>Branching-plane correction</label><select id="nacBp"><option value="false">No</option><option value="true">Yes</option></select></div>
                 </div>
               </details>
               <details class="wf-detail" data-for="namd" style="margin-top:1rem">

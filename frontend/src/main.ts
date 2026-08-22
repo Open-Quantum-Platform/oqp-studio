@@ -538,31 +538,33 @@ const ALL_THEORIES = [
   "tddft", "tda", "sf", "mrsf", "umrsf",
 ];
 const DFT_RESPONSE = ["tddft", "tda", "sf", "mrsf", "umrsf"];
+const LABELED_RESPONSE = ["tddft", "tda", "mrsf"];
+const MRSF_ONLY = ["mrsf"];
 const GRADIENT_THEORIES = ["hf", "dft", "mp2", ...DFT_RESPONSE, "casscf", "sa-casscf", "caspt2", "ms-caspt2", "xms-caspt2", "nevpt2", "sc-nevpt2"];
 
 const WORKFLOWS: Workflow[] = [
   { key: "energy", title: "Single-point energy", desc: "Electronic energy at the supplied geometry.", detail: "Keeps the nuclear coordinates fixed and reports the energy and electronic-state data required for subsequent analysis.", theories: ALL_THEORIES, defaultTheory: "dft" },
   { key: "grad", title: "Energy gradient", desc: "Nuclear energy gradient for the ground or selected electronic state.", detail: "Use the gradient to characterize forces at a fixed geometry or as the derivative input for structural optimization and path calculations.", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
   { key: "opt", title: "Geometry optimization", desc: "Optimize the molecular structure on the selected potential-energy surface.", detail: "For response theories, choose S0 or a specified excited state. Convergence is assessed from energy changes, gradients, and nuclear displacements.", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
-  { key: "hess", title: "Frequencies (Hessian)", desc: "Vibrational frequencies, normal modes, and thermochemical quantities.", detail: "Calculates the second derivative matrix at the supplied structure, then obtains IR intensities, zero-point energy, and temperature-dependent thermochemistry.", theories: ["hf", "dft", ...DFT_RESPONSE], defaultTheory: "dft" },
-  { key: "prop", title: "Molecular properties", desc: "Electronic populations, multipoles, and selected state properties.", detail: "Use this fixed-geometry calculation to inspect charge distribution and electrostatic or state-resolved quantities without changing the molecular structure.", theories: ["hf", "dft", "mrsf", "umrsf"], defaultTheory: "dft" },
+  { key: "hess", title: "Frequencies (Hessian)", desc: "Vibrational frequencies, normal modes, and thermochemical quantities.", detail: "Calculates the second derivative matrix at the supplied structure, then obtains IR intensities, zero-point energy, and temperature-dependent thermochemistry.", theories: ["hf", "dft", ...LABELED_RESPONSE], defaultTheory: "dft" },
+  { key: "prop", title: "Molecular properties", desc: "Electronic populations, multipoles, and selected state properties.", detail: "Use this fixed-geometry calculation to inspect charge distribution and electrostatic or state-resolved quantities without changing the molecular structure.", theories: MRSF_ONLY, defaultTheory: "mrsf" },
   { key: "nmr", title: "NMR shielding", desc: "Ground-state nuclear magnetic shielding constants.", detail: "Computes the shielding tensor at the supplied geometry; isotropic shifts and tensor components can then be compared among chemically distinct nuclei.", theories: ["hf", "dft"], defaultTheory: "dft" },
   { key: "pcm", title: "PCM solvation", desc: "Reference-SCF energy in a polarizable continuum solvent.", detail: "Select a solvent to set its dielectric constant, then calculate the solvent reaction-field contribution at a fixed molecular geometry.", theories: ["hf", "dft"], defaultTheory: "hf" },
   { key: "abs", title: "Vertical excited states", desc: "Excitation energies and oscillator strengths at the S0 geometry.", detail: "The nuclei remain at the reference structure, so the state energies and transition moments provide the stick spectrum used for absorption broadening.", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
-  { key: "exgrad", title: "Excited-state gradient", desc: "Nuclear gradient of a selected excited electronic state.", detail: "Evaluates the derivative on the chosen state at the present geometry; it is the starting point for excited-state structural relaxation or dynamics.", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
-  { key: "exopt", title: "Excited-state optimization", desc: "Optimize the geometry on a selected excited-state surface.", detail: "Choose the target state explicitly. The resulting relaxed structure is appropriate for emission or excited-state absorption analysis when the state remains well characterized.", theories: DFT_RESPONSE, defaultTheory: "mrsf" },
-  { key: "meci", title: "MECI search", desc: "Locate a minimum-energy conical intersection between two electronic states.", detail: "Optimizes the mean energy while driving the selected state energy gap toward zero, yielding a crossing geometry relevant to internal conversion.", theories: ["tddft", "tda", "sf", "mrsf", "umrsf", "casscf", "sa-casscf"], defaultTheory: "mrsf" },
-  { key: "mecp", title: "MECP search", desc: "Locate a minimum-energy crossing point between states of different spin.", detail: "Optimizes the crossing geometry while enforcing equality of the selected state energies, for example between singlet and triplet surfaces.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "tci", title: "Three-state intersection", desc: "Search for a geometry where three selected electronic states approach degeneracy.", detail: "The calculation treats the three state energies together and is intended for multistate crossing regions rather than a single pairwise crossing.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "exgrad", title: "Excited-state gradient", desc: "Nuclear gradient of a selected excited electronic state.", detail: "Evaluates the derivative on the chosen state at the present geometry; it is the starting point for excited-state structural relaxation or dynamics.", theories: LABELED_RESPONSE, defaultTheory: "mrsf" },
+  { key: "exopt", title: "Excited-state optimization", desc: "Optimize the geometry on a selected excited-state surface.", detail: "Choose the target state explicitly. The resulting relaxed structure is appropriate for emission or excited-state absorption analysis when the state remains well characterized.", theories: LABELED_RESPONSE, defaultTheory: "mrsf" },
+  { key: "meci", title: "MECI search", desc: "Locate a minimum-energy conical intersection between two electronic states.", detail: "Optimizes the mean energy while driving the selected state energy gap toward zero, yielding a crossing geometry relevant to internal conversion.", theories: ["mrsf", "casscf", "sa-casscf"], defaultTheory: "mrsf" },
+  { key: "mecp", title: "MECP search", desc: "Locate a minimum-energy crossing point between states of different spin.", detail: "Optimizes the crossing geometry while enforcing equality of the selected state energies, for example between singlet and triplet surfaces.", theories: MRSF_ONLY, defaultTheory: "mrsf" },
+  { key: "tci", title: "Three-state intersection", desc: "Search for a geometry where three selected electronic states approach degeneracy.", detail: "The calculation treats the three state energies together and is intended for multistate crossing regions rather than a single pairwise crossing.", theories: MRSF_ONLY, defaultTheory: "mrsf" },
   { key: "ts", title: "Transition-state search", desc: "Find a first-order saddle point on the selected potential-energy surface.", detail: "A successful structure has one unstable normal coordinate. Follow with a Hessian and an IRC calculation to verify the reaction connection.", theories: GRADIENT_THEORIES, defaultTheory: "dft" },
   { key: "irc", title: "Intrinsic reaction coordinate", desc: "Trace the steepest-descent path from a transition-state structure.", detail: "Integrates downhill in both directions to identify the connected reactant and product valleys on the same potential-energy surface.", theories: ["hf", "dft"], defaultTheory: "dft" },
   { key: "mep", title: "Minimum-energy path", desc: "Trace a reaction path on the selected electronic-state surface.", detail: "Uses state-specific gradients to follow a path through nuclear-coordinate space and records the energy profile along that path.", theories: GRADIENT_THEORIES, defaultTheory: "mrsf" },
   { key: "neb", title: "Nudged elastic band", desc: "Optimize a discretized path between reactant and product structures.", detail: "Uses intermediate images and spring forces to resolve a minimum-energy path when both endpoint geometries are available.", theories: ["hf", "dft"], defaultTheory: "dft" },
-  { key: "nac", title: "Nonadiabatic coupling", desc: "Derivative coupling vector between two selected electronic states.", detail: "The coupling identifies nuclear motions that mix the states and is needed near crossings or for nonadiabatic nuclear dynamics.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "nacme", title: "NACME", desc: "Nonadiabatic coupling matrix element between two selected states.", detail: "Reports the state-to-state coupling quantity for the specified electronic-state pair at the current nuclear geometry.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "soc", title: "Spin-orbit coupling", desc: "Spin-orbit matrix elements between singlet and triplet states.", detail: "Use the coupling and state energy gaps to assess intersystem crossing pathways and spin-mixed electronic states.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "ekt", title: "Ionization / EA (EKT)", desc: "Ionization and electron-affinity states from the extended Koopmans theorem.", detail: "Reports IP/EA state energies and Dyson orbitals. Dyson strength gives an orbital occupation contribution through twice the reported strength.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
-  { key: "namd", title: "Nonadiabatic dynamics", desc: "Surface-hopping nuclear dynamics across coupled electronic states.", detail: "Propagates nuclear trajectories while evaluating electronic populations and state transitions; choose the initial state, time step, and total number of steps.", theories: ["mrsf", "umrsf"], defaultTheory: "mrsf" },
+  { key: "nac", title: "Nonadiabatic coupling", desc: "Derivative coupling vector between two selected electronic states.", detail: "The coupling identifies nuclear motions that mix the states and is needed near crossings or for nonadiabatic nuclear dynamics.", theories: MRSF_ONLY, defaultTheory: "mrsf" },
+  { key: "nacme", title: "NACME", desc: "Nonadiabatic coupling matrix element between two selected states.", detail: "Reports the state-to-state coupling quantity for the specified electronic-state pair at the current nuclear geometry.", theories: MRSF_ONLY, defaultTheory: "mrsf" },
+  { key: "soc", title: "Spin-orbit coupling", desc: "Spin-orbit matrix elements between singlet and triplet states.", detail: "Use the coupling and state energy gaps to assess intersystem crossing pathways and spin-mixed electronic states.", theories: MRSF_ONLY, defaultTheory: "mrsf" },
+  { key: "ekt", title: "Ionization / EA (EKT)", desc: "Ionization and electron-affinity states from the extended Koopmans theorem.", detail: "Reports IP/EA state energies and Dyson orbitals. Dyson strength gives an orbital occupation contribution through twice the reported strength.", theories: MRSF_ONLY, defaultTheory: "mrsf" },
+  { key: "namd", title: "Nonadiabatic dynamics", desc: "Surface-hopping nuclear dynamics across coupled electronic states.", detail: "Propagates nuclear trajectories while evaluating electronic populations and state transitions; choose the initial state, time step, and total number of steps.", theories: MRSF_ONLY, defaultTheory: "mrsf" },
 ];
 
 let currentWf: Workflow = WORKFLOWS[0];
@@ -694,7 +696,16 @@ const HESS_DEFAULTS: Record<string, string> = {
 };
 
 const NAC_DEFAULTS: Record<string, string> = {
-  type: "numerical", dx: "1e-4", nproc: "1", bp: "false",
+  type: "numerical", dx: "1e-4", nproc: "1",
+};
+
+const OPTIMISATION_DEFAULTS: Record<string, string> = {
+  maxit: "100", rmsd_grad: "0.003", max_grad: "0.004",
+  rmsd_step: "0.004", max_step: "0.008",
+};
+
+const GEOMETRY_DEFAULTS: Record<string, string> = {
+  coordsys: "dlc", trust: "0.1", trust_max: "0.3",
 };
 
 const CAS_DEFAULTS: Record<string, string> = {
@@ -737,25 +748,37 @@ function optimisationOptions(): string {
   // Concise .oqp geometry drivers select OpenQP's native optimizer automatically.
   // ``lib`` belongs only to the legacy [optimize] section and is rejected here.
   const options: [string, string][] = [
-    // Concise .oqp accepts the active optimizer controls on the driver.  The
-    // old optimizer/step_size keys selected a retired SciPy path.
     ["maxit", fieldValue("geomMaxit")],
     ["rmsd_grad", fieldValue("rmsdGrad")],
     ["max_grad", fieldValue("maxGrad")],
     ["rmsd_step", fieldValue("rmsdStep")],
     ["max_step", fieldValue("maxStep")],
   ];
-  return optionList(options);
+  return optionList(options, OPTIMISATION_DEFAULTS);
 }
 
-function nativeOptimiserOptions(): string {
-  // Native optimizer controls are an exact [oqp] section call in concise input,
-  // never arguments of ts(...), opt(...), or the other geometry drivers.
+function geometryOptions(): string {
+  // The native geometry engine is automatic.  Its controls belong to the
+  // geometry driver itself; there is no separate user-facing optimizer choice.
   return optionList([
     ["coordsys", fieldValue("geomCoordsys") || "dlc"],
     ["trust", fieldValue("geomTrust")],
     ["trust_max", fieldValue("geomTrustMax")],
-  ]);
+  ], GEOMETRY_DEFAULTS);
+}
+
+function hessianOptions(): string {
+  return optionList([
+    ["dx", fieldValue("hessDx")], ["nproc", fieldValue("hessNproc")],
+    ["temperature", fieldValue("hessTemperature")], ["symmetry_unique", fieldValue("hessSymmetry")],
+  ], HESS_DEFAULTS);
+}
+
+function nacOptions(): string {
+  return optionList([
+    ["type", fieldValue("nacType")], ["dx", fieldValue("nacDx")],
+    ["nproc", fieldValue("nacNproc")],
+  ], NAC_DEFAULTS);
 }
 
 function pcmModifier(): string {
@@ -836,7 +859,7 @@ function generateInp(): string {
     case "opt": driver = usesStates ? `opt(S${target})` : "opt"; break;
     case "hess": {
       const hessState = stateArg ? `${stateArg.slice(0, -1)},` : "(";
-      driver = `hess${hessState}type=${hessTypeSel.value})`;
+      driver = withOptions(`hess${hessState}type=${hessTypeSel.value})`, hessianOptions());
       break;
     }
     case "abs": driver = "energy"; break;
@@ -860,7 +883,7 @@ function generateInp(): string {
     }
     case "prop": driver = `prop${stateArg}`; break;
     case "nmr": driver = "nmr"; break;
-    case "nac": driver = `nac(${fieldValue("couplingA") || "S0"},${fieldValue("couplingB") || "S1"})`; break;
+    case "nac": driver = withOptions(`nac(${fieldValue("couplingA") || "S0"},${fieldValue("couplingB") || "S1"})`, nacOptions()); break;
     case "nacme": driver = `nacme(${fieldValue("couplingA") || "S0"},${fieldValue("couplingB") || "S1"})`; break;
     case "soc": driver = "soc"; break;
     case "ekt": {
@@ -910,22 +933,6 @@ function generateInp(): string {
     ], RESPONSE_DEFAULTS);
     if (responseOptions) lines.push(`tdhf(${responseOptions})`);
   }
-  if (currentWf.key === "hess") {
-    const hessOptions = optionList([
-      ["dx", fieldValue("hessDx")], ["nproc", fieldValue("hessNproc")],
-      ["temperature", fieldValue("hessTemperature")], ["symmetry_unique", fieldValue("hessSymmetry")],
-    ], HESS_DEFAULTS);
-    if (hessOptions) lines.push(`hess(${hessOptions})`);
-  }
-  // NACME has its own driver contract (including geom2); nac(...) would be a
-  // second primary calculation, not a modifier for NACME.
-  if (currentWf.key === "nac") {
-    const nacOptions = optionList([
-      ["type", fieldValue("nacType")], ["dx", fieldValue("nacDx")],
-      ["nproc", fieldValue("nacNproc")], ["bp", fieldValue("nacBp")],
-    ], NAC_DEFAULTS);
-    if (nacOptions) lines.push(`nac(${nacOptions})`);
-  }
   if (["fci", "casci", "casscf", "sa-casscf", "caspt2", "ms-caspt2", "xms-caspt2", "nevpt2", "sc-nevpt2", "mrmp2", "mcqdpt2", "xmcqdpt2"].includes(theory)) {
     const casOptions = optionList([
       ["active_electrons", fieldValue("activeElectrons")], ["active_orbitals", fieldValue("activeOrbitals")],
@@ -939,7 +946,7 @@ function generateInp(): string {
     if (ciOptions) lines.push(`ci(${ciOptions})`);
   }
   if (["opt", "exopt", "ts"].includes(currentWf.key)) {
-    const opts = optimisationOptions();
+    const opts = [optimisationOptions(), geometryOptions()].filter(Boolean).join(",");
     lines[1] = withOptions(driver, opts);
   }
   if (["meci", "mecp", "tci"].includes(currentWf.key)) {
@@ -953,11 +960,8 @@ function generateInp(): string {
     const algorithmOption = currentWf.key === "meci"
       ? `algorithm=${algorithm}`
       : currentWf.key === "mecp" ? `mecp_search=${algorithm}` : "";
-    lines[1] = withOptions(driver, `${algorithmOption}${algorithmOption && crossing ? "," : ""}${crossing}`);
-  }
-  if (["opt", "exopt", "ts", "meci", "mecp", "tci"].includes(currentWf.key)) {
-    const nativeOptions = nativeOptimiserOptions();
-    if (nativeOptions) lines.push(`oqp(${nativeOptions})`);
+    const driverOptions = [algorithmOption, crossing, geometryOptions()].filter(Boolean).join(",");
+    lines[1] = withOptions(driver, driverOptions);
   }
   if (charge !== 0) lines.push(`charge=${charge}`);
   if (currentWf.key === "nacme") {
@@ -1033,8 +1037,8 @@ for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCus
                   "scfMom", "scfMomSwitch", "scfPfon", "scfPfonTemp", "scfPfonCooling", "trahStability", "trahLineSearch", "trahSolver", "trahRadius",
                   "trahMicro", "trahTrialVectors", "trahJdStart", "trahGlobalReduction", "trahLocalReduction", "trahImplementation", "scfInitial", "scfInitialIt",
                   "scfInitialConv", "scfRestart", "scfIncremental", "scfPrescreen", "scfPrescreenK", "scfPrescreenCap", "scfPrescreenTight", "scfVerbose",
-                  "geomBackend", "geomCoordsys", "geomTrust", "geomTrustMax",
-                  "hessDx", "hessNproc", "hessTemperature", "hessSymmetry", "nacType", "nacDx", "nacNproc", "nacBp",
+                  "geomCoordsys", "geomTrust", "geomTrustMax",
+                  "hessDx", "hessNproc", "hessTemperature", "hessSymmetry", "nacType", "nacDx", "nacNproc",
                   "namdState", "namdSteps", "namdDt", "namdDecoherence", "activeElectrons", "activeOrbitals", "frozenCore", "ciRoots", "ciSolver", "ciTolerance", "ciMaxit",
                   "geomMaxit", "rmsdGrad", "maxGrad", "rmsdStep", "maxStep", "energyShift",
                   "energyGap", "trustRadius", "crossingAlgorithm"]) {
