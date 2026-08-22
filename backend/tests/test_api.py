@@ -1433,6 +1433,8 @@ def test_cube_arithmetic_preserves_the_grid_and_combines_values():
 def test_cube_geometry_is_extracted_in_angstrom():
     from io import StringIO
 
+    import pytest
+
     from oqp_studio import cube
 
     text = (
@@ -1446,6 +1448,8 @@ def test_cube_geometry_is_extracted_in_angstrom():
     assert xyz.startswith("1\ncube geometry\nO ")
     assert "0.5291772109 0.0000000000 0.0000000000" in xyz
     assert cube.geometry_xyz(cube.parse_header(StringIO(text[:-4] + "not-grid-data\n"))) == xyz
+    with pytest.raises(ValueError, match="header lines are limited"):
+        cube.parse_header(StringIO("x" * (cube.MAX_HEADER_LINE + 1) + "\n" + text))
 
 
 def test_cube_arithmetic_rejects_different_grids():

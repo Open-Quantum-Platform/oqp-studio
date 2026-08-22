@@ -580,11 +580,15 @@ type SymmetryResult = {
 };
 let symmetryResult: SymmetryResult | null = null;
 let symmetrySource = "";
+let symmetryPendingSource = "";
 let symmetryRequestId = 0;
 
 function invalidateSymmetryIfCoordinatesChanged(): void {
+  const current = xyzArea.value;
+  if (symmetrySource === current || symmetryPendingSource === current) return;
+  if (!symmetryResult && !symmetryPendingSource) return;
   symmetryRequestId += 1;
-  if (!symmetryResult || symmetrySource === xyzArea.value) return;
+  symmetryPendingSource = "";
   symmetryResult = null;
   symmetrySource = "";
   $<HTMLButtonElement>("symmetryAlign").disabled = true;
@@ -602,6 +606,7 @@ $<HTMLButtonElement>("symmetryAnalyze").addEventListener("click", async () => {
   const tolerance = +$<HTMLInputElement>("symmetryTolerance").value;
   const source = xyzArea.value;
   const requestId = ++symmetryRequestId;
+  symmetryPendingSource = source;
   symmetryResult = null;
   $<HTMLButtonElement>("symmetryAlign").disabled = true;
   status.textContent = "Analyzing coordinates…";
@@ -611,6 +616,7 @@ $<HTMLButtonElement>("symmetryAnalyze").addEventListener("click", async () => {
     body: JSON.stringify({ xyz: source, tolerance }),
   });
   if (requestId !== symmetryRequestId || source !== xyzArea.value) return;
+  symmetryPendingSource = "";
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
     if (requestId !== symmetryRequestId || source !== xyzArea.value) return;

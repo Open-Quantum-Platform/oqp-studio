@@ -10,6 +10,7 @@ from .molden import BOHR_TO_ANGSTROM, SYMBOLS
 
 MAX_GRID_VALUES = 2_000_000
 MAX_CUBE_ATOMS = 10_000
+MAX_HEADER_LINE = 16 * 1024
 
 
 @dataclass
@@ -119,7 +120,13 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
 
 def parse_header(stream: TextIOBase) -> Cube:
     """Read only the bounded Gaussian cube header from an open text stream."""
-    lines = [stream.readline() for _ in range(6)]
+    def header_line() -> str:
+        line = stream.readline(MAX_HEADER_LINE + 1)
+        if len(line) > MAX_HEADER_LINE:
+            raise ValueError(f"cube header lines are limited to {MAX_HEADER_LINE:,} characters")
+        return line
+
+    lines = [header_line() for _ in range(6)]
     if any(line == "" for line in lines):
         raise ValueError("cube file is incomplete")
     try:
@@ -130,14 +137,14 @@ def parse_header(stream: TextIOBase) -> Cube:
     if atoms > MAX_CUBE_ATOMS:
         raise ValueError(f"cube geometry is limited to {MAX_CUBE_ATOMS:,} atoms")
     for _index in range(atoms):
-        line = stream.readline()
+        line = header_line()
         if not line:
             raise ValueError("cube atom header is incomplete")
         lines.append(line)
     if atom_count < 0:
         identifiers: list[str] = []
         while not identifiers or len(identifiers) < int(identifiers[0]) + 1:
-            line = stream.readline()
+            line = header_line()
             if not line:
                 raise ValueError("cube dataset identifier record is incomplete")
             lines.append(line)
