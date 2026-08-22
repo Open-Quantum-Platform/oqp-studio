@@ -147,7 +147,7 @@ jobs:
       contents: write
     with:
       release_tag: ${{ needs.context.outputs.release_tag }}
-      openqp_ref: c597332ed44afd932ee9873ec6b0e199cf4e9b7b
+      openqp_ref: 8a30891e8ea17fa5e966cf18427fdfa5142e0082
 
   engine-macos:
     needs: context
@@ -156,7 +156,7 @@ jobs:
       contents: write
     with:
       release_tag: ${{ needs.context.outputs.release_tag }}
-      openqp_ref: c597332ed44afd932ee9873ec6b0e199cf4e9b7b
+      openqp_ref: 8a30891e8ea17fa5e966cf18427fdfa5142e0082
 
   engine-windows:
     needs: context
@@ -165,4 +165,4 @@ jobs:
       contents: write
     with:
       release_tag: ${{ needs.context.outputs.release_tag }}
-      openqp_ref: c597332ed44afd932ee9873ec6b0e199cf4e9b7b
+      openqp_ref: 8a30891e8ea17fa5e966cf18427fdfa5142e0082
