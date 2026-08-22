@@ -65,6 +65,27 @@ def _ensure_distance_constraint(text: str, atom_a: int, atom_b: int) -> str:
     return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
 
+def _ensure_rigid_driver(text: str) -> str:
+    lines = text.splitlines()
+    driver_index = next((index for index, line in enumerate(lines[1:], start=1)
+                         if line.strip() and not line.lstrip().startswith("#")), None)
+    if driver_index is None:
+        raise ValueError("a rigid bond scan requires an energy driver")
+    line = lines[driver_index].strip()
+    if re.match(r"energy\b", line, re.IGNORECASE):
+        return text
+    if not re.match(r"opt\b", line, re.IGNORECASE):
+        raise ValueError("a rigid bond scan requires an energy driver")
+    state = re.search(r"\(\s*(S\d+)\b", line, re.IGNORECASE)
+    lines[driver_index] = f"energy({state.group(1)})" if state else "energy"
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+
+
+def target_state(text: str) -> int | None:
+    match = re.search(r"\b(?:energy|opt)\s*\(\s*S(\d+)\b", text, re.IGNORECASE)
+    return int(match.group(1)) if match else None
+
+
 def build(request: BondScanRequest) -> tuple[str, list[JobRequest], list[float]]:
     if request.atom_a == request.atom_b:
         raise ValueError("scan atoms must differ")
@@ -101,6 +122,8 @@ def build(request: BondScanRequest) -> tuple[str, list[JobRequest], list[float]]
         input_text = _replace_geometry(request.input_text, atoms)
         if request.relaxed:
             input_text = _ensure_distance_constraint(input_text, request.atom_a, request.atom_b)
+        else:
+            input_text = _ensure_rigid_driver(input_text)
         jobs.append(JobRequest(
             input_text=input_text,
             input_name=request.input_name,

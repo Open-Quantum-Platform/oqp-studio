@@ -64,6 +64,7 @@ class JobInfo(BaseModel):
     group_id: str | None = None
     scan_value: float | None = None
     scan_unit: str | None = None
+    scan_state: int | None = None
 
 
 class JobManager:
@@ -114,17 +115,28 @@ class JobManager:
                 job_dir.stat().st_mtime, timezone.utc).isoformat()
             metadata = self._metadata(job_dir)
             diagnostic = self._optimization_diagnostic(job_dir)
+            saved_status = metadata.get("status")
+            interrupted = saved_status in {"queued", "running", "cancelling"}
+            if interrupted:
+                recovered_status = JobStatus.cancelled
+            elif saved_status in {status.value for status in JobStatus}:
+                recovered_status = JobStatus(saved_status)
+            else:
+                recovered_status = JobStatus.not_converged if diagnostic else JobStatus.done
             self._jobs[job_dir.name] = JobInfo(
                 id=job_dir.name,
                 name=str(metadata.get("name") or self._recovered_name(job_dir)),
-                status=JobStatus.not_converged if diagnostic else JobStatus.done,
+                status=recovered_status,
                 runner=str(metadata.get("runner") or "recovered"),
                 threads=int(metadata.get("threads") or 1),
                 created_at=str(metadata.get("created_at") or created),
-                error=diagnostic,
+                exit_code=metadata.get("exit_code"),
+                error=("Interrupted before the backend restarted" if interrupted
+                       else diagnostic or metadata.get("error")),
                 group_id=metadata.get("group_id"),
                 scan_value=metadata.get("scan_value"),
                 scan_unit=metadata.get("scan_unit"),
+                scan_state=metadata.get("scan_state"),
             )
 
     @staticmethod
@@ -145,15 +157,24 @@ class JobManager:
 
     @staticmethod
     def _write_metadata(job_dir: Path, info: JobInfo) -> None:
-        (job_dir / _METADATA_FILE).write_text(json.dumps({
-            "name": info.name,
-            "runner": info.runner,
-            "threads": info.threads,
-            "created_at": info.created_at,
-            "group_id": info.group_id,
-            "scan_value": info.scan_value,
-            "scan_unit": info.scan_unit,
-        }))
+        try:
+            (job_dir / _METADATA_FILE).write_text(json.dumps({
+                "name": info.name,
+                "runner": info.runner,
+                "threads": info.threads,
+                "created_at": info.created_at,
+                "group_id": info.group_id,
+                "scan_value": info.scan_value,
+                "scan_unit": info.scan_unit,
+                "scan_state": info.scan_state,
+                "status": info.status.value,
+                "exit_code": info.exit_code,
+                "error": info.error,
+            }))
+        except FileNotFoundError:
+            # A test teardown or an external cleanup can remove the directory
+            # while a runner is returning. There is nowhere left to persist.
+            return
 
     @staticmethod
     def _validate_request(req: JobRequest) -> None:
@@ -168,7 +189,8 @@ class JobManager:
             )
 
     def _prepare(self, req: JobRequest, *, group_id: str | None = None,
-                 scan_value: float | None = None, scan_unit: str | None = None) -> JobInfo:
+                 scan_value: float | None = None, scan_unit: str | None = None,
+                 scan_state: int | None = None) -> JobInfo:
         self._ensure()
         job_id = uuid.uuid4().hex[:12]
         job_dir = JOBS_ROOT / job_id
@@ -188,6 +210,7 @@ class JobManager:
             group_id=group_id,
             scan_value=scan_value,
             scan_unit=scan_unit,
+            scan_state=scan_state,
         )
         with self._lock:
             self._jobs[job_id] = info
@@ -201,14 +224,15 @@ class JobManager:
         return info
 
     def submit_batch(self, requests: list[JobRequest], *, group_id: str,
-                     values: list[float], unit: str) -> list[JobInfo]:
+                     values: list[float], unit: str, state: int | None = None) -> list[JobInfo]:
         """Prepare a scan as normal jobs and run its points serially."""
         if not requests or len(requests) != len(values):
             raise ValueError("scan requests and coordinate values must have equal non-zero length")
         for request in requests:
             self._validate_request(request)
         infos = [
-            self._prepare(request, group_id=group_id, scan_value=value, scan_unit=unit)
+            self._prepare(request, group_id=group_id, scan_value=value, scan_unit=unit,
+                          scan_state=state)
             for request, value in zip(requests, values)
         ]
         threading.Thread(
@@ -219,6 +243,8 @@ class JobManager:
     def _run_batch(self, job_ids: list[str]) -> None:
         for job_id in job_ids:
             self._run(job_id)
+            if self._jobs[job_id].status == JobStatus.cancelled:
+                break
 
     @staticmethod
     def _input_name(req: JobRequest) -> str:
@@ -287,8 +313,10 @@ class JobManager:
             if job_id in self._cancel_requested:
                 info.status = JobStatus.cancelled
                 info.error = "Cancelled by user"
+                self._write_metadata(JOBS_ROOT / job_id, info)
                 return
         info.status = JobStatus.running
+        self._write_metadata(JOBS_ROOT / job_id, info)
         try:
             exit_code = get_runner(info.runner).run(
                 JOBS_ROOT / job_id, info.threads,
@@ -309,6 +337,7 @@ class JobManager:
             info.error = str(exc)
             info.status = JobStatus.failed
         finally:
+            self._write_metadata(JOBS_ROOT / job_id, info)
             with self._lock:
                 self._processes.pop(job_id, None)
 
@@ -336,10 +365,26 @@ class JobManager:
                 raise KeyError(job_id)
             if info.status not in {JobStatus.queued, JobStatus.running, JobStatus.cancelling}:
                 raise ValueError("only a queued or running calculation can be cancelled")
-            self._cancel_requested.add(job_id)
-            info.status = JobStatus.cancelling
-            process = self._processes.get(job_id)
-        if process is not None:
+            affected = [candidate for candidate in self._jobs.values()
+                        if candidate.id == job_id or (
+                            info.group_id is not None and candidate.group_id == info.group_id
+                        )]
+            processes = []
+            for candidate in affected:
+                if candidate.status not in {
+                    JobStatus.queued, JobStatus.running, JobStatus.cancelling
+                }:
+                    continue
+                self._cancel_requested.add(candidate.id)
+                process = self._processes.get(candidate.id)
+                if process is None:
+                    candidate.status = JobStatus.cancelled
+                    candidate.error = "Cancelled with scan group" if info.group_id else "Cancelled by user"
+                else:
+                    candidate.status = JobStatus.cancelling
+                    processes.append(process)
+                self._write_metadata(JOBS_ROOT / candidate.id, candidate)
+        for process in processes:
             self._terminate_process(process)
 
     @staticmethod

@@ -1533,9 +1533,10 @@ async function selectJob(jobId: string): Promise<void> {
     if (scanGroup) void loadScanGroup(scanGroup);
   }
   loadSummary(jobId).catch(() => {});
-  loadOptimizationHistory(jobId).catch(() => {});
+  const optimization = loadOptimizationHistory(jobId).catch(() => false);
   const files: { name: string; size: number }[] =
     await (await fetch(`/api/jobs/${jobId}/files`)).json();
+  const hasOptimization = await optimization;
   if (jobId !== selectedJob) return;
   resultMoldenFiles = files
     .map((file) => file.name)
@@ -1567,7 +1568,7 @@ async function selectJob(jobId: string): Promise<void> {
   const best = scanGroup
     ? names.find((name) => /\.(?:oqp|inp)$/i.test(name)) ?? bestFileToShow(names)
     : bestFileToShow(names);
-  if (best) {
+  if (best && !(scanGroup && hasOptimization)) {
     await viewResultFile(jobId, best,
                          `/api/jobs/${jobId}/files/${encodeURIComponent(best)}`);
   }
@@ -1861,11 +1862,11 @@ $<HTMLButtonElement>("editResultStructure").addEventListener("click", () => {
   showTab("builder");
 });
 
-async function loadOptimizationHistory(jobId: string): Promise<void> {
+async function loadOptimizationHistory(jobId: string): Promise<boolean> {
   const response = await fetch(`/api/jobs/${jobId}/optimization`);
-  if (!response.ok || jobId !== selectedJob) return;
+  if (!response.ok || jobId !== selectedJob) return false;
   const data: { steps: OptimizationStep[] } = await response.json();
-  if (!data.steps.length || jobId !== selectedJob) return;
+  if (!data.steps.length || jobId !== selectedJob) return false;
   optimizationSteps = data.steps;
   resultFrames = data.steps.map((step) => ({ label: step.label, atoms: step.atoms }));
   const select = $<HTMLSelectElement>("optimizationStepSelect");
@@ -1878,6 +1879,7 @@ async function loadOptimizationHistory(jobId: string): Promise<void> {
   $<HTMLElement>("optimizationStepControls").style.display = "";
   if (!selectedScanGroup) renderOptimizationPath();
   selectOptimizationStep(data.steps.length);
+  return true;
 }
 
 function selectOptimizationStep(position: number): void {

@@ -159,7 +159,10 @@ def submit_bond_scan(req: scans.BondScanRequest) -> dict:
     """Create a bond-distance scan whose calculation points run serially."""
     try:
         group_id, requests, values = scans.build(req)
-        jobs = manager.submit_batch(requests, group_id=group_id, values=values, unit="A")
+        jobs = manager.submit_batch(
+            requests, group_id=group_id, values=values, unit="A",
+            state=scans.target_state(req.input_text),
+        )
     except (ValueError, OSError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"group_id": group_id, "jobs": jobs}
@@ -168,21 +171,24 @@ def submit_bond_scan(req: scans.BondScanRequest) -> dict:
 @app.get("/api/scans/{group_id}")
 def bond_scan(group_id: str) -> dict:
     """Current energies and statuses for one persisted scan group."""
-    from . import analysis
-
     points = []
     for info in manager.list():
         if info.group_id != group_id:
             continue
-        report = analysis.summarize(_job_paths(info.id)) if info.status == "done" else {}
+        report = _job_summary(info.id) if info.status == "done" else {}
         energy = report.get("energy", {})
+        scan_energy = energy.get("total", energy.get("components", {}).get("total"))
+        if info.scan_state is not None:
+            state = next((row for row in report.get("states", [])
+                          if row.get("index") == info.scan_state), None)
+            scan_energy = state.get("total") if state else None
         points.append({
             "job_id": info.id,
             "name": info.name,
             "status": info.status,
             "value": info.scan_value,
             "unit": info.scan_unit,
-            "energy": energy.get("total", energy.get("components", {}).get("total")),
+            "energy": scan_energy,
         })
     points.sort(key=lambda point: float(point["value"] or 0.0))
     if not points:
