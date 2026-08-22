@@ -52,9 +52,30 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 
 // ---------- tabs ----------
 const nav = $<HTMLElement>("nav");
+document.querySelectorAll<HTMLElement>(".panel").forEach((panel) => {
+  panel.setAttribute("aria-hidden", String(!panel.classList.contains("active")));
+});
+const artFrame = $<HTMLIFrameElement>("artFrame");
+let artReady = false;
+let artAtoms: Atom[] = [];
+
+function pushToArt(atoms = artAtoms): void {
+  if (!atoms.length || !artReady) return;
+  artFrame.contentWindow?.postMessage({ type: "oqp-art-structure", atoms }, window.location.origin);
+}
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== window.location.origin || event.source !== artFrame.contentWindow ||
+      event.data?.type !== "oqp-art-ready") return;
+  artReady = true;
+  pushToArt();
+});
+
 function showTab(name: string): void {
   document.querySelectorAll<HTMLElement>(".panel").forEach((p) => {
-    p.classList.toggle("active", p.id === `panel-${name}`);
+    const active = p.id === `panel-${name}`;
+    p.classList.toggle("active", active);
+    p.setAttribute("aria-hidden", String(!active));
   });
   nav.querySelectorAll("button").forEach((b) => {
     b.classList.toggle("active", b.dataset.tab === name);
@@ -65,6 +86,15 @@ function showTab(name: string): void {
       resultFrame.src = "/builder3d.html";
     }
     refreshJobs();
+  }
+  if (name === "art") {
+    if (!artAtoms.length) artAtoms = parseAtoms(xyzArea.value);
+    if (!artFrame.src) {
+      artReady = false;
+      artFrame.src = "/art.html";
+    } else {
+      pushToArt();
+    }
   }
   if (name === "method") updateInpPreview();
 }
@@ -273,6 +303,7 @@ $<HTMLButtonElement>("pdbFetch").addEventListener("click", async () => {
       const structure = await parsed.json();
       loadedFrames = structure.frames;
       xyzArea.value = atomsToText(loadedFrames[0].atoms);
+      await updatePreview();
       builderStatus.textContent =
         `${data.code} · ${loadedFrames[0].atoms.length} atoms from the PDB`;
     }
@@ -387,9 +418,13 @@ function pushStyle(): void {
   }
 }
 
-const rendering: Record<string, boolean | number> = {
+const rendering: Record<string, boolean | number | string> = {
   occlusion: true,
   outline: true,
+  shadow: false,
+  depthCue: true,
+  antialiasing: "smaa",
+  occlusionQuality: "balanced",
   background: 0x1b1e24,
 };
 
@@ -405,7 +440,7 @@ document.querySelectorAll<HTMLInputElement | HTMLSelectElement>(".render-input")
     const key = input.dataset.render!;
     rendering[key] = input instanceof HTMLInputElement && input.type === "checkbox"
       ? input.checked
-      : parseInt(input.value, 16);
+      : key === "background" ? parseInt(input.value, 16) : input.value;
     document.querySelectorAll<HTMLInputElement | HTMLSelectElement>(
       `.render-input[data-render="${key}"]`,
     ).forEach((twin) => {
@@ -491,11 +526,12 @@ window.addEventListener("message", (event) => {
 });
 
 async function updatePreview(): Promise<void> {
+  const atoms = parseAtoms(xyzArea.value);
+  if (atoms.length) artAtoms = atoms;
   if (pdbSource) {
     pushPdbPreview();
     return;
   }
-  const atoms = parseAtoms(xyzArea.value);
   if (!atoms.length) return;
   const xyz = `${atoms.length}\nOQP Studio preview\n${atomsToText(atoms)}\n`;
   const frame = $<HTMLIFrameElement>("previewFrame");
@@ -1557,6 +1593,14 @@ window.addEventListener("message", (event) => {
 });
 
 function pushToResultViewer(message: Record<string, unknown>): void {
+  if ((message.type === "oqp-structure" || message.type === "oqp-normal-mode") &&
+      typeof message.xyz === "string") {
+    const atoms = parseAtoms(message.xyz);
+    if (atoms.length) {
+      artAtoms = atoms;
+      pushToArt();
+    }
+  }
   pendingResultMessage = message;
   if (!resultFrame.src) {
     resultViewerReady = false;
@@ -2413,6 +2457,7 @@ const COMMANDS: Record<string, () => void> = {
   "tab-method": () => showTab("method"),
   "tab-run": () => showTab("run"),
   "tab-analysis": () => showTab("analysis"),
+  "tab-art": () => showTab("art"),
 };
 
 menuBar.addEventListener("click", (event) => {
