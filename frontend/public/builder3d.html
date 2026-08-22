@@ -665,6 +665,7 @@
         window.addEventListener("message", async (event) => {
           if (event.origin !== window.location.origin) return;
           const message = event.data || {};
+          if (message.style) style = { ...style, ...message.style };
           const replacementTypes = new Set([
             "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
           ]);
@@ -750,7 +751,6 @@
           } else if (message.type === "oqp-rendering") {
             setRendering(message.rendering || {});
           } else if (message.type === "oqp-style") {
-            style = { ...style, ...message.style };
             if (lastAtomicProperty) {
               await drawAtomicProperty(lastAtomicProperty.source, lastAtomicProperty.values);
             } else if (lastCube) {

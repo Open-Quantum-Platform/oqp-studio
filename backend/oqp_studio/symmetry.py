@@ -30,12 +30,11 @@ _MASSES = [
     294.0, 294.0,
 ]
 ATOMIC_MASS = dict(zip(SYMBOLS, _MASSES))
-MAX_MATCH_WORK = 40_000_000
+MAX_MATCH_WORK = 100_000_000
 MAX_ASSIGNMENT_EDGES = 10_000
 MAX_ASSIGNMENT_VISITS = 100_000
 MAX_XYZ_CHARACTERS = 1_000_000
 MAX_ROTATION_SCREEN_WORK = 5_000_000
-MAX_MIXED_IMPROPER_ORDER = 12
 
 
 @dataclass
@@ -97,8 +96,7 @@ def _operation_orders(symbols: list[str], coordinates: np.ndarray, axis: np.ndar
             multiplicity = gcd(multiplicity, count)
         if multiplicity and multiplicity % order == 0:
             orders.append(order)
-        elif (improper and order <= MAX_MIXED_IMPROPER_ORDER and counts
-              and sum(counts.values()) <= 4 * order):
+        elif improper and counts:
             period = order if order % 2 == 0 else 2 * order
             divisors = [value for value in range(2, period + 1) if period % value == 0]
 
@@ -214,7 +212,7 @@ def _moves_coordinates(coordinates: np.ndarray, matrix: np.ndarray, tolerance: f
 
 def _operation_powers(label: str, matrix: np.ndarray, matched: tuple[list[int], float],
                       order: int, coordinates: np.ndarray,
-                      tolerance: float) -> list[Operation]:
+                      tolerance: float) -> list[Operation] | None:
     """Close a matched generator by composing its atom mapping."""
     generator_mapping, generator_residual = matched
     result = [Operation(label, matrix, generator_mapping, generator_residual)]
@@ -227,8 +225,9 @@ def _operation_powers(label: str, matrix: np.ndarray, matched: tuple[list[int], 
             float(np.linalg.norm(transformed[source] - coordinates[target]))
             for source, target in enumerate(mapping)
         )
-        if residual <= tolerance:
-            result.append(Operation(f"{label}^{power}", powered, mapping.copy(), residual))
+        if residual > tolerance:
+            return None
+        result.append(Operation(f"{label}^{power}", powered, mapping.copy(), residual))
     return result
 
 
@@ -395,8 +394,9 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
                 powers = _operation_powers(
                     f"C{order}", matrix, matched, order, coordinates, tolerance,
                 )
-                rotations.setdefault(order, []).append((axis, powers[0]))
-                operations.extend(powers)
+                if powers:
+                    rotations.setdefault(order, []).append((axis, powers[0]))
+                    operations.extend(powers)
             improper_matrix = matrix @ reflection
             improper_match = (bounded_match(improper_matrix) if order in improper_orders
                               and _moves_coordinates(coordinates, improper_matrix, tolerance)
@@ -406,8 +406,9 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
                     f"S{order}", improper_matrix, improper_match,
                     2 * order if order % 2 else order, coordinates, tolerance,
                 )
-                improper.setdefault(order, []).append((axis, powers[0]))
-                operations.extend(powers)
+                if powers:
+                    improper.setdefault(order, []).append((axis, powers[0]))
+                    operations.extend(powers)
 
     mirrors: list[tuple[np.ndarray, Operation]] = []
     for normal in axes:

@@ -953,6 +953,15 @@ def test_comparison_geometry_ranks_generic_text_after_molden(tmp_path, monkeypat
     assert main._comparison_frame([table, molden]).atoms[0][1] == 1.0
 
 
+def test_comparison_geometry_uses_unknown_result_suffix_as_a_last_resort(tmp_path):
+    from oqp_studio import main
+
+    structure = tmp_path / "geometry.dat"
+    structure.write_text("1\ngeometry\nH 0.0 0.0 0.0\n")
+
+    assert main._comparison_frame([structure]).atoms[0][0] == "H"
+
+
 def test_project_comparison_rejects_an_active_calculation(monkeypatch):
     from datetime import datetime, timezone
 
@@ -1593,6 +1602,12 @@ def test_cube_parser_rejects_a_negative_dataset_count():
     with pytest.raises(ValueError, match="dataset count must be positive"):
         cube.parse(malformed)
 
+    fractional = _cube([1.0, 2.0]).replace(
+        "0 0.000000 0.0 0.0", "1 0.000000 0.0 0.0", 1,
+    ).replace("1 0.0 0.0 1.0\n", "1 0.0 0.0 1.0\n1.6 0.0 0.0 0.0 0.0\n", 1)
+    with pytest.raises(ValueError, match="nonintegral atomic number"):
+        cube.combine(fractional, fractional, "sum")
+
 
 def test_cube_parser_bounds_dataset_identifiers_before_accumulating_them():
     import pytest
@@ -1971,6 +1986,24 @@ def test_symmetry_closes_odd_improper_rotations_to_twice_the_order():
 
     assert result["point_group"] == "D3h"
     assert result["operation_count"] == 12
+
+
+def test_symmetry_rejects_a_generator_when_a_required_power_fails():
+    from math import cos, pi, sin
+
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    coordinates = np.asarray([
+        [cos(angle * pi / 180), sin(angle * pi / 180), 0.0]
+        for angle in (0, 85, 180, 275)
+    ])
+    matrix = symmetry._rotation(np.asarray([0.0, 0.0, 1.0]), pi / 2)
+    matched = symmetry._match(["C"] * 4, coordinates, matrix, 0.1)
+
+    assert matched is not None
+    assert symmetry._operation_powers("C4", matrix, matched, 4, coordinates, 0.1) is None
 
 
 def test_symmetry_searches_rotation_orders_above_eight():

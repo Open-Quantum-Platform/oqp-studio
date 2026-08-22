@@ -847,7 +847,9 @@ def _comparison_frame(paths: list[Path]):
             return (7, name)
         if name.endswith(".txt"):
             return (8, name)
-        return None
+        if name.endswith((".cube", ".cub")):
+            return None
+        return (9, name)
 
     candidates = [(priority, path) for path in paths if (priority := rank(path)) is not None]
     for _priority, path in sorted(candidates):

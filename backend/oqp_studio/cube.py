@@ -159,6 +159,8 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
         if "non-finite" in str(exc):
             raise
         raise ValueError("cube geometry header is invalid") from exc
+    if any(not record[0].is_integer() for record in geometry[4:]):
+        raise ValueError("cube atom header contains a nonintegral atomic number")
     axis_units = tuple(count < 0 for count in voxel_counts)
     return Cube(
         lines[:header_end], values, shape, datasets, geometry, dataset_id_values, axis_units,

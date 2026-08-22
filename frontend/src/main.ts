@@ -2010,10 +2010,20 @@ async function showDirectCube(jobId: string, url: string): Promise<void> {
   activeDirectCube = { jobId, url };
   pushOrbitalStyle();
   const name = decodeURIComponent(url.split("/").pop()?.split("?")[0] ?? "");
-  const [response, geometryResponse] = await Promise.all([
-    fetch(url),
-    fetch(`/api/jobs/${jobId}/cube-geometry?name=${encodeURIComponent(name)}`),
-  ]);
+  let response: Response;
+  let geometryResponse: Response;
+  try {
+    [response, geometryResponse] = await Promise.all([
+      fetch(url),
+      fetch(`/api/jobs/${jobId}/cube-geometry?name=${encodeURIComponent(name)}`),
+    ]);
+  } catch (error) {
+    if (requestId === volumetricRequestId && jobId === selectedJob) {
+      $<HTMLDivElement>("surfaceStatus").textContent =
+        `cube display failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    return;
+  }
   if (requestId !== volumetricRequestId || jobId !== selectedJob || !response.ok) return;
   const cube = await response.blob();
   if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
@@ -2059,10 +2069,19 @@ async function showSurface(): Promise<void> {
   let cubeUrl = `/api/jobs/${jobId}/files/${encodeURIComponent(primary)}`;
   status.textContent = operation === "display" ? `Displaying ${primary}` : `Computing ${operation}…`;
   const query = new URLSearchParams({ left: primary, right: secondary, operation });
-  const [response, geometryResponse] = await Promise.all([
-    fetch(operation === "display" ? cubeUrl : `/api/jobs/${jobId}/cube-combine?${query}`),
-    fetch(`/api/jobs/${jobId}/cube-geometry?name=${encodeURIComponent(primary)}`),
-  ]);
+  let response: Response;
+  let geometryResponse: Response;
+  try {
+    [response, geometryResponse] = await Promise.all([
+      fetch(operation === "display" ? cubeUrl : `/api/jobs/${jobId}/cube-combine?${query}`),
+      fetch(`/api/jobs/${jobId}/cube-geometry?name=${encodeURIComponent(primary)}`),
+    ]);
+  } catch (error) {
+    if (requestId === volumetricRequestId && selectionIsCurrent()) {
+      status.textContent = `surface operation failed: ${error instanceof Error ? error.message : String(error)}`;
+    }
+    return;
+  }
   if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
@@ -2139,8 +2158,9 @@ function pushToResultViewer(message: Record<string, unknown>): void {
   const renderTypes = [
     "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
   ];
-  const styledMessage = message.type === "oqp-cube"
-    ? { ...message, orbital: currentOrbitalStyle() }
+  const styledMessage = renderTypes.includes(String(message.type))
+    ? { ...message, style: { ...displayStyle },
+        ...(message.type === "oqp-cube" ? { orbital: currentOrbitalStyle() } : {}) }
     : message;
   const outgoing = renderTypes.includes(String(message.type))
     ? { ...styledMessage, renderGeneration: ++viewerRenderGeneration }
