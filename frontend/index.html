@@ -216,6 +216,8 @@
 
       .wf-opt { display: none; }
       .wf-opt.on { display: flex; }
+      .wf-detail { display: none; }
+      .wf-detail.on { display: block; }
 
       footer {
         grid-area: footer;
@@ -678,15 +680,16 @@
                 <div><label><input type="checkbox" id="ektIp" checked style="width:auto;margin-right:.4rem" />Ionization (IP)</label></div>
                 <div><label><input type="checkbox" id="ektEa" style="width:auto;margin-right:.4rem" />Electron affinity (EA)</label></div>
               </div>
-              <details style="margin-top:1rem">
-                <summary>Detailed convergence options</summary>
+              <details class="wf-detail" data-for="*" style="margin-top:1rem">
+                <summary>SCF convergence and stability</summary>
                 <div class="row" style="margin-top:.8rem">
                   <div><label>SCF max iterations</label><input type="number" id="scfMaxit" value="100" min="1" /></div>
                   <div><label>SCF convergence</label><input type="text" id="scfConv" value="1e-8" /></div>
-                  <div><label>Response max iterations</label><input type="number" id="responseMaxit" value="30" min="1" /></div>
-                  <div><label>Response cutoff</label><input type="text" id="responseCutoff" value="1e-8" /></div>
+                  <div><label>DIIS subspace</label><input type="number" id="scfMaxDiis" value="8" min="1" /></div>
+                  <div><label>DIIS type</label><select id="scfDiisType"><option value="cdiis">CDIIS</option><option value="ediis">EDIIS</option></select></div>
+                  <div><label>Level shift</label><input type="text" id="scfLevelShift" value="0" /></div>
                 </div>
-                <div class="row">
+                <div class="row wf-opt" data-for="opt exopt ts irc mep neb meci mecp tci">
                   <div><label>Geometry max iterations</label><input type="number" id="geomMaxit" value="100" min="1" /></div>
                   <div><label>RMS gradient cutoff</label><input type="text" id="rmsdGrad" value="0.003" /></div>
                   <div><label>Maximum gradient cutoff</label><input type="text" id="maxGrad" value="0.004" /></div>
@@ -698,6 +701,70 @@
                   <div><label>Energy-gap cutoff</label><input type="text" id="energyGap" value="0.002" /></div>
                   <div><label>Trust radius</label><input type="text" id="trustRadius" value="0.15" /></div>
                   <div><label>Search algorithm</label><select id="crossingAlgorithm"><option value="penalty">Penalty</option><option value="auglag">Augmented Lagrangian</option><option value="sqp">SQP</option></select></div>
+                </div>
+              </details>
+              <details class="wf-detail" data-for="energy grad opt hess prop abs exgrad exopt meci mecp tci nac nacme soc ekt namd" data-theories="tddft tda sf mrsf umrsf" style="margin-top:1rem">
+                <summary>Excited-state response and Z-vector</summary>
+                <div class="row" style="margin-top:.8rem">
+                  <div><label>Response max iterations</label><input type="number" id="responseMaxit" value="30" min="1" /></div>
+                  <div><label>Response cutoff</label><input type="text" id="responseCutoff" value="1e-8" /></div>
+                  <div><label>Response convergence</label><input type="text" id="responseConv" value="1e-6" /></div>
+                  <div><label>Z-vector max iterations</label><input type="number" id="zvectorMaxit" value="30" min="1" /></div>
+                  <div><label>Z-vector convergence</label><input type="text" id="zvectorConv" value="1e-6" /></div>
+                  <div><label>Davidson subspace</label><input type="number" id="davidsonSubspace" value="50" min="1" /></div>
+                </div>
+                <div class="row">
+                  <div><label>Z-vector solver</label><select id="zvectorSolver"><option value="0">CG</option><option value="2">MINRES</option><option value="3">Automatic</option></select></div>
+                  <div><label>GMRES dimension</label><input type="number" id="gmresDim" value="50" min="1" /></div>
+                </div>
+              </details>
+              <details class="wf-detail" data-for="hess" style="margin-top:1rem">
+                <summary>Hessian and thermochemistry</summary>
+                <div class="row" style="margin-top:.8rem">
+                  <div><label>Numerical displacement (Å)</label><input type="text" id="hessDx" value="0.01" /></div>
+                  <div><label>Finite-difference workers</label><input type="number" id="hessNproc" value="1" min="1" /></div>
+                  <div><label>Temperature (K)</label><input type="text" id="hessTemperature" value="298.15" /></div>
+                  <div><label>Symmetry-unique displacements</label><select id="hessSymmetry"><option value="false">No</option><option value="true">Yes</option></select></div>
+                </div>
+              </details>
+              <details class="wf-detail" data-for="opt exopt ts irc mep neb meci mecp tci" style="margin-top:1rem">
+                <summary>Geometry optimizer</summary>
+                <div class="row" style="margin-top:.8rem">
+                  <div><label>Optimizer</label><select id="geomOptimizer"><option value="bfgs">BFGS</option><option value="rfo">RFO</option><option value="prfo">P-RFO</option></select></div>
+                  <div><label>Initial step size</label><input type="text" id="geomStepSize" value="0.1" /></div>
+                  <div><label>Trust radius</label><input type="text" id="geomTrust" value="0.2" /></div>
+                </div>
+              </details>
+              <details class="wf-detail" data-for="nac nacme" style="margin-top:1rem">
+                <summary>Nonadiabatic coupling</summary>
+                <div class="row" style="margin-top:.8rem">
+                  <div><label>Derivative</label><select id="nacType"><option value="numerical">Numerical</option><option value="analytical">Analytical</option></select></div>
+                  <div><label>Displacement (Å)</label><input type="text" id="nacDx" value="0.0001" /></div>
+                  <div><label>Workers</label><input type="number" id="nacNproc" value="1" min="1" /></div>
+                  <div><label>Branching-plane correction</label><select id="nacBp"><option value="false">No</option><option value="true">Yes</option></select></div>
+                </div>
+              </details>
+              <details class="wf-detail" data-for="namd" style="margin-top:1rem">
+                <summary>Surface-hopping dynamics</summary>
+                <div class="row" style="margin-top:.8rem">
+                  <div><label>Initial state</label><input type="number" id="namdState" value="1" min="1" /></div>
+                  <div><label>Nuclear steps</label><input type="number" id="namdSteps" value="100" min="1" /></div>
+                  <div><label>Time step (fs)</label><input type="text" id="namdDt" value="0.5" /></div>
+                  <div><label>Decoherence</label><select id="namdDecoherence"><option value="edc">EDC</option><option value="off">Off</option></select></div>
+                </div>
+              </details>
+              <details class="wf-detail" data-for="energy grad opt hess prop abs exgrad exopt meci mecp tci ts irc mep nac nacme soc ekt" data-theories="fci casci casscf sa-casscf caspt2 ms-caspt2 xms-caspt2 nevpt2 sc-nevpt2 mrmp2 mcqdpt2 xmcqdpt2" style="margin-top:1rem">
+                <summary>Active space and CI solver</summary>
+                <div class="row" style="margin-top:.8rem">
+                  <div><label>Active electrons</label><input type="number" id="activeElectrons" value="0" min="0" /></div>
+                  <div><label>Active orbitals</label><input type="number" id="activeOrbitals" value="0" min="0" /></div>
+                  <div><label>Frozen core orbitals</label><input type="number" id="frozenCore" value="0" min="0" /></div>
+                  <div><label>Roots</label><input type="number" id="ciRoots" value="1" min="1" /></div>
+                </div>
+                <div class="row">
+                  <div><label>CI solver</label><select id="ciSolver"><option value="auto">Automatic</option><option value="davidson">Davidson</option><option value="full">Full diagonalization</option></select></div>
+                  <div><label>CI eigensolver tolerance</label><input type="text" id="ciTolerance" value="1e-10" /></div>
+                  <div><label>Davidson max iterations</label><input type="number" id="ciMaxit" value="100" min="1" /></div>
                 </div>
               </details>
             </div>

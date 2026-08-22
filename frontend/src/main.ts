@@ -565,8 +565,11 @@ function selectWorkflow(wf: Workflow): void {
   currentWf = wf;
   $<HTMLSelectElement>("workflowSel").value = wf.key;
   $<HTMLDivElement>("workflowDescription").textContent = wf.desc;
-  document.querySelectorAll<HTMLElement>(".wf-opt").forEach((row) => {
-    row.classList.toggle("on", (row.dataset.for ?? "").split(" ").includes(wf.key));
+  document.querySelectorAll<HTMLElement>(".wf-opt, .wf-detail").forEach((row) => {
+    const workflows = (row.dataset.for ?? "").split(" ");
+    const theories = (row.dataset.theories ?? "").split(" ").filter(Boolean);
+    row.classList.toggle("on", (workflows.includes("*") || workflows.includes(wf.key)) &&
+      (!theories.length || theories.includes(theorySel.value)));
   });
   for (const option of Array.from(theorySel.options)) {
     option.disabled = !wf.theories.includes(option.value);
@@ -580,7 +583,17 @@ function selectWorkflow(wf: Workflow): void {
   $<HTMLSpanElement>("wfLabel").textContent = `— ${wf.title}`;
   optionsCard.style.display = "";
   syncFieldStates();
+  syncWorkflowDetails();
   updateInpPreview();
+}
+
+function syncWorkflowDetails(): void {
+  document.querySelectorAll<HTMLElement>(".wf-detail").forEach((section) => {
+    const workflows = (section.dataset.for ?? "").split(" ");
+    const theories = (section.dataset.theories ?? "").split(" ").filter(Boolean);
+    section.classList.toggle("on", (workflows.includes("*") || workflows.includes(currentWf.key)) &&
+      (!theories.length || theories.includes(theorySel.value)));
+  });
 }
 
 function buildWorkflowSelect(): void {
@@ -738,16 +751,58 @@ function generateInp(): string {
       driver = `ekt(${opts.join(",") || "ip=true"})`;
       break;
     }
-    case "namd": driver = "namd(S0,nstep=100,dt=0.5)"; break;
+    case "namd": driver = `namd(S${fieldValue("namdState") || "1"},nstep=${fieldValue("namdSteps") || "100"},dt=${fieldValue("namdDt") || "0.5"},decoherence=${fieldValue("namdDecoherence") || "edc"})`; break;
     default: driver = "energy";
   }
 
   const lines: string[] = [pdbSource ? `${routes[theory]} qmmm_flag=true` : routes[theory], driver];
-  const scfOptions = optionList([["maxit", fieldValue("scfMaxit")], ["conv", fieldValue("scfConv")]]);
+  const scfOptions = optionList([
+    ["maxit", fieldValue("scfMaxit")], ["conv", fieldValue("scfConv")],
+    ["maxdiis", fieldValue("scfMaxDiis")], ["diis_type", fieldValue("scfDiisType")],
+    ["vshift", fieldValue("scfLevelShift")],
+  ]);
   if (scfOptions) lines.push(`scf(${scfOptions})`);
   if (usesStates) {
-    const responseOptions = optionList([["maxit", fieldValue("responseMaxit")], ["resp_cutoff", fieldValue("responseCutoff")]]);
+    const responseOptions = optionList([
+      ["maxit", fieldValue("responseMaxit")], ["conv", fieldValue("responseConv")],
+      ["maxit_zv", fieldValue("zvectorMaxit")], ["zvconv", fieldValue("zvectorConv")],
+      ["nvdav", fieldValue("davidsonSubspace")], ["z_solver", fieldValue("zvectorSolver")],
+      ["gmres_dim", fieldValue("gmresDim")], ["resp_cutoff", fieldValue("responseCutoff")],
+    ]);
     if (responseOptions) lines.push(`tdhf(${responseOptions})`);
+  }
+  if (currentWf.key === "hess") {
+    const hessOptions = optionList([
+      ["dx", fieldValue("hessDx")], ["nproc", fieldValue("hessNproc")],
+      ["temperature", fieldValue("hessTemperature")], ["symmetry_unique", fieldValue("hessSymmetry")],
+    ]);
+    if (hessOptions) lines.push(`hess(${hessOptions})`);
+  }
+  if (["nac", "nacme"].includes(currentWf.key)) {
+    const nacOptions = optionList([
+      ["type", fieldValue("nacType")], ["dx", fieldValue("nacDx")],
+      ["nproc", fieldValue("nacNproc")], ["bp", fieldValue("nacBp")],
+    ]);
+    if (nacOptions) lines.push(`nac(${nacOptions})`);
+  }
+  if (["opt", "exopt", "ts", "irc", "mep", "neb", "meci", "mecp", "tci"].includes(currentWf.key)) {
+    const optimizerOptions = optionList([
+      ["optimizer", fieldValue("geomOptimizer")], ["step_size", fieldValue("geomStepSize")],
+      ["trust", fieldValue("geomTrust")],
+    ]);
+    if (optimizerOptions) lines.push(`optimize(${optimizerOptions})`);
+  }
+  if (["fci", "casci", "casscf", "sa-casscf", "caspt2", "ms-caspt2", "xms-caspt2", "nevpt2", "sc-nevpt2", "mrmp2", "mcqdpt2", "xmcqdpt2"].includes(theory)) {
+    const casOptions = optionList([
+      ["active_electrons", fieldValue("activeElectrons")], ["active_orbitals", fieldValue("activeOrbitals")],
+      ["frozen_core", fieldValue("frozenCore")],
+    ]);
+    if (casOptions) lines.push(`cas(${casOptions})`);
+    const ciOptions = optionList([
+      ["nroot", fieldValue("ciRoots")], ["solver", fieldValue("ciSolver")],
+      ["eig_tol", fieldValue("ciTolerance")], ["davidson_maxiter", fieldValue("ciMaxit")],
+    ]);
+    if (ciOptions) lines.push(`ci(${ciOptions})`);
   }
   if (["opt", "exopt", "ts", "mep"].includes(currentWf.key)) {
     const opts = optimisationOptions();
@@ -829,10 +884,15 @@ for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCus
                   "nstate", "targetState", "meciA", "meciB", "mecpA", "mecpB", "tciA", "tciB", "tciC",
                   "couplingA", "couplingB", "nebProduct", "nebImages", "nebSpring", "pcmReference", "pcmModel",
                   "pcmEpsilon", "ektIp", "ektEa", "hessType", "scfMaxit", "scfConv", "responseMaxit",
-                  "responseCutoff", "geomMaxit", "rmsdGrad", "maxGrad", "rmsdStep", "maxStep", "energyShift",
+                  "responseCutoff", "responseConv", "zvectorMaxit", "zvectorConv", "davidsonSubspace", "zvectorSolver", "gmresDim",
+                  "scfMaxDiis", "scfDiisType", "scfLevelShift", "geomOptimizer", "geomStepSize", "geomTrust",
+                  "hessDx", "hessNproc", "hessTemperature", "hessSymmetry", "nacType", "nacDx", "nacNproc", "nacBp",
+                  "namdState", "namdSteps", "namdDt", "namdDecoherence", "activeElectrons", "activeOrbitals", "frozenCore", "ciRoots", "ciSolver", "ciTolerance", "ciMaxit",
+                  "geomMaxit", "rmsdGrad", "maxGrad", "rmsdStep", "maxStep", "energyShift",
                   "energyGap", "trustRadius", "crossingAlgorithm"]) {
   $<HTMLElement>(id).addEventListener("input", () => {
     syncFieldStates();
+    syncWorkflowDetails();
     updateInpPreview();
   });
 }
