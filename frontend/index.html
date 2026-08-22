@@ -209,6 +209,8 @@
       .badge { padding: 1px 8px; border-radius: 99px; font-size: 11.5px; }
       .badge.done { background: rgba(94,207,138,.15); color: var(--ok); }
       .badge.failed { background: rgba(230,106,106,.15); color: var(--err); }
+      .badge.not_converged { background: rgba(234,180,66,.16); color: #eab442; }
+      .badge.cancelled, .badge.cancelling { background: rgba(162,172,195,.16); color: var(--text-dim); }
       .badge.running, .badge.queued { background: var(--accent-soft); color: var(--accent); }
       ul.files { list-style: none; margin: 0.4rem 0 0; padding: 0; }
       ul.files li { padding: 0.3rem 0; border-bottom: 1px solid var(--border); font-size: 13px; }
@@ -666,6 +668,10 @@
                 <div><label>State A</label><input type="text" id="couplingA" value="S0" /></div>
                 <div><label>State B</label><input type="text" id="couplingB" value="S1" /></div>
               </div>
+              <div class="row wf-opt" data-for="nacme">
+                <div><label>Previous geometry (.xyz)</label><input type="text" id="nacmeGeometry" placeholder="previous.xyz" /></div>
+                <div><span class="hint">NACME compares this geometry with the current structure.</span></div>
+              </div>
               <div class="row wf-opt" data-for="neb">
                 <div><label>Product geometry (.xyz)</label><input type="text" id="nebProduct" placeholder="product.xyz" /></div>
                 <div><label>Images</label><input type="number" id="nebImages" value="7" min="2" /></div>
@@ -936,6 +942,7 @@
               </div>
               <label>Frame <span id="resultFrameLabel" class="hint"></span></label>
               <input type="range" id="resultFrameRange" min="1" max="1" value="1" />
+              <div class="actions"><button class="ghost" id="editResultStructure" type="button">Edit in Builder</button></div>
             </div>
             <div class="card" id="summaryCard" style="display:none">
               <h3>Results summary</h3>

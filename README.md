@@ -174,6 +174,13 @@ local OpenQP (native or WSL), and inspect the results —
 orbitals, normal modes, geometries — rendered with Mol*. Installers are built
 for Windows, macOS (Apple Silicon and Intel), and Linux.
 
+Studio accepts and generates OpenQP's canonical concise `.oqp` input only; it
+is not a Studio-specific format. Legacy sectioned input is not supported.
+Geometry workflows use OpenQP's native optimizer automatically. Studio emits
+native controls through the canonical `oqp(...)` call and never emits a legacy
+`lib` option. For NACME, provide both the current structure and the
+previous-geometry `.xyz` file, which Studio writes as `geom2` in the input.
+
 Remaining: SSH/SLURM submission, style presets and high-resolution export,
 code signing (see above). See the design proposal for the full roadmap.
 

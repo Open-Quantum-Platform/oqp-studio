@@ -1,4 +1,8 @@
 from pathlib import Path
+import subprocess
+import sys
+import threading
+import time
 from typing import ClassVar
 
 from fastapi.testclient import TestClient
@@ -59,6 +63,121 @@ def test_custom_input_name_is_saved(tmp_path, monkeypatch):
     assert res.json()["name"] == "water"
     names = {f["name"] for f in client.get(f"/api/jobs/{res.json()['id']}/files").json()}
     assert "water.oqp" in names
+
+
+def test_recovered_jobs_keep_their_project_name(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    job_dir = tmp_path / "opaque-id"
+    job_dir.mkdir()
+    (job_dir / "water.oqp").write_text("hf/sto-3g\nenergy\n")
+    (job_dir / ".oqp-studio.json").write_text(
+        '{"name":"water TS candidate","runner":"bundled","threads":4,"created_at":"2026-08-22T00:00:00+00:00"}'
+    )
+
+    manager = jobs.JobManager()
+    manager._ready = True
+    manager._recover()
+
+    info = manager.get("opaque-id")
+    assert info is not None
+    assert info.name == "water TS candidate"
+    assert info.runner == "bundled"
+    assert info.threads == 4
+
+
+def test_recovered_jobs_fall_back_to_the_input_stem(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    job_dir = tmp_path / "opaque-id"
+    job_dir.mkdir()
+    (job_dir / "ammonia.oqp").write_text("hf/sto-3g\nenergy\n")
+
+    manager = jobs.JobManager()
+    manager._ready = True
+    manager._recover()
+
+    assert manager.get("opaque-id").name == "ammonia"
+
+
+def test_native_optimizer_nonconvergence_is_not_reported_as_done(tmp_path):
+    from oqp_studio.jobs import JobManager
+
+    job_dir = tmp_path / "water"
+    job_dir.mkdir()
+    (job_dir / "water.oqp").write_text("hf/sto-3g\nopt\n")
+    (job_dir / "water.log").write_text(
+        "PyOQP: Native optimization after internal recovery did not converge "
+        "(RMS gradient 4.916e-02). The best geometry was retained.\n"
+    )
+
+    diagnostic = JobManager._optimization_diagnostic(job_dir)
+
+    assert diagnostic is not None
+    assert "did not converge" in diagnostic.lower()
+
+
+def test_restart_input_replaces_inline_geometry_with_retained_optimum(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    job_dir = tmp_path / "water"
+    job_dir.mkdir()
+    (job_dir / "water.oqp").write_text(
+        "hf/sto-3g\nopt\ngeom=\"\"\"\nO 0.0 0.0 0.0\nH 0.0 0.0 1.0\n\"\"\"\n"
+    )
+    (job_dir / "opt.xyz").write_text(
+        "2\nretained optimum\nO 0.100000 0.200000 0.300000\nH 0.400000 0.500000 0.600000\n"
+    )
+    manager._jobs["water"] = jobs.JobInfo(
+        id="water", name="water", status=jobs.JobStatus.not_converged,
+        runner="local", threads=3, created_at="2026-08-22T00:00:00+00:00",
+    )
+    restart = manager.restart_input("water")
+
+    assert restart["runner"] == "local"
+    assert restart["threads"] == 3
+    assert 'geom="""\nO     0.100000    0.200000    0.300000' in restart["input_text"]
+    assert "H     0.400000    0.500000    0.600000" in restart["input_text"]
+
+
+def test_cancel_terminates_the_running_process_group(tmp_path, monkeypatch):
+    from oqp_studio import jobs
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    manager = jobs.JobManager()
+    job_dir = tmp_path / "slow"
+    job_dir.mkdir()
+    (job_dir / "input.oqp").write_text("hf/sto-3g\nenergy\n")
+    manager._jobs["slow"] = jobs.JobInfo(
+        id="slow", name="slow", status=jobs.JobStatus.queued,
+        runner="local", created_at="2026-08-22T00:00:00+00:00",
+    )
+
+    class SlowRunner:
+        def run(self, _job_dir, _threads, on_start):
+            process = subprocess.Popen(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                start_new_session=True,
+            )
+            on_start(process)
+            return process.wait()
+
+    monkeypatch.setattr(jobs, "get_runner", lambda _name: SlowRunner())
+    worker = threading.Thread(target=manager._run, args=("slow",))
+    worker.start()
+    for _ in range(100):
+        if "slow" in manager._processes:
+            break
+        time.sleep(0.01)
+    manager.cancel("slow")
+    worker.join(timeout=3)
+
+    assert not worker.is_alive()
+    assert manager.get("slow").status == jobs.JobStatus.cancelled
 
 
 def test_completed_project_can_be_deleted_with_its_result_files(tmp_path, monkeypatch):
