@@ -1322,7 +1322,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       selectOrbitalClass(mapKind.value);
     }
     if (modes?.modes?.length) {
-      modeSel.innerHTML = "";
+      modeSel.innerHTML = '<option value="">Choose a normal mode…</option>';
       for (const m of modes.modes) {
         const opt = document.createElement("option");
         opt.value = String(m.index);
@@ -1331,7 +1331,9 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
         modeSel.appendChild(opt);
       }
       modeCard.style.display = "";
-      if (!allOrbitals.length) showMode();
+      modePlay.disabled = true;
+      modePause.disabled = true;
+      modeReset.disabled = true;
     }
     if (!allOrbitals.length && !modes?.modes?.length) {
       await openAsStructure(name, url);
@@ -1458,7 +1460,7 @@ function modeEquilibriumXyz(mode: { atoms: { element: string; position: number[]
 }
 
 async function showMode(): Promise<void> {
-  if (!currentMolden) return;
+  if (!currentMolden || !modeSel.value) return;
   const base = `/api/jobs/${currentMolden.jobId}/molden/${encodeURIComponent(currentMolden.name)}`;
   const vectors = await fetch(`${base}/mode?mode=${modeSel.value}`);
   if (!vectors.ok) return;
@@ -1471,6 +1473,9 @@ async function showMode(): Promise<void> {
     arrows: modeArrows.checked,
     playing: false,
   });
+  modePlay.disabled = false;
+  modePause.disabled = false;
+  modeReset.disabled = false;
 }
 
 modeSel.addEventListener("change", showMode);
@@ -1487,6 +1492,10 @@ modeReset.addEventListener("click", async () => {
   const response = await fetch(`${base}/geom.xyz`);
   if (!response.ok) return;
   pushToResultViewer({ type: "oqp-normal-mode-reset", xyz: await response.text() });
+  modeSel.value = "";
+  modePlay.disabled = true;
+  modePause.disabled = true;
+  modeReset.disabled = true;
 });
 
 // ---------- results summary ----------

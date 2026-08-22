@@ -304,7 +304,11 @@
                           params: { selector: "all" },
                           children: [{
                             kind: "representation",
-                            params: { type: "ball_and_stick" },
+                            // MVS defaults to unit-radius atoms, which makes
+                            // a normal mode look larger than the molecule it
+                            // overlays. Keep its scale consistent with the
+                            // regular result viewer.
+                            params: { type: "ball_and_stick", size_factor: 0.4 },
                             children: colorLayers,
                           }],
                         },
