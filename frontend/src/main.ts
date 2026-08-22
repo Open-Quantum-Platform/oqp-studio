@@ -303,6 +303,7 @@ $<HTMLButtonElement>("pdbFetch").addEventListener("click", async () => {
       const structure = await parsed.json();
       loadedFrames = structure.frames;
       xyzArea.value = atomsToText(loadedFrames[0].atoms);
+      await updatePreview();
       builderStatus.textContent =
         `${data.code} · ${loadedFrames[0].atoms.length} atoms from the PDB`;
     }
@@ -525,13 +526,13 @@ window.addEventListener("message", (event) => {
 });
 
 async function updatePreview(): Promise<void> {
+  const atoms = parseAtoms(xyzArea.value);
+  if (atoms.length) artAtoms = atoms;
   if (pdbSource) {
     pushPdbPreview();
     return;
   }
-  const atoms = parseAtoms(xyzArea.value);
   if (!atoms.length) return;
-  artAtoms = atoms;
   const xyz = `${atoms.length}\nOQP Studio preview\n${atomsToText(atoms)}\n`;
   const frame = $<HTMLIFrameElement>("previewFrame");
   if (!frame.src) {
