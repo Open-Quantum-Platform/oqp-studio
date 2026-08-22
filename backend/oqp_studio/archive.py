@@ -53,7 +53,15 @@ def _link_target(root: Path, destination: Path, link_name: str) -> str:
 def validate_links(root: Path) -> None:
     """Reject links that escape an extracted tree after it has been rearranged."""
     root = root.resolve()
-    for current, directory_names, file_names in os.walk(root, followlinks=False):
+
+    def reject_walk_error(error: OSError) -> None:
+        raise UnsafeArchiveError(
+            f"could not inspect archive directory: {error.filename or root}"
+        ) from error
+
+    for current, directory_names, file_names in os.walk(
+        root, followlinks=False, onerror=reject_walk_error
+    ):
         current_path = Path(current)
         for name in directory_names + file_names:
             candidate = current_path / name

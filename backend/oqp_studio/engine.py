@@ -244,7 +244,7 @@ def _strip_single_root(target: Path) -> None:
     wrapper itself. The wrapper is moved aside first.
     """
     entries = [path for path in target.iterdir() if path.name != "__MACOSX"]
-    if len(entries) != 1 or not entries[0].is_dir():
+    if len(entries) != 1 or entries[0].is_symlink() or not entries[0].is_dir():
         return
     staging = target.parent / f"{target.name}.unpack"
     if staging.exists():

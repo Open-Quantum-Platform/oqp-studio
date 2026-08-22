@@ -164,6 +164,45 @@ def test_tar_defers_restrictive_directory_modes_until_children_exist(tmp_path):
         assert stat.S_IMODE(directory.stat().st_mode) == 0o555
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows does not enforce POSIX directory modes")
+def test_link_validation_rejects_an_unreadable_directory_after_flattening(tmp_path):
+    staging = tmp_path / "staging"
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w") as archive:
+        directory = tarfile.TarInfo("wrapper/locked")
+        directory.type = tarfile.DIRTYPE
+        directory.mode = 0o300
+        archive.addfile(directory)
+        link = tarfile.TarInfo("wrapper/locked/link")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../../settings.json"
+        archive.addfile(link)
+    payload.seek(0)
+
+    with tarfile.open(fileobj=payload) as archive:
+        extract_tar(archive, staging)
+    _strip_single_root(staging)
+
+    locked = staging / "locked"
+    try:
+        with pytest.raises(UnsafeArchiveError):
+            validate_links(staging)
+    finally:
+        locked.chmod(0o700)
+
+
+def test_single_symlink_wrapper_is_not_flattened(tmp_path):
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    wrapper = staging / "wrapper"
+    wrapper.symlink_to(".", target_is_directory=True)
+
+    _strip_single_root(staging)
+
+    assert wrapper.is_symlink()
+    assert not (tmp_path / "staging.unpack").exists()
+
+
 def test_links_are_revalidated_after_archive_root_is_flattened(tmp_path):
     staging = tmp_path / "staging"
     (tmp_path / "settings.json").write_text("outside")
