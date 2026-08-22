@@ -64,10 +64,37 @@ document.querySelectorAll<HTMLElement>(".panel").forEach((panel) => {
 const artFrame = $<HTMLIFrameElement>("artFrame");
 let artReady = false;
 let artAtoms: Atom[] = [];
+type ArtScene = {
+  atoms: Atom[];
+  cube?: string;
+  iso?: number;
+  sides?: string;
+  orbital?: Record<string, unknown>;
+  label?: string;
+};
+let artScene: ArtScene = { atoms: [] };
 
-function pushToArt(atoms = artAtoms): void {
-  if (!atoms.length || !artReady) return;
-  artFrame.contentWindow?.postMessage({ type: "oqp-art-structure", atoms }, window.location.origin);
+function setArtStructure(atoms: Atom[]): void {
+  if (!atoms.length) return;
+  artAtoms = atoms;
+  artScene = { atoms };
+  pushToArt();
+}
+
+function pushToArt(): void {
+  if (!artScene.atoms.length || !artReady) return;
+  artFrame.contentWindow?.postMessage(
+    { type: "oqp-art-scene", scene: artScene }, window.location.origin,
+  );
+}
+
+function pushArtOrbitalStyle(): void {
+  const orbital = currentOrbitalStyle();
+  artScene = { ...artScene, orbital };
+  if (!artReady) return;
+  artFrame.contentWindow?.postMessage(
+    { type: "oqp-art-style", orbital }, window.location.origin,
+  );
 }
 
 window.addEventListener("message", (event) => {
@@ -94,7 +121,13 @@ function showTab(name: string): void {
     refreshJobs();
   }
   if (name === "art") {
-    if (!artAtoms.length) artAtoms = parseAtoms(xyzArea.value);
+    if (!artScene.atoms.length) {
+      const atoms = parseAtoms(xyzArea.value);
+      if (atoms.length) {
+        artAtoms = atoms;
+        artScene = { atoms };
+      }
+    }
     if (!artFrame.src) {
       artReady = false;
       artFrame.src = "/art.html";
@@ -494,6 +527,7 @@ function currentOrbitalStyle(): Record<string, unknown> {
 
 function pushOrbitalStyle(): void {
   pushToViewers({ type: "oqp-orbital-style", orbital: currentOrbitalStyle() });
+  pushArtOrbitalStyle();
 }
 
 // Ready-made orbital looks. "studio" is what the app has always drawn and
@@ -556,7 +590,7 @@ window.addEventListener("message", (event) => {
 async function updatePreview(): Promise<void> {
   invalidateSymmetryIfCoordinatesChanged();
   const atoms = parseAtoms(xyzArea.value);
-  if (atoms.length) artAtoms = atoms;
+  if (atoms.length) setArtStructure(atoms);
   if (pdbSource) {
     pushPdbPreview();
     return;
@@ -2232,13 +2266,27 @@ function pushToResultViewer(message: Record<string, unknown>): void {
   } else if (message.type === "oqp-cube") {
     displayedResultAtomCount = 0;
   }
-  if ((message.type === "oqp-structure" || message.type === "oqp-normal-mode") &&
-      typeof message.xyz === "string") {
-    const atoms = parseAtoms(message.xyz);
-    if (atoms.length) {
-      artAtoms = atoms;
-      pushToArt();
-    }
+  const type = String(message.type);
+  const coordinateText = typeof message.xyz === "string" ? message.xyz
+    : type === "oqp-file" && typeof message.text === "string" ? message.text : "";
+  const sceneAtoms = coordinateText ? parseAtoms(coordinateText) : [];
+  if (type === "oqp-cube" && sceneAtoms.length && typeof message.cube === "string") {
+    const orbital = currentOrbitalStyle();
+    artAtoms = sceneAtoms;
+    artScene = {
+      atoms: sceneAtoms,
+      cube: message.cube,
+      iso: typeof message.iso === "number" ? Math.abs(message.iso) : 0.05,
+      sides: typeof message.sides === "string" ? message.sides : String(orbital.sides ?? "both"),
+      orbital,
+      label: activeMapSource ?? "volumetric surface",
+    };
+    pushToArt();
+  } else if (["oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file"]
+      .includes(type) && sceneAtoms.length) {
+    setArtStructure(sceneAtoms);
+  } else if (type === "oqp-atomic-property" || type === "oqp-nmr-shielding") {
+    setArtStructure(artAtoms);
   }
   const renderTypes = [
     "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
