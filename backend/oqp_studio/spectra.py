@@ -94,7 +94,11 @@ def electronic_spectrum(energies_ev: list[float], strengths: list[float], *,
         return {"x": [], "y": [], "sticks": [], "x_nm": []}
     fwhm_cm = fwhm_ev * CM_PER_EV
     centers = [e * CM_PER_EV for e, _ in pairs]
-    lo = max(1.0, min(centers) - 8 * fwhm_cm)
+    # A Lorentzian formally extends all the way to zero energy.  That tail is
+    # harmless on an energy plot, but its wavelength conversion diverges at
+    # zero and can make an ESA plot span millions of nanometres.  Retain the
+    # relevant low-energy wing while keeping the wavelength axis finite.
+    lo = max(min(centers) * 0.5, min(centers) - 8 * fwhm_cm)
     hi = max(centers) + 8 * fwhm_cm
     x_cm, y = broaden(centers, [f for _, f in pairs], lo=lo, hi=hi,
                       fwhm=fwhm_cm, shape=shape, points=points, eta=eta,

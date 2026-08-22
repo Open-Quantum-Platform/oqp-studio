@@ -351,6 +351,7 @@ Transition   Excitation         Transition dipole, a.u.                   Oscill
     data = analysis.spectrum(summary, "esa", state=1)
     assert data["available"]
     assert data["sticks"][0]["position"] == analysis.NM_EV / 1.519945
+    assert max(data["x"]) <= 2 * analysis.NM_EV / 1.519945 + 1e-6
 
 
 def test_importing_a_folder_takes_the_results_and_leaves_the_rest(tmp_path, monkeypatch):
