@@ -185,6 +185,21 @@ function qmmmValidation(): string | null {
   return null;
 }
 
+function workflowValidation(inputText = ""): string | null {
+  if (currentWf.key !== "nacme") return null;
+  const hasPreviousGeometry = Boolean(fieldValue("nacmeGeometry")) || /(?:^|\n)geom2\s*=/.test(inputText);
+  return hasPreviousGeometry
+    ? null
+    : "NACME requires a previous geometry (.xyz) in addition to the current structure.";
+}
+
+function inputValidation(inputText = ""): string | null {
+  if (/^\s*\[[^\]\n]+\]\s*$/m.test(inputText)) {
+    return "Studio accepts OpenQP canonical .oqp input only; legacy sectioned input is not supported.";
+  }
+  return qmmmValidation() ?? workflowValidation(inputText);
+}
+
 function showFrame(index: number): void {
   const frame = loadedFrames[index - 1];
   if (!frame) return;
@@ -773,7 +788,7 @@ function syncPcmReference(): void {
   if (dftPcm) $<HTMLSelectElement>("pcmReference").value = "rhf";
 }
 
-// Generates concise .oqp input: ROUTE, one primary driver, globals, geometry.
+// Generates OpenQP canonical .oqp input: route, one primary driver, globals, geometry.
 function generateInp(): string {
   const atoms = parseAtoms(xyzArea.value);
   const theory = theorySel.value;
@@ -784,8 +799,8 @@ function generateInp(): string {
   const basis = currentBasis();
   const functional = currentFunctional();
 
-  const qmmmError = qmmmValidation();
-  if (qmmmError) return `# ${qmmmError}\n`;
+  const inputError = inputValidation();
+  if (inputError) return `# ${inputError}\n`;
 
   const routes: Record<string, string> = {
     hf: `hf/${basis}`,
@@ -921,7 +936,7 @@ function generateInp(): string {
     ], CI_DEFAULTS);
     if (ciOptions) lines.push(`ci(${ciOptions})`);
   }
-  if (["opt", "exopt", "ts", "mep"].includes(currentWf.key)) {
+  if (["opt", "exopt", "ts"].includes(currentWf.key)) {
     const opts = optimisationOptions();
     lines[1] = withOptions(driver, opts);
   }
@@ -930,17 +945,27 @@ function generateInp(): string {
       ["maxit", fieldValue("geomMaxit")], ["energy_shift", fieldValue("energyShift")],
       ["energy_gap", fieldValue("energyGap")], ["rmsd_grad", fieldValue("rmsdGrad")],
       ["max_grad", fieldValue("maxGrad")], ["rmsd_step", fieldValue("rmsdStep")],
-      ["max_step", fieldValue("maxStep")], ["trust", fieldValue("trustRadius")],
+      ["max_step", fieldValue("maxStep")],
     ]);
     const algorithm = fieldValue("crossingAlgorithm");
-    const key = currentWf.key === "meci" ? "algorithm" : currentWf.key === "mecp" ? "mecp_search" : "algorithm";
-    lines[1] = withOptions(driver, `${key}=${algorithm}${crossing ? `,${crossing}` : ""}`);
+    const algorithmOption = currentWf.key === "meci"
+      ? `algorithm=${algorithm}`
+      : currentWf.key === "mecp" ? `mecp_search=${algorithm}` : "";
+    lines[1] = withOptions(driver, `${algorithmOption}${algorithmOption && crossing ? "," : ""}${crossing}`);
+  }
+  if (["opt", "exopt", "ts", "meci", "mecp", "tci"].includes(currentWf.key)) {
+    const nativeOptions = nativeOptimiserOptions();
+    if (nativeOptions) lines.push(`oqp(${nativeOptions})`);
   }
   if (["opt", "exopt", "ts", "meci", "mecp", "tci"].includes(currentWf.key)) {
     const nativeOptions = nativeOptimiserOptions();
     if (nativeOptions) lines.push(`oqp(${nativeOptions})`);
   }
   if (charge !== 0) lines.push(`charge=${charge}`);
+  if (currentWf.key === "nacme") {
+    const previousGeometry = fieldValue("nacmeGeometry");
+    if (previousGeometry) lines.push(`geom2=${JSON.stringify(previousGeometry)}`);
+  }
   // MRSF selects its high-spin working reference automatically — no mult.
   if (mult !== 1 && theory !== "mrsf") lines.push(`mult=${mult}`);
   if (pdbSource) {
@@ -1003,7 +1028,7 @@ function syncFieldStates(): void {
 
 for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCustom", "charge", "mult",
                   "nstate", "targetState", "meciA", "meciB", "mecpA", "mecpB", "tciA", "tciB", "tciC",
-                  "couplingA", "couplingB", "nebProduct", "nebImages", "nebSpring", "pcmReference", "pcmSolvent", "pcmSolventCustom", "pcmModel",
+                  "couplingA", "couplingB", "nacmeGeometry", "nebProduct", "nebImages", "nebSpring", "pcmReference", "pcmSolvent", "pcmSolventCustom", "pcmModel",
                   "pcmEpsilon", "pcmRadii", "ektIp", "ektEa", "hessType", "scfMaxit", "scfConv", "responseMaxit",
                   "responseCutoff", "responseConv", "zvectorMaxit", "zvectorConv", "davidsonSubspace", "zvectorSolver", "gmresDim",
                   "scfMaxDiis", "scfDiisType", "scfLevelShift", "scfConverger", "scfFallback", "scfEscalation", "scfStability", "soscfLevelShift",
@@ -1028,13 +1053,14 @@ for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCus
 }
 
 $<HTMLButtonElement>("generate").addEventListener("click", () => {
-  const qmmmError = qmmmValidation();
-  if (qmmmError) {
-    builderStatus.textContent = qmmmError;
+  const inputText = previewInput();
+  const inputError = inputValidation(inputText);
+  if (inputError) {
+    builderStatus.textContent = inputError;
     showTab("builder");
     return;
   }
-  $<HTMLTextAreaElement>("input").value = previewInput();
+  $<HTMLTextAreaElement>("input").value = inputText;
   const name = projectName.value.trim() || "input";
   $<HTMLInputElement>("inputName").value = `${name}.oqp`;
   showTab("run");
@@ -1201,17 +1227,20 @@ async function pollJob(jobId: string): Promise<void> {
   const tail = tailResponse.ok ? await tailResponse.json() : { log: "" };
   runLog.textContent = tail.log || "(no output yet)";
   runStatus.textContent = info.status + (info.error ? ` — ${info.error}` : "");
-  if (info.status === "queued" || info.status === "running") {
+  if (info.status === "queued" || info.status === "running" || info.status === "cancelling") {
     setTimeout(() => pollJob(jobId), 1000);
   } else {
+    if (info.status === "not_converged") {
+      window.alert(`Geometry optimization did not converge.\n\n${info.error ?? "The best geometry was retained."}\n\nUse Restart from best geometry in Analysis to continue.`);
+    }
     selectJob(jobId);
   }
 }
 
 runButton.addEventListener("click", async () => {
-  const qmmmError = qmmmValidation();
-  if (qmmmError) {
-    runStatus.textContent = qmmmError;
+  const inputError = inputValidation($<HTMLTextAreaElement>("input").value);
+  if (inputError) {
+    runStatus.textContent = inputError;
     return;
   }
   if (!runnerSelect.value) {
@@ -1250,7 +1279,7 @@ let selectedJob = "";
 let resultMoldenFiles: string[] = [];
 
 async function refreshJobs(): Promise<void> {
-  const jobs: { id: string; name: string; runner: string; status: string }[] =
+  const jobs: { id: string; name: string; runner: string; status: string; error?: string | null }[] =
     await (await fetch("/api/jobs")).json();
   const body = $<HTMLTableSectionElement>("jobsBody");
   body.innerHTML = "";
@@ -1260,19 +1289,68 @@ async function refreshJobs(): Promise<void> {
     tr.innerHTML =
       `<td>${job.name}</td><td>${job.runner}</td>` +
       `<td><span class="badge ${job.status}">${job.status}</span></td>` +
-      `<td><button class="ghost job-delete" type="button" data-job-id="${job.id}" ` +
-      `${job.status === "running" || job.status === "queued" ? "disabled " : ""}` +
-      `title="${job.status === "running" || job.status === "queued" ? "Project is running" : "Delete project and its files"}" ` +
+      `<td>${job.status === "not_converged"
+        ? `<button class="ghost job-restart" type="button" data-job-id="${job.id}" title="Start from the retained best geometry">Restart</button> `
+        : ""}${job.status === "running" || job.status === "queued"
+        ? `<button class="ghost job-cancel" type="button" data-job-id="${job.id}">Cancel</button> `
+        : ""}<button class="ghost job-delete" type="button" data-job-id="${job.id}" ` +
+      `${job.status === "running" || job.status === "queued" || job.status === "cancelling" ? "disabled " : ""}` +
+      `title="${job.status === "running" || job.status === "queued" || job.status === "cancelling" ? "Project is running" : "Delete project and its files"}" ` +
       `aria-label="Delete ${job.name}">Delete</button></td>`;
     tr.addEventListener("click", () => selectJob(job.id));
     tr.querySelector<HTMLButtonElement>(".job-delete")!.addEventListener("click", (event) => {
       event.stopPropagation();
       void deleteJob(job.id, job.name);
     });
+    tr.querySelector<HTMLButtonElement>(".job-restart")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void restartJob(job.id, job.name);
+    });
+    tr.querySelector<HTMLButtonElement>(".job-cancel")?.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void cancelJob(job.id, job.name);
+    });
     body.appendChild(tr);
   }
 }
 $<HTMLButtonElement>("jobsRefresh").addEventListener("click", refreshJobs);
+
+async function cancelJob(jobId: string, name: string): Promise<void> {
+  if (!window.confirm(`Cancel the running calculation “${name}”?`)) return;
+  const response = await fetch(`/api/jobs/${jobId}/cancel`, { method: "POST" });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    importStatus.textContent = `cancel failed: ${detail?.detail ?? response.status}`;
+    return;
+  }
+  importStatus.textContent = `cancelling ${name}`;
+  await refreshJobs();
+}
+
+async function restartJob(jobId: string, name: string): Promise<void> {
+  if (!window.confirm(`Prepare a restart for “${name}” from its retained best geometry?`)) return;
+  const response = await fetch(`/api/jobs/${jobId}/restart`, { method: "POST" });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null);
+    importStatus.textContent = `restart failed: ${detail?.detail ?? response.status}`;
+    return;
+  }
+  const restarted: { input_text: string; input_name: string; name: string; runner: string | null; threads: number } = await response.json();
+  $<HTMLTextAreaElement>("input").value = restarted.input_text;
+  $<HTMLInputElement>("inputName").value = restarted.input_name;
+  projectName.value = restarted.name;
+  threadsInput.value = String(restarted.threads);
+  if (restarted.runner && runnerSelect.querySelector(`option[value="${restarted.runner}"]`)) {
+    runnerSelect.value = restarted.runner;
+  }
+  runButton.disabled = !runnerSelect.value;
+  runStatus.textContent = runnerSelect.value
+    ? "Restart input prepared from the retained best geometry."
+    : "Choose an OpenQP runner to start the restart.";
+  importStatus.textContent = `restart input prepared for ${name}`;
+  showTab("run");
+  scheduleMemoryAdmission();
+}
 
 async function deleteJob(jobId: string, name: string): Promise<void> {
   if (!window.confirm(`Delete project “${name}” and all of its files? This cannot be undone.`)) return;
@@ -1508,6 +1586,20 @@ $<HTMLSelectElement>("optimizationStepSelect").addEventListener("change", (event
   const index = +(event.target as HTMLSelectElement).value;
   const position = optimizationSteps.findIndex((step) => step.index === index) + 1;
   if (position > 0) selectOptimizationStep(position);
+});
+
+$<HTMLButtonElement>("editResultStructure").addEventListener("click", () => {
+  const position = +$<HTMLInputElement>("resultFrameRange").value;
+  const frame = resultFrames[position - 1];
+  if (!frame) return;
+  clearPdbSource();
+  loadedFrames = [{ label: frame.label || "result structure", atoms: frame.atoms }];
+  $<HTMLInputElement>("frameRange").value = "1";
+  $<HTMLInputElement>("frameRange").max = "1";
+  $<HTMLDivElement>("frameRow").style.display = "none";
+  showFrame(1);
+  builderStatus.textContent = `${frame.label || "result structure"} loaded for editing`;
+  showTab("builder");
 });
 
 async function loadOptimizationHistory(jobId: string): Promise<void> {

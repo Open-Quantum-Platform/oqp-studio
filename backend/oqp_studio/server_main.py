@@ -64,7 +64,7 @@ def serve_stdio() -> None:
             message = json.loads(line)
             result = asyncio.run(_dispatch(message["request"]))
             payload = {"id": message["id"], "result": result}
-        except BaseException as exc:  # report a request error without killing the sidecar
+        except BaseException as exc:  # noqa: BLE001 - report a request error without killing the sidecar
             payload = {"id": message.get("id") if "message" in locals() else None,
                        "error": str(exc)}
         print(json.dumps(payload, separators=(",", ":")), flush=True)

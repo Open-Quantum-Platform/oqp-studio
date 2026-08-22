@@ -167,6 +167,29 @@ def get_job(job_id: str) -> JobInfo:
     return info
 
 
+@app.post("/api/jobs/{job_id}/restart")
+def restart_job(job_id: str) -> dict:
+    try:
+        return manager.restart_input(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="job not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> JobInfo:
+    try:
+        manager.cancel(job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="job not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    info = manager.get(job_id)
+    assert info is not None
+    return info
+
+
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str) -> dict:
     """Permanently remove a completed project and all of its files."""

@@ -230,7 +230,7 @@ def _log_frequencies(lines: list[str], summary: dict) -> None:
     has_raman = "Raman" in lines[header]
     rows = []
     for line in lines[header + 1:]:
-        values = _floats(line[match.end():])
+        values = _floats(line)
         if len(values) < 2 or not line.strip():
             if rows:
                 break

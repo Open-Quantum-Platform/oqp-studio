@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import json
+import os
+import re
+import signal
+import subprocess
 import threading
 import uuid
-from shutil import rmtree
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
+from shutil import rmtree
 
 from pydantic import BaseModel, Field
 
 from .input_files import SUPPORTED_INPUT_SUFFIXES, calculation_log, find_input_file
 from .runners import get_runner
+from .structure_io import parse_xyz
 
 
 def _preferred_root() -> Path:
@@ -23,12 +29,16 @@ def _preferred_root() -> Path:
 # this module must not touch the disk. The directory is created, and any
 # fallback chosen, the first time a job actually needs it.
 JOBS_ROOT = _preferred_root()
+_METADATA_FILE = ".oqp-studio.json"
 
 
 class JobStatus(str, Enum):
     queued = "queued"
     running = "running"
+    cancelling = "cancelling"
+    cancelled = "cancelled"
     done = "done"
+    not_converged = "not_converged"
     failed = "failed"
 
 
@@ -63,6 +73,8 @@ class JobManager:
     def __init__(self) -> None:
         self._jobs: dict[str, JobInfo] = {}
         self._lock = threading.Lock()
+        self._processes: dict[str, subprocess.Popen] = {}
+        self._cancel_requested: set[str] = set()
         self._ready = False
 
     def _ensure(self) -> Path:
@@ -97,13 +109,42 @@ class JobManager:
                 continue
             created = datetime.fromtimestamp(
                 job_dir.stat().st_mtime, timezone.utc).isoformat()
+            metadata = self._metadata(job_dir)
+            diagnostic = self._optimization_diagnostic(job_dir)
             self._jobs[job_dir.name] = JobInfo(
                 id=job_dir.name,
-                name=job_dir.name,
-                status=JobStatus.done,
-                runner="recovered",
-                created_at=created,
+                name=str(metadata.get("name") or self._recovered_name(job_dir)),
+                status=JobStatus.not_converged if diagnostic else JobStatus.done,
+                runner=str(metadata.get("runner") or "recovered"),
+                threads=int(metadata.get("threads") or 1),
+                created_at=str(metadata.get("created_at") or created),
+                error=diagnostic,
             )
+
+    @staticmethod
+    def _metadata(job_dir: Path) -> dict:
+        try:
+            data = json.loads((job_dir / _METADATA_FILE).read_text())
+        except (OSError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    @staticmethod
+    def _recovered_name(job_dir: Path) -> str:
+        input_file = find_input_file(job_dir)
+        if input_file.is_file() and input_file.stem.lower() != "input":
+            return input_file.stem
+        logs = sorted(path for path in job_dir.glob("*.log") if path.name != "job.log")
+        return logs[0].stem if logs else job_dir.name
+
+    @staticmethod
+    def _write_metadata(job_dir: Path, info: JobInfo) -> None:
+        (job_dir / _METADATA_FILE).write_text(json.dumps({
+            "name": info.name,
+            "runner": info.runner,
+            "threads": info.threads,
+            "created_at": info.created_at,
+        }))
 
     def submit(self, req: JobRequest) -> JobInfo:
         from . import host
@@ -134,6 +175,7 @@ class JobManager:
         )
         with self._lock:
             self._jobs[job_id] = info
+        self._write_metadata(job_dir, info)
         threading.Thread(target=self._run, args=(job_id,), daemon=True).start()
         return info
 
@@ -195,18 +237,130 @@ class JobManager:
         )
         with self._lock:
             self._jobs[job_id] = info
+        self._write_metadata(job_dir, info)
         return info
 
     def _run(self, job_id: str) -> None:
         info = self._jobs[job_id]
+        with self._lock:
+            if job_id in self._cancel_requested:
+                info.status = JobStatus.cancelled
+                info.error = "Cancelled by user"
+                return
         info.status = JobStatus.running
         try:
-            exit_code = get_runner(info.runner).run(JOBS_ROOT / job_id, info.threads)
+            exit_code = get_runner(info.runner).run(
+                JOBS_ROOT / job_id, info.threads,
+                on_start=lambda process: self._register_process(job_id, process),
+            )
             info.exit_code = exit_code
-            info.status = JobStatus.done if exit_code == 0 else JobStatus.failed
+            if job_id in self._cancel_requested:
+                info.status = JobStatus.cancelled
+                info.error = "Cancelled by user"
+                return
+            diagnostic = self._optimization_diagnostic(JOBS_ROOT / job_id)
+            if exit_code == 0 and diagnostic:
+                info.status = JobStatus.not_converged
+                info.error = diagnostic
+            else:
+                info.status = JobStatus.done if exit_code == 0 else JobStatus.failed
         except Exception as exc:  # noqa: BLE001 — any failure must land in the job record
             info.error = str(exc)
             info.status = JobStatus.failed
+        finally:
+            with self._lock:
+                self._processes.pop(job_id, None)
+
+    def _register_process(self, job_id: str, process: subprocess.Popen) -> None:
+        with self._lock:
+            self._processes[job_id] = process
+            cancel_requested = job_id in self._cancel_requested
+        if cancel_requested:
+            self._terminate_process(process)
+
+    @staticmethod
+    def _terminate_process(process: subprocess.Popen) -> None:
+        if process.poll() is not None:
+            return
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], check=False,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+
+    def cancel(self, job_id: str) -> None:
+        with self._lock:
+            info = self._jobs.get(job_id)
+            if info is None:
+                raise KeyError(job_id)
+            if info.status not in {JobStatus.queued, JobStatus.running, JobStatus.cancelling}:
+                raise ValueError("only a queued or running calculation can be cancelled")
+            self._cancel_requested.add(job_id)
+            info.status = JobStatus.cancelling
+            process = self._processes.get(job_id)
+        if process is not None:
+            self._terminate_process(process)
+
+    @staticmethod
+    def _optimization_diagnostic(job_dir: Path) -> str | None:
+        """Return the final native-optimizer nonconvergence record, if any."""
+        input_file = find_input_file(job_dir)
+        logs = [calculation_log(input_file)]
+        logs.extend(sorted(path for path in job_dir.glob("*.log") if path not in logs))
+        pattern = re.compile(
+            r"(?:Native optimization.*did not converge|BaekA.*did not converge|"
+            r"Geometry Optimization Has Not Converged|MECP SQP did not converge)",
+            re.IGNORECASE,
+        )
+        matches: list[str] = []
+        for log_file in logs:
+            if not log_file.is_file():
+                continue
+            for line in log_file.read_text(errors="replace").splitlines():
+                if pattern.search(line):
+                    matches.append(" ".join(line.split()))
+        return matches[-1] if matches else None
+
+    def restart_input(self, job_id: str) -> dict:
+        """Prepare canonical restart input from a nonconverged job's opt.xyz."""
+        source = self._jobs.get(job_id)
+        self._ensure()
+        source = source or self._jobs.get(job_id)
+        if source is None:
+            raise KeyError(job_id)
+        if source.status != JobStatus.not_converged:
+            raise ValueError("only a nonconverged geometry job can be restarted")
+        source_dir = JOBS_ROOT / job_id
+        input_file = find_input_file(source_dir)
+        if input_file.suffix.lower() != ".oqp":
+            raise ValueError("restart requires OpenQP canonical .oqp input")
+        geometry_file = source_dir / "opt.xyz"
+        if not geometry_file.is_file():
+            raise ValueError("the retained optimization geometry (opt.xyz) is missing")
+        frames = parse_xyz(geometry_file.read_text(errors="replace"))
+        if not frames or not frames[-1].atoms:
+            raise ValueError("could not read the retained optimization geometry")
+        geometry = "\n".join(
+            f"{element:<2} {x:11.6f} {y:11.6f} {z:11.6f}"
+            for element, x, y, z in frames[-1].atoms
+        )
+        input_text = input_file.read_text(errors="replace")
+        restarted, count = re.subn(
+            r'geom(?:etry)?\s*=\s*""".*?"""',
+            f'geom="""\n{geometry}\n"""',
+            input_text,
+            count=1,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+        if count != 1:
+            raise ValueError("restart requires an inline geom=\"\"\"...\"\"\" block")
+        return {
+            "input_text": restarted,
+            "input_name": input_file.name,
+            "name": f"{source.name} restart",
+            "runner": source.runner if source.runner != "recovered" else None,
+            "threads": source.threads,
+        }
 
     def rebase(self) -> None:
         """Forget the old results directory and read the new one."""
@@ -232,7 +386,7 @@ class JobManager:
             info = self._jobs.get(job_id)
             if info is None:
                 raise KeyError(job_id)
-            if info.status in (JobStatus.queued, JobStatus.running):
+            if info.status in (JobStatus.queued, JobStatus.running, JobStatus.cancelling):
                 raise ValueError("a running calculation cannot be deleted")
             root = JOBS_ROOT.resolve()
             job_dir = (root / job_id).resolve()
@@ -250,7 +404,7 @@ class JobManager:
             (
                 {"name": p.name, "size": p.stat().st_size}
                 for p in job_dir.iterdir()
-                if p.is_file()
+                if p.is_file() and not p.name.startswith(".")
             ),
             key=lambda f: f["name"],
         )
@@ -282,7 +436,7 @@ class JobManager:
         if log_file is None:
             return ""
         data = log_file.read_bytes()
-        return data[-max_bytes:].decode(errors="replace")
+        return data[-max_bytes:].decode(errors="replace").replace("\r\n", "\n").replace("\r", "\n")
 
 
 manager = JobManager()
