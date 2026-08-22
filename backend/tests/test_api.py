@@ -829,6 +829,10 @@ def test_project_comparison_aligns_structures_and_keeps_energy_differences(tmp_p
         )
     monkeypatch.setattr(main, "manager", manager)
     main._summary_cache.clear()
+    main._summary_cache.update({
+        "left": {"energy": {"total": 10.0}},
+        "right": {"energy": {"total": 20.0}},
+    })
 
     response = client.get("/api/comparison?left=left&right=right")
 
@@ -838,6 +842,65 @@ def test_project_comparison_aligns_structures_and_keeps_energy_differences(tmp_p
     assert abs(data["energy_delta_kcal_mol"] - 62.7509474) < 1.0e-9
     assert data["geometry"]["rmsd_angstrom"] < 1.0e-12
     assert data["states"][1]["delta_ev"] > 1.0
+
+
+def test_project_comparison_uses_the_optimized_excited_state_energy():
+    from oqp_studio import main
+
+    summary = {
+        "excited_state_optimized": 1,
+        "energy": {
+            "components": {"total": -76.3},
+            "final_states": {1: -76.05},
+        },
+        "scf": {"energy": -76.3},
+    }
+
+    assert main._summary_energy(summary) == -76.05
+
+
+def test_comparison_geometry_skips_cube_files(tmp_path, monkeypatch):
+    from oqp_studio import main, structure_io
+
+    cube = tmp_path / "density.cube"
+    cube.write_text("cube data that resembles coordinates")
+    monkeypatch.setattr(structure_io, "parse", lambda *_args, **_kwargs: None)
+
+    assert main._comparison_frame([cube]) is None
+
+
+def test_comparison_geometry_does_not_eagerly_read_packed_trajectories(tmp_path, monkeypatch):
+    from oqp_studio import main, structure_io
+
+    trajectory = tmp_path / "dynamics.namd.trj"
+    trajectory.write_bytes(b"packed trajectory")
+
+    def parse(name, data, path=None):
+        assert name == trajectory.name
+        assert data == b""
+        assert path == str(trajectory)
+        return structure_io.Structure("namd.trj", [
+            structure_io.Frame([("H", 0.0, 0.0, 0.0)]),
+        ])
+
+    monkeypatch.setattr(structure_io, "parse", parse)
+
+    assert main._comparison_frame([trajectory]).atoms[0][0] == "H"
+
+
+def test_comparison_geometry_prefers_an_explicit_result_xyz(tmp_path):
+    import json
+
+    from oqp_studio import main
+
+    input_json = tmp_path / "input.json"
+    input_json.write_text(json.dumps({
+        "elements": ["H"], "coordinates": [0.0, 0.0, 0.0], "unit": "angstrom",
+    }))
+    result_xyz = tmp_path / "result.xyz"
+    result_xyz.write_text("1\nfinal\nH 1.0 2.0 3.0\n")
+
+    assert main._comparison_frame([input_json, result_xyz]).atoms[0][1:] == (1.0, 2.0, 3.0)
 
 
 def test_project_comparison_rejects_an_active_calculation(monkeypatch):

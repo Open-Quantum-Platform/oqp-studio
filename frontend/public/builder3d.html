@@ -207,11 +207,11 @@
             const value = finite[i];
             const normalized = maximum === minimum ? 50 : 100 * (value - minimum) / (maximum - minimum);
             const [element, x, y, z] = parts;
-            const label = Math.abs(value) >= 100 ? value.toFixed(0)
-              : Math.abs(value) >= 10 ? value.toFixed(value < 0 ? 0 : 1)
-              : value.toFixed(1);
+            const label = [value.toFixed(1), value.toFixed(0),
+              value.toExponential(0).replace("e+", "e")].find((text) => text.length <= 4);
+            if (!label) return;
             pdb.push("HETATM" + String(i + 1).padStart(5) + " " +
-              label.padStart(4).slice(-4) + " MAP A   1    " +
+              label.padStart(4) + " MAP A   1    " +
               Number(x).toFixed(3).padStart(8) + Number(y).toFixed(3).padStart(8) +
               Number(z).toFixed(3).padStart(8) + "  1.00" + normalized.toFixed(2).padStart(6) +
               "          " + element.toUpperCase().padStart(2));

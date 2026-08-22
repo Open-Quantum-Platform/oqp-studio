@@ -1499,13 +1499,15 @@ $<HTMLButtonElement>("jobsRefresh").addEventListener("click", refreshJobs);
 function syncComparisonProjects(): void {
   const select = $<HTMLSelectElement>("comparisonReference");
   const previous = select.value;
+  const current = listedJobs.find((job) => job.id === selectedJob);
+  const currentIsTerminal = !!current && ["done", "not_converged"].includes(current.status);
   const candidates = listedJobs.filter((job) =>
     job.id !== selectedJob && ["done", "not_converged"].includes(job.status));
   select.innerHTML = '<option value="">Choose a reference…</option>' + candidates.map((job) =>
     `<option value="${escapeMarkup(job.id)}">${escapeMarkup(job.name)}</option>`).join("");
   if (candidates.some((job) => job.id === previous)) select.value = previous;
-  $<HTMLDivElement>("comparisonCard").style.display = selectedJob && candidates.length ? "" : "none";
-  $<HTMLButtonElement>("comparisonRun").disabled = !select.value;
+  $<HTMLDivElement>("comparisonCard").style.display = currentIsTerminal && candidates.length ? "" : "none";
+  $<HTMLButtonElement>("comparisonRun").disabled = !currentIsTerminal || !select.value;
 }
 
 $<HTMLSelectElement>("comparisonReference").addEventListener("change", (event) => {
@@ -1514,17 +1516,21 @@ $<HTMLSelectElement>("comparisonReference").addEventListener("change", (event) =
 
 $<HTMLButtonElement>("comparisonRun").addEventListener("click", async () => {
   const left = $<HTMLSelectElement>("comparisonReference").value;
-  if (!left || !selectedJob) return;
+  const right = selectedJob;
+  if (!left || !right) return;
   const response = await fetch(
-    `/api/comparison?left=${encodeURIComponent(left)}&right=${encodeURIComponent(selectedJob)}`,
+    `/api/comparison?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`,
   );
+  if (right !== selectedJob) return;
   const body = $<HTMLDivElement>("comparisonBody");
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
+    if (right !== selectedJob) return;
     body.innerHTML = `<div class="hint">${escapeMarkup(detail?.detail ?? `comparison failed (${response.status})`)}</div>`;
     return;
   }
   const data = await response.json();
+  if (right !== selectedJob) return;
   const values: [string, string][] = [];
   if (data.left.energy != null) values.push([escapeMarkup(`${data.left.name} energy (Ha)`), fixed(data.left.energy, 8)]);
   if (data.right.energy != null) values.push([escapeMarkup(`${data.right.name} energy (Ha)`), fixed(data.right.energy, 8)]);
@@ -1743,6 +1749,8 @@ function resetAnalysisProject(): void {
   $<HTMLDivElement>("atomicPropertyCard").style.display = "none";
   $<HTMLSelectElement>("atomicProperty").innerHTML = "";
   $<HTMLDivElement>("propertyLegend").style.display = "none";
+  $<HTMLDivElement>("propertyStatus").textContent = "";
+  displayedResultAtomCount = 0;
   atomicProperties.clear();
   $<HTMLDivElement>("surfaceCard").style.display = "none";
   $<HTMLSelectElement>("surfacePrimary").innerHTML = "";
@@ -1926,6 +1934,7 @@ let optimizationSteps: OptimizationStep[] = [];
 let selectedScanGroup = "";
 let resultViewerReady = false;
 let pendingResultMessage: Record<string, unknown> | null = null;
+let displayedResultAtomCount = 0;
 
 function syncSurfaceFiles(): void {
   const options = resultCubeFiles.map((name) =>
@@ -1995,6 +2004,10 @@ window.addEventListener("message", (event) => {
 });
 
 function pushToResultViewer(message: Record<string, unknown>): void {
+  if (typeof message.xyz === "string") {
+    const displayedAtoms = parseAtoms(message.xyz);
+    if (displayedAtoms.length) displayedResultAtomCount = displayedAtoms.length;
+  }
   if ((message.type === "oqp-structure" || message.type === "oqp-normal-mode") &&
       typeof message.xyz === "string") {
     const atoms = parseAtoms(message.xyz);
@@ -2665,6 +2678,19 @@ function renderSummary(data: Summary): void {
 function showAtomicProperty(key = $<HTMLSelectElement>("atomicProperty").value): void {
   const property = atomicProperties.get(key);
   if (!property) return;
+  const status = $<HTMLDivElement>("propertyStatus");
+  if (!displayedResultAtomCount) {
+    status.textContent = "Show a result structure before mapping this property.";
+    $<HTMLDivElement>("propertyLegend").style.display = "none";
+    return;
+  }
+  if (property.values.length !== displayedResultAtomCount) {
+    status.textContent = `This property has ${property.values.length} values, but the displayed ` +
+      `structure has ${displayedResultAtomCount} atoms.`;
+    $<HTMLDivElement>("propertyLegend").style.display = "none";
+    return;
+  }
+  status.textContent = "";
   pushToResultViewer({
     type: "oqp-atomic-property", values: property.values,
     label: property.label, unit: property.unit,

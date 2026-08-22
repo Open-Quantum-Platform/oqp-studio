@@ -728,6 +728,12 @@ def _job_paths(job_id: str) -> list[Path]:
 
 def _summary_energy(summary: dict) -> float | None:
     energy = summary.get("energy", {})
+    optimized_state = summary.get("excited_state_optimized")
+    final_states = energy.get("final_states", {})
+    if optimized_state is not None:
+        value = final_states.get(optimized_state, final_states.get(str(optimized_state)))
+        if value is not None:
+            return float(value)
     value = energy.get("total", energy.get("components", {}).get("total"))
     if value is None:
         value = summary.get("scf", {}).get("energy")
@@ -737,19 +743,31 @@ def _summary_energy(summary: dict) -> float | None:
 def _comparison_frame(paths: list[Path]):
     from . import structure_io
 
-    def rank(path: Path) -> tuple[int, str]:
+    def rank(path: Path) -> tuple[int, str] | None:
         name = path.name.lower()
-        if name == "opt.xyz" or name.endswith((".trj", ".namd.trj")):
+        if name == "opt.xyz" or name.endswith((".namd.trj", ".trj")):
             return (0, name)
-        if name.endswith((".xyz", ".molden", ".json", ".log", ".out")):
+        if name.endswith(".xyz") and any(word in name for word in ("result", "final", "optimized")):
             return (1, name)
-        if name.endswith((".oqp", ".inp", ".pdb")):
+        if name.endswith((".log", ".out")):
             return (2, name)
-        return (3, name)
+        if name.endswith((".molden", ".freq.molden")):
+            return (3, name)
+        if name.endswith(".xyz"):
+            return (4, name)
+        if name.endswith(".json") and any(word in name for word in ("result", "output", "hess")):
+            return (5, name)
+        if name.endswith(".json"):
+            return (6, name)
+        if name.endswith((".oqp", ".inp", ".pdb", ".ent")):
+            return (7, name)
+        return None
 
-    for path in sorted(paths, key=rank):
+    candidates = [(priority, path) for path in paths if (priority := rank(path)) is not None]
+    for _priority, path in sorted(candidates):
         try:
-            structure = structure_io.parse(path.name, path.read_bytes(), path=str(path))
+            payload = b"" if path.name.lower().endswith((".namd.trj", ".trj")) else path.read_bytes()
+            structure = structure_io.parse(path.name, payload, path=str(path))
         except (OSError, ValueError):
             continue
         if structure.frames and structure.frames[-1].atoms:
@@ -798,6 +816,8 @@ def compare_jobs(left: str, right: str) -> dict:
     terminal = {JobStatus.done, JobStatus.not_converged}
     if left_info.status not in terminal or right_info.status not in terminal:
         raise HTTPException(status_code=409, detail="comparison requires completed projects")
+    _summary_cache.pop(left, None)
+    _summary_cache.pop(right, None)
     left_paths = _job_paths(left)
     right_paths = _job_paths(right)
     left_summary = _job_summary(left)
