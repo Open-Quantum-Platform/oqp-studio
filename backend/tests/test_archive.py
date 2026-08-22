@@ -6,7 +6,8 @@ import zipfile
 
 import pytest
 
-from oqp_studio.archive import UnsafeArchiveError, extract_tar, extract_zip
+from oqp_studio.archive import UnsafeArchiveError, extract_tar, extract_zip, validate_links
+from oqp_studio.engine import _strip_single_root
 
 
 def test_zip_extracts_regular_file_and_preserves_executable_bit(tmp_path):
@@ -101,3 +102,24 @@ def test_tar_extracts_regular_files(tmp_path):
         extract_tar(archive, tmp_path)
 
     assert (tmp_path / "openqp" / "README.txt").read_text() == "OpenQP"
+
+
+def test_links_are_revalidated_after_archive_root_is_flattened(tmp_path):
+    staging = tmp_path / "staging"
+    (tmp_path / "settings.json").write_text("outside")
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w") as archive:
+        link = tarfile.TarInfo("wrapper/openqp")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../settings.json"
+        archive.addfile(link)
+    payload.seek(0)
+
+    with tarfile.open(fileobj=payload) as archive:
+        extract_tar(archive, staging)
+    validate_links(staging)
+
+    _strip_single_root(staging)
+    assert (staging / "openqp").is_file()
+    with pytest.raises(UnsafeArchiveError):
+        validate_links(staging)

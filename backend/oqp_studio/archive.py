@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import stat
@@ -47,6 +48,17 @@ def _link_target(root: Path, destination: Path, link_name: str) -> str:
     if target != root and root not in target.parents:
         raise UnsafeArchiveError(f"archive link escapes its destination: {link_name}")
     return normalized
+
+
+def validate_links(root: Path) -> None:
+    """Reject links that escape an extracted tree after it has been rearranged."""
+    root = root.resolve()
+    for current, directory_names, file_names in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        for name in directory_names + file_names:
+            candidate = current_path / name
+            if candidate.is_symlink():
+                _link_target(root, candidate, os.readlink(candidate))
 
 
 def extract_zip(archive: zipfile.ZipFile, target: Path) -> None:

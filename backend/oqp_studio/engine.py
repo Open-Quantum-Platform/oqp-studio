@@ -28,7 +28,7 @@ import zipfile
 from pathlib import Path
 
 from . import network
-from .archive import extract_tar, extract_zip
+from .archive import extract_tar, extract_zip, validate_links
 
 EXECUTABLE = "openqp.exe" if os.name == "nt" else "openqp"
 _VERSION_LINE = re.compile(r"^OpenQP version\s*:\s*(.+)$", re.MULTILINE)
@@ -290,6 +290,7 @@ def install(url: str, progress=None) -> str:
             with tarfile.open(archive) as tarred:
                 extract_tar(tarred, staging)
         _strip_single_root(staging)
+        validate_links(staging)
 
         executable = staging / EXECUTABLE
         if not executable.is_file():
