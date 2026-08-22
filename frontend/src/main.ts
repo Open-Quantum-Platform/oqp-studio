@@ -50,6 +50,12 @@ const VIEWABLE = [".log", ".out", ".txt", ".json", ".molden", ".cube", ".cub",
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+function escapeHtml(value: unknown): string {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]!);
+}
+
 // ---------- tabs ----------
 const nav = $<HTMLElement>("nav");
 document.querySelectorAll<HTMLElement>(".panel").forEach((panel) => {
@@ -1181,9 +1187,13 @@ function renderHostStatus(host: HostStatus): void {
     threadsInput.value = String(physical);
     threadsInitialized = true;
   }
-  $<HTMLDivElement>("hostInfo").innerHTML =
-    `<div>${physical} physical cores · ${host.logical_cores} logical cores</div>` +
-    `<div>RAM: ${gib(host.memory_total_bytes)} installed · ${gib(host.memory_available_bytes)} available now</div>`;
+  const info = $<HTMLDivElement>("hostInfo");
+  info.replaceChildren();
+  const cores = document.createElement("div");
+  cores.textContent = `${physical} physical cores · ${host.logical_cores} logical cores`;
+  const memory = document.createElement("div");
+  memory.textContent = `RAM: ${gib(host.memory_total_bytes)} installed · ${gib(host.memory_available_bytes)} available now`;
+  info.append(cores, memory);
 }
 
 async function checkMemoryAdmission(): Promise<void> {
@@ -1399,17 +1409,38 @@ async function refreshJobs(): Promise<void> {
   for (const job of jobs) {
     const tr = document.createElement("tr");
     if (job.id === selectedJob) tr.className = "sel";
-    tr.innerHTML =
-      `<td>${job.name}</td><td>${job.runner}</td>` +
-      `<td><span class="badge ${job.status}">${job.status}</span></td>` +
-      `<td>${job.status === "not_converged"
-        ? `<button class="ghost job-restart" type="button" data-job-id="${job.id}" title="Start from the retained best geometry">Restart</button> `
-        : ""}${job.status === "running" || job.status === "queued"
-        ? `<button class="ghost job-cancel" type="button" data-job-id="${job.id}">Cancel</button> `
-        : ""}<button class="ghost job-delete" type="button" data-job-id="${job.id}" ` +
-      `${job.status === "running" || job.status === "queued" || job.status === "cancelling" ? "disabled " : ""}` +
-      `title="${job.status === "running" || job.status === "queued" || job.status === "cancelling" ? "Project is running" : "Delete project and its files"}" ` +
-      `aria-label="Delete ${job.name}">Delete</button></td>`;
+    const name = document.createElement("td");
+    name.textContent = job.name;
+    const runner = document.createElement("td");
+    runner.textContent = job.runner;
+    const status = document.createElement("td");
+    const badge = document.createElement("span");
+    badge.classList.add("badge", job.status);
+    badge.textContent = job.status;
+    status.appendChild(badge);
+    const actions = document.createElement("td");
+    const action = (label: string, className: string, title = "") => {
+      const button = document.createElement("button");
+      button.className = `ghost ${className}`;
+      button.type = "button";
+      button.dataset.jobId = job.id;
+      button.textContent = label;
+      button.title = title;
+      actions.append(button, " ");
+      return button;
+    };
+    if (job.status === "not_converged") {
+      action("Restart", "job-restart", "Start from the retained best geometry");
+    }
+    if (job.status === "running" || job.status === "queued") {
+      action("Cancel", "job-cancel");
+    }
+    const running = ["running", "queued", "cancelling"].includes(job.status);
+    const deleteButton = action("Delete", "job-delete",
+      running ? "Project is running" : "Delete project and its files");
+    deleteButton.disabled = running;
+    deleteButton.setAttribute("aria-label", `Delete ${job.name}`);
+    tr.append(name, runner, status, actions);
     tr.addEventListener("click", () => selectJob(job.id));
     tr.querySelector<HTMLButtonElement>(".job-delete")!.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -1596,10 +1627,24 @@ async function selectJob(jobId: string): Promise<void> {
     const url = `/api/jobs/${jobId}/files/${encodeURIComponent(f.name)}`;
     const li = document.createElement("li");
     const viewable = VIEWABLE.some((ext) => f.name.toLowerCase().endsWith(ext));
-    li.innerHTML =
-      `${f.name} <span class="hint">(${f.size.toLocaleString()} B)</span>` +
-      (viewable ? ` <a href="#" data-url="${url}" data-name="${f.name}">view</a>` : "") +
-      ` <a href="${url}" download>download</a>`;
+    li.append(document.createTextNode(`${f.name} `));
+    const size = document.createElement("span");
+    size.className = "hint";
+    size.textContent = `(${f.size.toLocaleString()} B)`;
+    li.appendChild(size);
+    if (viewable) {
+      const view = document.createElement("a");
+      view.href = "#";
+      view.dataset.url = url;
+      view.dataset.name = f.name;
+      view.textContent = "view";
+      li.append(" ", view);
+    }
+    const download = document.createElement("a");
+    download.href = url;
+    download.download = "";
+    download.textContent = "download";
+    li.append(" ", download);
     list.appendChild(li);
   }
   list.querySelectorAll<HTMLAnchorElement>("a[data-url]").forEach((a) => {
@@ -1923,8 +1968,12 @@ async function loadOptimizationHistory(jobId: string): Promise<boolean> {
   optimizationSteps = data.steps;
   resultFrames = data.steps.map((step) => ({ label: step.label, atoms: step.atoms }));
   const select = $<HTMLSelectElement>("optimizationStepSelect");
-  select.innerHTML = data.steps.map((step) =>
-    `<option value="${step.index}">Step ${step.index}</option>`).join("");
+  select.replaceChildren(...data.steps.map((step) => {
+    const option = document.createElement("option");
+    option.value = String(step.index);
+    option.textContent = `Step ${step.index}`;
+    return option;
+  }));
   const slider = $<HTMLInputElement>("resultFrameRange");
   slider.max = String(data.steps.length);
   $<HTMLDivElement>("resultFrameCard").style.display = "";
@@ -2356,7 +2405,7 @@ const THERMO_LABELS: Record<string, string> = {
 function rows(pairs: [string, string][]): string {
   return pairs.length
     ? `<table class="sum">${pairs
-        .map(([k, v]) => `<tr><td class="k">${k}</td><td class="v">${v}</td></tr>`)
+        .map(([k, v]) => `<tr><td class="k">${escapeHtml(k)}</td><td class="v">${escapeHtml(v)}</td></tr>`)
         .join("")}</table>`
     : "";
 }
@@ -2459,8 +2508,8 @@ function renderSummary(data: Summary): void {
   }
 
   if (data.frequencies.length) {
-    const head = `<tr><th>Mode</th><th>cm⁻¹</th><th>IR (${data.units.ir})</th>` +
-      `<th>Raman (${data.units.raman})</th></tr>`;
+    const head = `<tr><th>Mode</th><th>cm⁻¹</th><th>IR (${escapeHtml(data.units.ir)})</th>` +
+      `<th>Raman (${escapeHtml(data.units.raman)})</th></tr>`;
     const body = data.frequencies.map((mode) =>
       `<tr><td class="k">${mode.index}</td><td class="v">${mode.frequency.toFixed(1)}</td>` +
       `<td class="v">${mode.ir != null ? mode.ir.toFixed(3) : "—"}</td>` +
@@ -2481,7 +2530,7 @@ function renderSummary(data: Summary): void {
     });
     const head = "<tr><th>Atom</th><th>σdia</th><th>σpara (u)</th><th>σpara (c)</th><th>σtotal (u)</th><th>σtotal (c)</th></tr>";
     const body = data.nmr.map((row) =>
-      `<tr><td class="k">${row.atom}</td><td class="v">${fixed(row.dia, 3)}</td>` +
+      `<tr><td class="k">${escapeHtml(row.atom)}</td><td class="v">${fixed(row.dia, 3)}</td>` +
       `<td class="v">${fixed(row.para_uncoupled, 3)}</td><td class="v">${fixed(row.para_coupled, 3)}</td>` +
       `<td class="v">${fixed(row.total_uncoupled, 3)}</td><td class="v">${fixed(row.total_coupled, 3)}</td></tr>`,
     ).join("");
@@ -2499,7 +2548,7 @@ function renderSummary(data: Summary): void {
   const charge = Object.entries(data.charges)[0];
   if (charge) {
     const [source, values] = charge;
-    parts.push(`<div class="sum-title">Partial charges (${source})</div>` +
+    parts.push(`<div class="sum-title">Partial charges (${escapeHtml(source)})</div>` +
       rows(values.map((q, i) => [`Atom ${i + 1}`, fixed(q, 4)] as [string, string])));
   }
   for (const [source, values] of Object.entries(data.charges)) {
@@ -2664,16 +2713,16 @@ function drawSpectrum(data: SpectrumData): void {
     `font-size="10" text-anchor="end">${(f * yMax).toPrecision(2)}</text>`).join("");
 
   plot.innerHTML =
-    `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${data.x_label}">` +
+    `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${escapeHtml(data.x_label)}">` +
     `<rect x="${pad.l}" y="${pad.t}" width="${w - pad.l - pad.r}" height="${h - pad.t - pad.b}" ` +
     `fill="none" stroke="var(--border)"/>` +
     sticks +
     `<path d="${path}" fill="none" stroke="var(--accent)" stroke-width="1.6"/>` +
     ticks + yTicks +
     `<text x="${(pad.l + w - pad.r) / 2}" y="${h - 4}" fill="var(--text-dim)" font-size="11" ` +
-    `text-anchor="middle">${data.x_label}</text>` +
+    `text-anchor="middle">${escapeHtml(data.x_label)}</text>` +
     `<text x="12" y="${(h - pad.b + pad.t) / 2}" fill="var(--text-dim)" font-size="11" ` +
-    `text-anchor="middle" transform="rotate(-90 12 ${(h - pad.b + pad.t) / 2})">${data.y_label}</text>` +
+    `text-anchor="middle" transform="rotate(-90 12 ${(h - pad.b + pad.t) / 2})">${escapeHtml(data.y_label)}</text>` +
     `</svg>`;
 
   const shape = specShape.value === "lorentzian" ? "Lorentzian"
@@ -2740,16 +2789,29 @@ window.addEventListener("message", (event) => {
   if (event.data?.type !== "oqp-measure") return;
   const { labels, kind, value, unit } = event.data as
     { labels: string[]; kind: string | null; value: number | null; unit: string | null };
-  const text = labels.length
-    ? `<span class="picked">${labels.join(" – ")}</span>` +
-      (kind ? `<span class="value">${kind}: ${value!.toFixed(3)} ${unit}</span>` : "") +
-      (labels.length < 2 ? '<span class="picked">pick another atom</span>' : "")
-    : "";
   for (const id of ["measurePreview", "measureResult"]) {
     const box = document.getElementById(id);
     if (!box) continue;
-    box.innerHTML = text;
-    box.classList.toggle("on", Boolean(text));
+    box.replaceChildren();
+    if (labels.length) {
+      const picked = document.createElement("span");
+      picked.className = "picked";
+      picked.textContent = labels.join(" – ");
+      box.appendChild(picked);
+      if (kind && value != null) {
+        const result = document.createElement("span");
+        result.className = "value";
+        result.textContent = `${kind}: ${value.toFixed(3)} ${unit ?? ""}`;
+        box.appendChild(result);
+      }
+      if (labels.length < 2) {
+        const prompt = document.createElement("span");
+        prompt.className = "picked";
+        prompt.textContent = "pick another atom";
+        box.appendChild(prompt);
+      }
+    }
+    box.classList.toggle("on", Boolean(labels.length));
   }
 });
 
@@ -2862,7 +2924,7 @@ const COPYRIGHT = "© 2026 Open Quantum, Inc. All rights reserved.";
 $<HTMLButtonElement>("aboutBtn").addEventListener("click", async () => {
   const health = await (await fetch("/api/health")).json();
   menuNote.innerHTML =
-    `<div><strong>OQP Studio ${health.version}</strong></div>` +
+    `<div><strong>OQP Studio ${escapeHtml(health.version)}</strong></div>` +
     `<div>A graphical interface for the Open Quantum Platform.</div>` +
     `<div style="margin-top:.4rem">${COPYRIGHT}</div>`;
 });
@@ -2873,7 +2935,7 @@ $<HTMLButtonElement>("updateBtn").addEventListener("click", async () => {
     const info = await (await fetch("/api/update-check")).json();
     if (info.available) {
       menuNote.innerHTML =
-        `Version ${info.latest} is available (you have ${info.current}).<br />` +
+        `Version ${escapeHtml(info.latest)} is available (you have ${escapeHtml(info.current)}).<br />` +
         `<button class="ghost" id="getUpdate" style="margin-top:.4rem;padding:.3rem .8rem">` +
         `Download and install</button> ` +
         `<a href="#" id="openReleases" style="color:var(--accent)">open the release page</a>`;
@@ -2941,9 +3003,17 @@ function renderWorkspace(status: Workspace): void {
     : status.overridden
       ? "set by OQP_STUDIO_JOBS"
       : "chosen by the app";
-  $<HTMLDivElement>("workspaceStatus").innerHTML =
-    `<div>Writing to <strong>${status.active}</strong></div>` +
-    `<div class="hint">${chosen}</div>`;
+  const summary = $<HTMLDivElement>("workspaceStatus");
+  summary.replaceChildren();
+  const active = document.createElement("div");
+  active.append("Writing to ");
+  const path = document.createElement("strong");
+  path.textContent = status.active;
+  active.appendChild(path);
+  const source = document.createElement("div");
+  source.className = "hint";
+  source.textContent = chosen;
+  summary.append(active, source);
   $<HTMLSpanElement>("executionOutputDir").textContent = status.active;
 }
 
@@ -3075,7 +3145,7 @@ async function installUpdate(): Promise<void> {
     } else if (state.status === "installing") {
       menuNote.textContent = `installing… ${state.detail}`;
     } else if (state.status === "ready") {
-      menuNote.innerHTML =
+      menuNote.textContent =
         "The new version is staged. Quit OQP Studio and it will replace itself " +
         "and reopen automatically.";
       return;

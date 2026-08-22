@@ -1,5 +1,11 @@
 # Handoff
 
+> **Status note (2026-08-22):** This is a historical v0.2.1 handoff, not a
+> description of current `main`. Release v0.2.2 is now published. Open problem
+> 1 was addressed by `d9d51e5` (an unpacked macOS sidecar), and open problem 2
+> by `6092931` (a pinned OpenQP commit in every engine build). Open problem 3
+> remains an upstream follow-up.
+
 Written 2026-08-21 (KST), handing this repository from a remote agent to one
 working on a local Mac. It says where the project stands, what is unfinished,
 and the few conventions that were learned the hard way.

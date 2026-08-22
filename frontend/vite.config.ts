@@ -12,9 +12,9 @@ export default defineConfig({
     commonjsOptions: { transformMixedEsModules: true },
     rollupOptions: {
       input: {
-        main: resolve(__dirname, "index.html"),
-        art: resolve(__dirname, "art.html"),
-        sketcher: resolve(__dirname, "sketcher.html"),
+        main: resolve(import.meta.dirname, "index.html"),
+        art: resolve(import.meta.dirname, "art.html"),
+        sketcher: resolve(import.meta.dirname, "sketcher.html"),
       },
     },
   },

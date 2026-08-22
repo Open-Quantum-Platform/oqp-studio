@@ -26,6 +26,8 @@
     "bundle": {
       "active": true,
       "targets": "all",
+      "copyright": "Copyright (c) Open Quantum Inc. and contributors. All rights reserved.",
+      "licenseFile": "../../LICENSE",
       "externalBin": ["binaries/oqp-studio-backend"],
       "macOS": {
         "files": {

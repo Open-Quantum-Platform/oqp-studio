@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,8 @@ name = "oqp-studio"
 version = "0.2.3"
 description = "Desktop GUI for the Open Quantum Platform: build, run, and visualize OpenQP calculations"
 readme = "README.md"
-license = "MIT"
+license = "LicenseRef-OpenQP-Research-1.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "fastapi>=0.110",

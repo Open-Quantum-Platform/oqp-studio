@@ -21,6 +21,7 @@ import urllib.request
 from pathlib import Path
 
 from . import network
+from .archive import extract_tar, validate_links
 
 APP_NAME = "OQP Studio"
 
@@ -128,10 +129,16 @@ def install_macos(tarball: Path, progress=None) -> str:
     if progress:
         progress("unpacking the new version")
     with tarfile.open(tarball) as archive:
-        archive.extractall(staging)
-    staged = next((path for path in staging.iterdir() if path.suffix == ".app"), None)
-    if staged is None:
-        raise RuntimeError("the downloaded archive contained no application")
+        extract_tar(archive, staging)
+    applications = [path for path in staging.iterdir() if path.suffix == ".app"]
+    if (
+        len(applications) != 1
+        or applications[0].is_symlink()
+        or not applications[0].is_dir()
+    ):
+        raise RuntimeError("the downloaded archive must contain one real application bundle")
+    staged = applications[0]
+    validate_links(staged)
 
     script = staging / "swap.sh"
     script.write_text(SWAP_SCRIPT.format(app=APP_NAME))
