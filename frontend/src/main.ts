@@ -682,10 +682,6 @@ const NAC_DEFAULTS: Record<string, string> = {
   type: "numerical", dx: "1e-4", nproc: "1", bp: "false",
 };
 
-const OPTIMIZER_DEFAULTS: Record<string, string> = {
-  optimizer: "bfgs", step_size: "0.1", trust: "0.2",
-};
-
 const CAS_DEFAULTS: Record<string, string> = {
   active_electrons: "0", active_orbitals: "0", frozen_core: "0",
 };
@@ -723,13 +719,23 @@ function withOptions(driver: string, options: string): string {
 }
 
 function optimisationOptions(): string {
-  return optionList([
+  // MEP is currently native-only; state-specific minima, including MRSF S1,
+  // use geomeTRIC's DLC coordinates by default.
+  const backend = currentWf.key === "mep" ? "oqp" : fieldValue("geomBackend") || "geometric";
+  const options: [string, string][] = [
+    // Concise .oqp accepts the active optimizer controls on the driver.  The
+    // old optimizer/step_size keys selected a retired SciPy path.
+    ["lib", backend],
+    ["coordsys", fieldValue("geomCoordsys") || "dlc"],
+    ["trust", fieldValue("geomTrust")],
     ["maxit", fieldValue("geomMaxit")],
     ["rmsd_grad", fieldValue("rmsdGrad")],
     ["max_grad", fieldValue("maxGrad")],
     ["rmsd_step", fieldValue("rmsdStep")],
     ["max_step", fieldValue("maxStep")],
-  ]);
+  ];
+  if (backend === "geometric") options.splice(3, 0, ["tmax", fieldValue("geomTrustMax")]);
+  return optionList(options);
 }
 
 function pcmModifier(): string {
@@ -898,13 +904,6 @@ function generateInp(): string {
     ], NAC_DEFAULTS);
     if (nacOptions) lines.push(`nac(${nacOptions})`);
   }
-  if (["opt", "exopt", "ts", "irc", "mep", "neb", "meci", "mecp", "tci"].includes(currentWf.key)) {
-    const optimizerOptions = optionList([
-      ["optimizer", fieldValue("geomOptimizer")], ["step_size", fieldValue("geomStepSize")],
-      ["trust", fieldValue("geomTrust")],
-    ], OPTIMIZER_DEFAULTS);
-    if (optimizerOptions) lines.push(`optimize(${optimizerOptions})`);
-  }
   if (["fci", "casci", "casscf", "sa-casscf", "caspt2", "ms-caspt2", "xms-caspt2", "nevpt2", "sc-nevpt2", "mrmp2", "mcqdpt2", "xmcqdpt2"].includes(theory)) {
     const casOptions = optionList([
       ["active_electrons", fieldValue("activeElectrons")], ["active_orbitals", fieldValue("activeOrbitals")],
@@ -1002,7 +1001,7 @@ for (const id of ["theory", "functional", "functionalCustom", "basis", "basisCus
                   "scfMom", "scfMomSwitch", "scfPfon", "scfPfonTemp", "scfPfonCooling", "trahStability", "trahLineSearch", "trahSolver", "trahRadius",
                   "trahMicro", "trahTrialVectors", "trahJdStart", "trahGlobalReduction", "trahLocalReduction", "trahImplementation", "scfInitial", "scfInitialIt",
                   "scfInitialConv", "scfRestart", "scfIncremental", "scfPrescreen", "scfPrescreenK", "scfPrescreenCap", "scfPrescreenTight", "scfVerbose",
-                  "geomOptimizer", "geomStepSize", "geomTrust",
+                  "geomBackend", "geomCoordsys", "geomTrust", "geomTrustMax",
                   "hessDx", "hessNproc", "hessTemperature", "hessSymmetry", "nacType", "nacDx", "nacNproc", "nacBp",
                   "namdState", "namdSteps", "namdDt", "namdDecoherence", "activeElectrons", "activeOrbitals", "frozenCore", "ciRoots", "ciSolver", "ciTolerance", "ciMaxit",
                   "geomMaxit", "rmsdGrad", "maxGrad", "rmsdStep", "maxStep", "energyShift",
