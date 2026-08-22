@@ -2250,6 +2250,7 @@ function hideResultPanels(): void {
 
 async function viewResultFile(jobId: string, name: string, url: string): Promise<void> {
   if (jobId !== selectedJob) return;
+  const requestId = ++volumetricRequestId;
   const lower = name.toLowerCase();
   hideResultPanels();
 
@@ -2271,7 +2272,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       })),
       fetch(`${base}/modes`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
-    if (jobId !== selectedJob) return;
+    if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
     const scfFile = orbitalFiles.find((file) =>
       file.data?.orbitals?.some((orbital: { kind?: string }) => orbital.kind === "scf"));
     if (scfFile) currentMolden = { jobId, name: scfFile.name };
@@ -2339,7 +2340,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
       modeReset.disabled = true;
     }
     if (!allOrbitals.length && !modes?.modes?.length) {
-      await openAsStructure(name, url);
+      await openAsStructure(name, url, requestId);
     } else {
       // Opening a Molden result must show its molecule before the user picks
       // an orbital. Reset map already did this, which is why it exposed the
@@ -2349,19 +2350,26 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
     return;
   }
 
-  await openAsStructure(name, url);
+  await openAsStructure(name, url, requestId);
 }
 
 // Reads the file through the same importer the Builder uses, so OpenQP logs,
 // JSON, inputs and trajectories all render as geometry here.
-async function openAsStructure(name: string, url: string): Promise<void> {
+async function openAsStructure(
+  name: string, url: string, requestId = ++volumetricRequestId,
+): Promise<void> {
   try {
-    const blob = await (await fetch(url)).blob();
+    const response = await fetch(url);
+    if (requestId !== volumetricRequestId) return;
+    const blob = await response.blob();
+    if (requestId !== volumetricRequestId) return;
     const body = new FormData();
     body.append("file", new File([blob], name));
     const res = await fetch("/api/structure/open", { method: "POST", body });
+    if (requestId !== volumetricRequestId) return;
     if (!res.ok) return;
     const data = await res.json();
+    if (requestId !== volumetricRequestId) return;
     resultFrames = data.frames;
     const slider = $<HTMLInputElement>("resultFrameRange");
     slider.max = String(resultFrames.length);

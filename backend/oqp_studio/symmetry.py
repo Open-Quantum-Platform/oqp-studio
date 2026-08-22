@@ -168,6 +168,12 @@ def _operation_powers(label: str, matrix: np.ndarray, matched: tuple[list[int], 
     return result
 
 
+def _matrix_key(matrix: np.ndarray) -> bytes:
+    rounded = np.round(matrix, 7)
+    rounded[np.abs(rounded) < 1.0e-7] = 0.0
+    return rounded.tobytes()
+
+
 def _strict_xyz(xyz: str) -> list[Atom]:
     lines = xyz.splitlines()
     while lines and not lines[0].strip():
@@ -287,7 +293,8 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
             improper_match = _match(symbols, coordinates, improper_matrix, tolerance)
             if improper_match:
                 powers = _operation_powers(
-                    f"S{order}", improper_matrix, improper_match, order, coordinates, tolerance,
+                    f"S{order}", improper_matrix, improper_match,
+                    2 * order if order % 2 else order, coordinates, tolerance,
                 )
                 improper.setdefault(order, []).append((axis, powers[0]))
                 operations.extend(powers)
@@ -346,7 +353,7 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
 
     unique_operations: dict[bytes, Operation] = {}
     for operation in operations:
-        unique_operations.setdefault(np.round(operation.matrix, 7).tobytes(), operation)
+        unique_operations.setdefault(_matrix_key(operation.matrix), operation)
     accepted = list(unique_operations.values())
     aligned = [
         [symbol, float(x), float(y), float(z)]

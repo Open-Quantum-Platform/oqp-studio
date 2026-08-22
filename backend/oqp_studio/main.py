@@ -753,7 +753,7 @@ def _comparison_frame(paths: list[Path]):
 
     def rank(path: Path) -> tuple[int, str] | None:
         name = path.name.lower()
-        if name == "opt.xyz" or name.endswith((".namd.trj", ".trj")):
+        if name in {"opt.xyz", "opt_geom.xyz"} or name.endswith((".namd.trj", ".trj")):
             return (0, name)
         if name.endswith(".xyz") and any(word in name for word in ("result", "final", "optimized")):
             return (1, name)

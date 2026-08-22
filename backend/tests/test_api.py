@@ -885,6 +885,23 @@ def test_comparison_geometry_includes_supported_import_formats(tmp_path, monkeyp
     assert main._comparison_frame([structure]).atoms[0][0] == "C"
 
 
+def test_comparison_geometry_prefers_openqp_optimization_trajectory(tmp_path, monkeypatch):
+    from oqp_studio import main, structure_io
+
+    trajectory = tmp_path / "opt_geom.xyz"
+    log = tmp_path / "calculation.log"
+    trajectory.write_text("trajectory")
+    log.write_text("log")
+
+    def parse(name, *_args, **_kwargs):
+        x = 2.0 if name == trajectory.name else 1.0
+        return structure_io.Structure("test", [structure_io.Frame([("H", x, 0.0, 0.0)])])
+
+    monkeypatch.setattr(structure_io, "parse", parse)
+
+    assert main._comparison_frame([log, trajectory]).atoms[0][1] == 2.0
+
+
 def test_comparison_geometry_does_not_eagerly_read_packed_trajectories(tmp_path, monkeypatch):
     from oqp_studio import main, structure_io
 
@@ -1661,6 +1678,21 @@ def test_symmetry_uses_the_improper_axis_to_classify_d2d():
     )
 
     assert symmetry.analyze(allene, tolerance=0.001)["point_group"] == "D2d"
+
+
+def test_symmetry_closes_odd_improper_rotations_to_twice_the_order():
+    from math import cos, pi, sin
+
+    from oqp_studio import symmetry
+
+    rows = ["B 0.0 0.0 0.0"] + [
+        f"F {cos(index * 2 * pi / 3):.12f} {sin(index * 2 * pi / 3):.12f} 0.0"
+        for index in range(3)
+    ]
+    result = symmetry.analyze("\n".join(rows), tolerance=0.001)
+
+    assert result["point_group"] == "D3h"
+    assert result["operation_count"] == 12
 
 
 def test_symmetry_searches_rotation_orders_above_eight():
