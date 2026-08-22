@@ -403,6 +403,107 @@ def test_arbitrary_ao_density_matrix_can_be_exported_as_cube():
     assert int(cube.splitlines()[2].split()[0]) == 3
 
 
+def test_relaxed_bond_scan_generates_target_geometries_and_native_constraints():
+    from oqp_studio import scans
+    from oqp_studio.structure_io import parse_oqp
+
+    request = scans.BondScanRequest(
+        input_text=(
+            "dft/b3lyp/6-31g*\nopt(maxit=20)\ngeom=\"\"\"\n"
+            "H 0 0 0\nH 0 0 0.7\n\"\"\"\n"
+        ),
+        atom_a=1, atom_b=2, start=0.8, end=1.2, points=3, relaxed=True,
+    )
+
+    group_id, jobs, values = scans.build(request)
+
+    assert len(group_id) == 12
+    assert values == [0.8, 1.0, 1.2]
+    assert len(jobs) == 3
+    for job, target in zip(jobs, values):
+        atoms = parse_oqp(job.input_text)[0].atoms
+        assert abs(atoms[1][3] - target) < 1.0e-12
+        assert job.input_text.count("freeze=distance(1,2)") == 1
+
+
+def test_bond_scan_rejects_an_atom_outside_the_geometry():
+    import pytest
+
+    from oqp_studio import scans
+
+    request = scans.BondScanRequest(
+        input_text="hf/sto-3g\nenergy\ngeom=\"\"\"\nH 0 0 0\n\"\"\"\n",
+        atom_a=1, atom_b=2, start=0.8, end=1.0,
+    )
+    with pytest.raises(ValueError, match="exceeds the 1-atom geometry"):
+        scans.build(request)
+
+
+def test_bond_scan_api_submits_one_persisted_job_per_point(monkeypatch):
+    from datetime import datetime, timezone
+
+    from oqp_studio import jobs, main
+
+    class ScanManager:
+        def __init__(self):
+            self.infos = []
+
+        def submit_batch(self, requests, *, group_id, values, unit):
+            self.infos = [
+                jobs.JobInfo(
+                    id=f"point-{index}", name=request.name, status=jobs.JobStatus.queued,
+                    runner=request.runner, threads=request.threads,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                    group_id=group_id, scan_value=value, scan_unit=unit,
+                )
+                for index, (request, value) in enumerate(zip(requests, values), start=1)
+            ]
+            return self.infos
+
+        def list(self):
+            return self.infos
+
+    scan_manager = ScanManager()
+    monkeypatch.setattr(main, "manager", scan_manager)
+    response = client.post("/api/scans", json={
+        "input_text": "hf/sto-3g\nenergy\ngeom=\"\"\"\nH 0 0 0\nH 0 0 0.7\n\"\"\"\n",
+        "name": "H2 stretch", "atom_a": 1, "atom_b": 2,
+        "start": 0.7, "end": 1.1, "points": 3, "relaxed": False,
+    })
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert len(payload["jobs"]) == 3
+    assert {job["group_id"] for job in payload["jobs"]} == {payload["group_id"]}
+    status = client.get(f"/api/scans/{payload['group_id']}")
+    assert [point["value"] for point in status.json()["points"]] == [0.7, 0.9, 1.1]
+
+
+def test_bond_scan_api_reads_total_energy_from_an_openqp_log(tmp_path, monkeypatch):
+    from datetime import datetime, timezone
+
+    from oqp_studio import jobs, main
+
+    monkeypatch.setattr(jobs, "JOBS_ROOT", tmp_path)
+    job_dir = tmp_path / "scan-point"
+    job_dir.mkdir()
+    (job_dir / "point.oqp").write_text("hf/sto-3g\nenergy\n")
+    (job_dir / "point.log").write_text("TOTAL energy = -1.12000000\n")
+    manager = jobs.JobManager()
+    manager._ready = True
+    manager._jobs["scan-point"] = jobs.JobInfo(
+        id="scan-point", name="H2 0.9 A", status=jobs.JobStatus.done,
+        runner="bundled", created_at=datetime.now(timezone.utc).isoformat(),
+        group_id="energy-scan", scan_value=0.9, scan_unit="A",
+    )
+    monkeypatch.setattr(main, "manager", manager)
+
+    response = client.get("/api/scans/energy-scan")
+
+    assert response.status_code == 200
+    assert response.json()["points"][0]["energy"] == -1.12
+
+
 def test_dyson_strength_is_reported_as_twice_its_occupation(monkeypatch):
     """Molden's Occup field is an OpenQP Dyson strength, not an occupancy."""
     import numpy as np

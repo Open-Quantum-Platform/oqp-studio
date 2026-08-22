@@ -61,6 +61,9 @@ class JobInfo(BaseModel):
     created_at: str
     exit_code: int | None = None
     error: str | None = None
+    group_id: str | None = None
+    scan_value: float | None = None
+    scan_unit: str | None = None
 
 
 class JobManager:
@@ -119,6 +122,9 @@ class JobManager:
                 threads=int(metadata.get("threads") or 1),
                 created_at=str(metadata.get("created_at") or created),
                 error=diagnostic,
+                group_id=metadata.get("group_id"),
+                scan_value=metadata.get("scan_value"),
+                scan_unit=metadata.get("scan_unit"),
             )
 
     @staticmethod
@@ -144,9 +150,13 @@ class JobManager:
             "runner": info.runner,
             "threads": info.threads,
             "created_at": info.created_at,
+            "group_id": info.group_id,
+            "scan_value": info.scan_value,
+            "scan_unit": info.scan_unit,
         }))
 
-    def submit(self, req: JobRequest) -> JobInfo:
+    @staticmethod
+    def _validate_request(req: JobRequest) -> None:
         from . import host
 
         check = host.admission(req.input_text, req.threads)
@@ -156,6 +166,9 @@ class JobManager:
                 f"available {check['memory_available_bytes'] / 1024**3:.1f} GiB. "
                 "Choose a smaller calculation or free memory before running."
             )
+
+    def _prepare(self, req: JobRequest, *, group_id: str | None = None,
+                 scan_value: float | None = None, scan_unit: str | None = None) -> JobInfo:
         self._ensure()
         job_id = uuid.uuid4().hex[:12]
         job_dir = JOBS_ROOT / job_id
@@ -172,12 +185,40 @@ class JobManager:
             runner=req.runner,
             threads=req.threads,
             created_at=datetime.now(timezone.utc).isoformat(),
+            group_id=group_id,
+            scan_value=scan_value,
+            scan_unit=scan_unit,
         )
         with self._lock:
             self._jobs[job_id] = info
         self._write_metadata(job_dir, info)
-        threading.Thread(target=self._run, args=(job_id,), daemon=True).start()
         return info
+
+    def submit(self, req: JobRequest) -> JobInfo:
+        self._validate_request(req)
+        info = self._prepare(req)
+        threading.Thread(target=self._run, args=(info.id,), daemon=True).start()
+        return info
+
+    def submit_batch(self, requests: list[JobRequest], *, group_id: str,
+                     values: list[float], unit: str) -> list[JobInfo]:
+        """Prepare a scan as normal jobs and run its points serially."""
+        if not requests or len(requests) != len(values):
+            raise ValueError("scan requests and coordinate values must have equal non-zero length")
+        for request in requests:
+            self._validate_request(request)
+        infos = [
+            self._prepare(request, group_id=group_id, scan_value=value, scan_unit=unit)
+            for request, value in zip(requests, values)
+        ]
+        threading.Thread(
+            target=self._run_batch, args=([info.id for info in infos],), daemon=True
+        ).start()
+        return infos
+
+    def _run_batch(self, job_ids: list[str]) -> None:
+        for job_id in job_ids:
+            self._run(job_id)
 
     @staticmethod
     def _input_name(req: JobRequest) -> str:
