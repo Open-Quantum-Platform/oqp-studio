@@ -647,7 +647,10 @@
           const replacementTypes = new Set([
             "oqp-structure", "oqp-normal-mode", "oqp-normal-mode-reset", "oqp-file", "oqp-cube",
           ]);
-          const dependentTypes = new Set(["oqp-atomic-property", "oqp-nmr-shielding"]);
+          const dependentTypes = new Set([
+            "oqp-atomic-property", "oqp-nmr-shielding", "oqp-normal-mode-play",
+            "oqp-normal-mode-pause", "oqp-normal-mode-arrows",
+          ]);
           let releaseRender = null;
           if (replacementTypes.has(message.type) || dependentTypes.has(message.type)) {
             const supplied = Number(message.renderGeneration);

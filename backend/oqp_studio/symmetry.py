@@ -88,10 +88,12 @@ def _distinct_rotation_axes(entries: list[tuple[np.ndarray, Operation]],
                             coordinates: np.ndarray, tolerance: float) -> list[np.ndarray]:
     """Cluster axes that cannot be distinguished at the coordinate tolerance."""
     radius = float(np.max(np.linalg.norm(coordinates, axis=1))) if len(coordinates) else 0.0
-    if radius <= tolerance:
+    if radius <= 1.0e-12:
         angular_cosine = -1.0
     else:
-        angular_cosine = cos(min(pi / 2, tolerance / radius))
+        # atan(tolerance / radius) remains meaningful when tolerance exceeds
+        # the molecular radius, without collapsing all directions together.
+        angular_cosine = radius / (radius ** 2 + tolerance ** 2) ** 0.5
     axes: list[np.ndarray] = []
     for axis, _operation in entries:
         if any(abs(float(np.dot(axis, other))) >= angular_cosine for other in axes):

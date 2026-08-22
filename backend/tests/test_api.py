@@ -1726,6 +1726,23 @@ def test_symmetry_clusters_indistinguishable_polyhedral_axes():
     assert len(distinct) == 1
 
 
+def test_symmetry_preserves_exact_polyhedral_axes_when_tolerance_exceeds_radius():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    operation = symmetry.Operation("C3", np.eye(3), [0], 0.0)
+    axes = [
+        np.asarray(values, dtype=float) / np.sqrt(3.0)
+        for values in ((1, 1, 1), (1, -1, -1), (-1, 1, -1), (-1, -1, 1))
+    ]
+    distinct = symmetry._distinct_rotation_axes(
+        [(axis, operation) for axis in axes], np.asarray([[0.4, 0.0, 0.0]]), 0.5,
+    )
+
+    assert len(distinct) == 4
+
+
 def test_symmetry_rejects_oversized_json_before_endpoint_binding():
     from oqp_studio import main
 
