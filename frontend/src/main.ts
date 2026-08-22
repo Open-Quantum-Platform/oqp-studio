@@ -917,7 +917,9 @@ function generateInp(): string {
     ], HESS_DEFAULTS);
     if (hessOptions) lines.push(`hess(${hessOptions})`);
   }
-  if (["nac", "nacme"].includes(currentWf.key)) {
+  // NACME has its own driver contract (including geom2); nac(...) would be a
+  // second primary calculation, not a modifier for NACME.
+  if (currentWf.key === "nac") {
     const nacOptions = optionList([
       ["type", fieldValue("nacType")], ["dx", fieldValue("nacDx")],
       ["nproc", fieldValue("nacNproc")], ["bp", fieldValue("nacBp")],
