@@ -18,8 +18,8 @@ import os
 import platform
 import re
 import shutil
-import subprocess
 import stat
+import subprocess
 import sys
 import tarfile
 import tempfile
