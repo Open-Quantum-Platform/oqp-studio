@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import prod
+from math import isfinite, prod
 
 
 @dataclass
@@ -15,7 +15,10 @@ class Cube:
 
 
 def _number(token: str) -> float:
-    return float(token.replace("D", "E").replace("d", "e"))
+    value = float(token.replace("D", "E").replace("d", "e"))
+    if not isfinite(value):
+        raise ValueError("cube contains a non-finite number")
+    return value
 
 
 def parse(text: str) -> Cube:
@@ -60,6 +63,8 @@ def parse(text: str) -> Cube:
         values = [_number(token)
                   for line in lines[header_end:] for token in line.split()]
     except ValueError as exc:
+        if "non-finite" in str(exc):
+            raise
         raise ValueError("cube grid contains a nonnumeric value") from exc
     if len(values) != expected:
         raise ValueError(f"cube grid has {len(values)} values; expected {expected}")
@@ -70,6 +75,8 @@ def _numeric_header(header: list[str]) -> list[list[float]]:
     try:
         return [[_number(token) for token in line.split()] for line in header[2:]]
     except ValueError as exc:
+        if "non-finite" in str(exc):
+            raise
         raise ValueError("cube geometry header is invalid") from exc
 
 

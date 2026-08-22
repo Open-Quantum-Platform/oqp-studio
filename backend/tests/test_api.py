@@ -1431,6 +1431,21 @@ def test_cube_arithmetic_supports_multiline_datasets_and_fortran_headers():
     assert result.values == [0.5, -2.0]
 
 
+def test_cube_parser_rejects_non_finite_header_and_grid_values():
+    import pytest
+
+    from oqp_studio import cube
+
+    with pytest.raises(ValueError, match="non-finite"):
+        cube.parse(_cube([float("nan"), 1.0]))
+    with pytest.raises(ValueError, match="non-finite"):
+        cube.combine(
+            _cube([1.0, 2.0]).replace("0.000000 0.0 0.0", "Inf 0.0 0.0", 1),
+            _cube([1.0, 2.0]),
+            "sum",
+        )
+
+
 def test_cube_arithmetic_endpoint_uses_only_job_files(tmp_path, monkeypatch):
     from oqp_studio import cube, jobs, main
 
@@ -1534,6 +1549,21 @@ def test_symmetry_searches_rotation_orders_above_eight():
     )
 
     assert symmetry.analyze(ring, tolerance=0.001)["point_group"] == "D10h"
+
+
+def test_symmetry_detects_a_pure_improper_rotation_group():
+    from math import cos, pi, sin
+
+    from oqp_studio import symmetry
+
+    rows = []
+    for symbol, radius, height, offset in (("C", 1.0, 0.4, 0.0), ("H", 1.4, 0.7, 0.37)):
+        for index in range(4):
+            angle = offset + index * pi / 2
+            z = height if index % 2 == 0 else -height
+            rows.append(f"{symbol} {radius * cos(angle):.12f} {radius * sin(angle):.12f} {z:.12f}")
+
+    assert symmetry.analyze("\n".join(rows), tolerance=0.001)["point_group"] == "S4"
 
 
 def test_symmetry_distinguishes_an_icosahedral_structure():

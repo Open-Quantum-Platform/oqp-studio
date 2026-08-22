@@ -181,6 +181,7 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
         operations.append(Operation("i", -np.eye(3), *inversion_match))
 
     rotations: dict[int, list[tuple[np.ndarray, Operation]]] = {}
+    improper: dict[int, list[tuple[np.ndarray, Operation]]] = {}
     for axis in axes:
         for order in _rotation_orders(symbols, coordinates, axis, tolerance):
             matrix = _rotation(axis, 2 * pi / order)
@@ -188,6 +189,12 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
             if matched:
                 operation = Operation(f"C{order}", matrix, *matched)
                 rotations.setdefault(order, []).append((axis, operation))
+                operations.append(operation)
+            improper_matrix = matrix @ (np.eye(3) - 2 * np.outer(axis, axis))
+            improper_match = _match(symbols, coordinates, improper_matrix, tolerance)
+            if improper_match:
+                operation = Operation(f"S{order}", improper_matrix, *improper_match)
+                improper.setdefault(order, []).append((axis, operation))
                 operations.append(operation)
 
     mirrors: list[tuple[np.ndarray, Operation]] = []
@@ -226,8 +233,16 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
                 for normal, _operation in mirrors
             )
             family = "D" if perpendicular_c2 else "C"
-            suffix = "h" if horizontal else "d" if perpendicular_c2 and vertical else "v" if vertical else ""
-            point_group = f"{family}{principal_order}{suffix}"
+            improper_order = max(improper, default=1)
+            if (not perpendicular_c2 and not horizontal and not vertical
+                    and improper_order > principal_order):
+                point_group = f"S{improper_order}"
+            else:
+                suffix = (
+                    "h" if horizontal else "d" if perpendicular_c2 and vertical
+                    else "v" if vertical else ""
+                )
+                point_group = f"{family}{principal_order}{suffix}"
 
     unique_operations: dict[bytes, Operation] = {}
     for operation in operations:

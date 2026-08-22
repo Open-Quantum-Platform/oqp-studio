@@ -1770,9 +1770,9 @@ function resetAnalysisProject(): void {
   $<HTMLSelectElement>("surfaceSides").value = "both";
   $<HTMLInputElement>("surfaceIso").value = "0.05";
   $<HTMLDivElement>("surfaceStatus").textContent = "";
-  surfaceRequestId += 1;
-  excitedMapRequestId += 1;
+  volumetricRequestId += 1;
   activeMapSource = null;
+  activeDirectCube = null;
 }
 
 // What to open of its own accord, best first: a molden file carries orbitals
@@ -1822,7 +1822,6 @@ const excitedTarget = $<HTMLSelectElement>("excitedTarget");
 const excitedMap = $<HTMLSelectElement>("excitedMap");
 const excitedPair = $<HTMLSelectElement>("excitedPair");
 let excitedAnalysis: ExcitedAnalysis | null = null;
-let excitedMapRequestId = 0;
 
 function stateOptions(states: ExcitedAnalysis["states"]): string {
   return states.map((state) =>
@@ -1868,7 +1867,7 @@ async function loadExcitedAnalysis(jobId: string): Promise<void> {
 async function showExcitedMap(): Promise<void> {
   if (!selectedJob || !excitedAnalysis?.available) return;
   const jobId = selectedJob;
-  const requestId = ++excitedMapRequestId;
+  const requestId = ++volumetricRequestId;
   const kind = excitedMap.value;
   const query = new URLSearchParams({
     kind,
@@ -1883,7 +1882,7 @@ async function showExcitedMap(): Promise<void> {
   ]);
   if (!geometryResponse.ok || !cubeResponse.ok) return;
   const [xyz, cube] = await Promise.all([geometryResponse.text(), cubeResponse.text()]);
-  if (requestId !== excitedMapRequestId || jobId !== selectedJob) return;
+  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
   if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
   activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
   activeMapSource = "excited";
@@ -1916,7 +1915,7 @@ excitedMap.addEventListener("change", () => {
 $<HTMLButtonElement>("excitedShow").addEventListener("click", () => void showExcitedMap());
 $<HTMLButtonElement>("excitedReset").addEventListener("click", () => {
   if (!excitedAnalysis) return;
-  excitedMapRequestId += 1;
+  const requestId = ++volumetricRequestId;
   activeMapSource = null;
   if (activeCubeUrl) {
     URL.revokeObjectURL(activeCubeUrl);
@@ -1924,7 +1923,11 @@ $<HTMLButtonElement>("excitedReset").addEventListener("click", () => {
   }
   fetch(`/api/jobs/${selectedJob}/molden/${encodeURIComponent(excitedAnalysis.molden_file)}/geom.xyz`)
     .then((response) => response.text())
-    .then((xyz) => pushToResultViewer({ type: "oqp-structure", xyz }));
+    .then((xyz) => {
+      if (requestId === volumetricRequestId) {
+        pushToResultViewer({ type: "oqp-structure", xyz });
+      }
+    });
 });
 
 const resultFrame = $<HTMLIFrameElement>("resultFrame");
@@ -1955,8 +1958,21 @@ let selectedScanGroup = "";
 let resultViewerReady = false;
 let pendingResultMessage: Record<string, unknown> | null = null;
 let displayedResultAtomCount = 0;
-let surfaceRequestId = 0;
-let activeMapSource: "excited" | "orbital" | "surface" | null = null;
+let volumetricRequestId = 0;
+let activeMapSource: "direct" | "excited" | "orbital" | "surface" | null = null;
+let activeDirectCube: { jobId: string; url: string } | null = null;
+
+function showDirectCube(jobId: string, url: string): void {
+  if (jobId !== selectedJob) return;
+  volumetricRequestId += 1;
+  activeMapSource = "direct";
+  activeDirectCube = { jobId, url };
+  pushOrbitalStyle();
+  pushToResultViewer({
+    type: "oqp-cube", cube: url, iso: 0.05,
+    sides: $<HTMLSelectElement>("moSides").value,
+  });
+}
 
 function syncSurfaceFiles(): void {
   const options = resultCubeFiles.map((name) =>
@@ -1975,7 +1991,7 @@ function syncSurfaceOperation(): void {
 async function showSurface(): Promise<void> {
   if (!selectedJob) return;
   const jobId = selectedJob;
-  const requestId = ++surfaceRequestId;
+  const requestId = ++volumetricRequestId;
   const primary = $<HTMLSelectElement>("surfacePrimary").value;
   const secondary = $<HTMLSelectElement>("surfaceSecondary").value;
   const operation = $<HTMLSelectElement>("surfaceOperation").value;
@@ -1990,21 +2006,21 @@ async function showSurface(): Promise<void> {
   if (operation !== "display") {
     const query = new URLSearchParams({ left: primary, right: secondary, operation });
     const response = await fetch(`/api/jobs/${jobId}/cube-combine?${query}`);
-    if (requestId !== surfaceRequestId || jobId !== selectedJob) return;
+    if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
     if (!response.ok) {
       const detail = await response.json().catch(() => null);
-      if (requestId !== surfaceRequestId || jobId !== selectedJob) return;
+      if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
       status.textContent = detail?.detail ?? `surface operation failed (${response.status})`;
       return;
     }
     const cube = await response.text();
-    if (requestId !== surfaceRequestId || jobId !== selectedJob) return;
+    if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
     if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
     activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
     cubeUrl = activeCubeUrl;
     status.textContent = `${operation}: ${primary} and ${secondary}`;
   }
-  if (requestId !== surfaceRequestId || jobId !== selectedJob) return;
+  if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
   activeMapSource = "surface";
   pushOrbitalStyle();
   pushToResultViewer({
@@ -2034,7 +2050,9 @@ window.addEventListener("message", (event) => {
 
 function pushToResultViewer(message: Record<string, unknown>): void {
   if (["oqp-structure", "oqp-normal-mode", "oqp-atomic-property"].includes(String(message.type))) {
+    volumetricRequestId += 1;
     activeMapSource = null;
+    activeDirectCube = null;
   }
   if (typeof message.xyz === "string") {
     const displayedAtoms = parseAtoms(message.xyz);
@@ -2229,10 +2247,7 @@ async function viewResultFile(jobId: string, name: string, url: string): Promise
   hideResultPanels();
 
   if (lower.endsWith(".cube") || lower.endsWith(".cub")) {
-    pushToResultViewer({
-      type: "oqp-cube", cube: url, iso: 0.05,
-      sides: $<HTMLSelectElement>("moSides").value,
-    });
+    showDirectCube(jobId, url);
     return;
   }
 
@@ -2379,6 +2394,7 @@ function selectedOrbitalSource(): OrbitalSource | null {
 
 function showMoldenStructure(): void {
   if (!currentMolden) return;
+  const requestId = ++volumetricRequestId;
   if (activeCubeUrl) {
     URL.revokeObjectURL(activeCubeUrl);
     activeCubeUrl = null;
@@ -2388,6 +2404,7 @@ function showMoldenStructure(): void {
   fetch(`${base}/geom.xyz`)
     .then((response) => response.text())
     .then((xyz) => {
+      if (requestId !== volumetricRequestId) return;
       if (currentMolden?.jobId !== molden.jobId || currentMolden.name !== molden.name) return;
       pushToResultViewer({ type: "oqp-structure", xyz });
     });
@@ -2402,6 +2419,7 @@ function mapUrl(base: string, source: OrbitalSource | null): string {
 function showOrbital(): void {
   if (!currentMolden) return;
   const molden = currentMolden;
+  const requestId = ++volumetricRequestId;
   pushOrbitalStyle();
   const isOrbital = mapKind.value === "mo" || mapKind.value === "dyson";
   $<HTMLDivElement>("orbitalPick").style.display = isOrbital ? "" : "none";
@@ -2417,6 +2435,7 @@ function showOrbital(): void {
     fetch(mapUrl(base, source)).then((response) => response.text()),
   ])
     .then(([xyz, cube]) => {
+      if (requestId !== volumetricRequestId) return;
       if (currentMolden?.jobId !== molden.jobId || currentMolden.name !== molden.name) return;
       if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
       activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
@@ -2438,7 +2457,9 @@ orbitalReset.addEventListener("click", () => {
 });
 isoRange.addEventListener("change", showOrbital);
 $<HTMLSelectElement>("moSides").addEventListener("change", () => {
-  if (activeMapSource === "excited") void showExcitedMap();
+  if (activeMapSource === "direct" && activeDirectCube) {
+    showDirectCube(activeDirectCube.jobId, activeDirectCube.url);
+  } else if (activeMapSource === "excited") void showExcitedMap();
   else if (activeMapSource === "surface") void showSurface();
   else showOrbital();
 });
