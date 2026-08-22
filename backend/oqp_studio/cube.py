@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from io import TextIOBase
 from math import isfinite, prod
@@ -9,6 +10,7 @@ from math import isfinite, prod
 from .molden import BOHR_TO_ANGSTROM, SYMBOLS
 
 MAX_GRID_VALUES = 2_000_000
+MAX_CUBE_DATASETS = 10_000
 MAX_CUBE_ATOMS = 10_000
 MAX_HEADER_LINE = 16 * 1024
 
@@ -29,6 +31,11 @@ def _number(token: str) -> float:
     if not isfinite(value):
         raise ValueError("cube contains a non-finite number")
     return value
+
+
+def _tokens(line: str):
+    """Yield fields without allocating a list for a potentially huge line."""
+    return (match.group() for match in re.finditer(r"\S+", line))
 
 
 def parse(text: str, *, header_only: bool = False) -> Cube:
@@ -63,41 +70,52 @@ def parse(text: str, *, header_only: bool = False) -> Cube:
     datasets = int(origin_record[4]) if len(origin_record) > 4 else 1
     if datasets < 1:
         raise ValueError("cube dataset count must be positive")
+    voxel_points = prod(shape)
+    if not header_only and datasets > MAX_CUBE_DATASETS:
+        raise ValueError("cube dataset count exceeds the supported grid limit")
+    if not header_only and voxel_points * datasets > MAX_GRID_VALUES:
+        raise ValueError(f"cube grid is limited to {MAX_GRID_VALUES:,} values")
     dataset_id_values: tuple[int, ...] = ()
     if atom_count < 0:
-        dataset_tokens: list[str] = []
+        dataset_ids: int | None = None
+        identifiers: list[int] = []
         while header_end < len(lines):
-            dataset_tokens.extend(lines[header_end].split())
+            tokens = _tokens(lines[header_end])
             header_end += 1
-            if dataset_tokens:
+            for token in tokens:
+                if dataset_ids is None:
+                    try:
+                        dataset_ids = int(token)
+                    except ValueError as exc:
+                        raise ValueError("cube dataset identifiers are invalid") from exc
+                    maximum = min(MAX_CUBE_DATASETS, MAX_GRID_VALUES // voxel_points)
+                    if dataset_ids < 1 or dataset_ids > maximum:
+                        raise ValueError(
+                            "cube dataset identifier count exceeds the supported grid limit"
+                        )
+                    continue
+                if len(identifiers) >= dataset_ids:
+                    raise ValueError("cube dataset identifier record is invalid")
                 try:
-                    dataset_ids = int(dataset_tokens[0])
+                    identifiers.append(int(token))
                 except ValueError as exc:
                     raise ValueError("cube dataset identifiers are invalid") from exc
-                if dataset_ids < 1:
-                    raise ValueError("cube dataset identifiers are invalid")
-                if len(dataset_tokens) >= dataset_ids + 1:
-                    break
-        if not dataset_tokens or len(dataset_tokens) < int(dataset_tokens[0]) + 1:
+            if dataset_ids is not None and len(identifiers) == dataset_ids:
+                break
+        if dataset_ids is None or len(identifiers) < dataset_ids:
             raise ValueError("cube dataset identifier record is incomplete")
-        dataset_ids = int(dataset_tokens[0])
-        if len(dataset_tokens) != dataset_ids + 1:
-            raise ValueError("cube dataset identifier record is invalid")
-        try:
-            dataset_id_values = tuple(int(token) for token in dataset_tokens[1:])
-        except ValueError as exc:
-            raise ValueError("cube dataset identifiers are invalid") from exc
+        dataset_id_values = tuple(identifiers)
         if datasets != 1 and datasets != dataset_ids:
             raise ValueError("cube dataset counts disagree")
         datasets = dataset_ids
     values: list[float] = []
     if not header_only:
-        expected = prod(shape) * datasets
+        expected = voxel_points * datasets
         if expected > MAX_GRID_VALUES:
             raise ValueError(f"cube grid is limited to {MAX_GRID_VALUES:,} values")
         try:
             for line in lines[header_end:]:
-                for token in line.split():
+                for token in _tokens(line):
                     if len(values) >= expected:
                         raise ValueError(
                             f"cube grid has more than the expected {expected} values"

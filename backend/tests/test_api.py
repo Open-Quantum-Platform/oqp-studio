@@ -1545,6 +1545,23 @@ def test_cube_parser_rejects_a_negative_dataset_count():
         cube.parse(malformed)
 
 
+def test_cube_parser_bounds_dataset_identifiers_before_accumulating_them():
+    import pytest
+
+    from oqp_studio import cube
+
+    malformed = (
+        "orbital cube\nvalues\n"
+        "-1 0.0 0.0 0.0\n"
+        "1 1.0 0.0 0.0\n1 0.0 1.0 0.0\n1 0.0 0.0 1.0\n"
+        "1 0.0 0.0 0.0 0.0\n"
+        "999999999 " + "1 " * 10_000 + "\n0.0\n"
+    )
+
+    with pytest.raises(ValueError, match="identifier count exceeds"):
+        cube.parse(malformed)
+
+
 def test_cube_parser_rejects_malformed_geometry_records_and_empty_axes():
     import pytest
 
