@@ -1695,6 +1695,51 @@ def test_symmetry_rejects_rotations_indistinguishable_at_the_tolerance():
     assert not symmetry._moves_coordinates(np.asarray([[7.0, 0.0, 0.0]]), high_order, 0.5)
 
 
+def test_symmetry_retains_atoms_near_an_axis_when_rotation_moves_them():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    coordinates = np.asarray([[0.0, -0.3, 0.0], [0.0, 0.3, 0.0]])
+    orders = symmetry._rotation_orders(
+        ["H", "H"], coordinates, np.asarray([1.0, 0.0, 0.0]), 0.5,
+    )
+
+    assert 2 in orders
+
+
+def test_symmetry_clusters_indistinguishable_polyhedral_axes():
+    import numpy as np
+
+    from oqp_studio import symmetry
+
+    operation = symmetry.Operation("C5", np.eye(3), [0], 0.0)
+    axes = [
+        np.asarray([0.0, 0.0, 1.0]),
+        np.asarray([0.001, 0.0, 0.9999995]),
+        np.asarray([-0.001, 0.0, 0.9999995]),
+    ]
+    distinct = symmetry._distinct_rotation_axes(
+        [(axis, operation) for axis in axes], np.asarray([[1.0, 0.0, 0.0]]), 0.01,
+    )
+
+    assert len(distinct) == 1
+
+
+def test_symmetry_rejects_oversized_json_before_endpoint_binding():
+    from oqp_studio import main
+
+    response = client.post(
+        "/api/symmetry",
+        content=b"x" * (main.MAX_SYMMETRY_REQUEST_BYTES + 1),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["detail"] == "symmetry request body is too large"
+    assert main.MAX_SYMMETRY_REQUEST_BYTES < len(response.request.content)
+
+
 def test_symmetry_assignment_handles_dense_hall_deficiency_without_backtracking():
     import numpy as np
     import pytest

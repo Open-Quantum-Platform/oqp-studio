@@ -581,21 +581,34 @@ type SymmetryResult = {
 let symmetryResult: SymmetryResult | null = null;
 let symmetrySource = "";
 let symmetryPendingSource = "";
+let symmetryTolerance: number | null = null;
+let symmetryPendingTolerance: number | null = null;
 let symmetryRequestId = 0;
+
+function invalidateSymmetry(message: string): void {
+  if (!symmetryResult && !symmetryPendingSource) return;
+  symmetryRequestId += 1;
+  symmetryPendingSource = "";
+  symmetryPendingTolerance = null;
+  symmetryResult = null;
+  symmetrySource = "";
+  symmetryTolerance = null;
+  $<HTMLButtonElement>("symmetryAlign").disabled = true;
+  $<HTMLDivElement>("symmetryResult").textContent = message;
+}
 
 function invalidateSymmetryIfCoordinatesChanged(): void {
   const current = xyzArea.value;
   if (symmetrySource === current || symmetryPendingSource === current) return;
-  if (!symmetryResult && !symmetryPendingSource) return;
-  symmetryRequestId += 1;
-  symmetryPendingSource = "";
-  symmetryResult = null;
-  symmetrySource = "";
-  $<HTMLButtonElement>("symmetryAlign").disabled = true;
-  $<HTMLDivElement>("symmetryResult").textContent = "Coordinates changed; analyze symmetry again.";
+  invalidateSymmetry("Coordinates changed; analyze symmetry again.");
 }
 
 xyzArea.addEventListener("input", invalidateSymmetryIfCoordinatesChanged);
+$<HTMLInputElement>("symmetryTolerance").addEventListener("change", () => {
+  const current = +$<HTMLInputElement>("symmetryTolerance").value;
+  if (symmetryTolerance === current || symmetryPendingTolerance === current) return;
+  invalidateSymmetry("Tolerance changed; analyze symmetry again.");
+});
 
 function pointGroupLabel(value: string): string {
   return value === "Dinfh" ? "D∞h" : value === "Cinfv" ? "C∞v" : value;
@@ -607,6 +620,7 @@ $<HTMLButtonElement>("symmetryAnalyze").addEventListener("click", async () => {
   const source = xyzArea.value;
   const requestId = ++symmetryRequestId;
   symmetryPendingSource = source;
+  symmetryPendingTolerance = tolerance;
   symmetryResult = null;
   $<HTMLButtonElement>("symmetryAlign").disabled = true;
   status.textContent = "Analyzing coordinates…";
@@ -615,20 +629,25 @@ $<HTMLButtonElement>("symmetryAnalyze").addEventListener("click", async () => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ xyz: source, tolerance }),
   });
-  if (requestId !== symmetryRequestId || source !== xyzArea.value) return;
+  if (requestId !== symmetryRequestId || source !== xyzArea.value ||
+      tolerance !== +$<HTMLInputElement>("symmetryTolerance").value) return;
   symmetryPendingSource = "";
+  symmetryPendingTolerance = null;
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
-    if (requestId !== symmetryRequestId || source !== xyzArea.value) return;
+    if (requestId !== symmetryRequestId || source !== xyzArea.value ||
+        tolerance !== +$<HTMLInputElement>("symmetryTolerance").value) return;
     status.textContent = detail?.detail ?? `symmetry analysis failed (${response.status})`;
     return;
   }
   symmetryResult = await response.json();
-  if (requestId !== symmetryRequestId || source !== xyzArea.value) {
+  if (requestId !== symmetryRequestId || source !== xyzArea.value ||
+      tolerance !== +$<HTMLInputElement>("symmetryTolerance").value) {
     symmetryResult = null;
     return;
   }
   symmetrySource = source;
+  symmetryTolerance = tolerance;
   const equivalents = symmetryResult!.equivalent_atoms
     .filter((group) => group.length > 1)
     .map((group) => group.join(", "))
@@ -1987,12 +2006,12 @@ async function showDirectCube(jobId: string, url: string): Promise<void> {
     fetch(`/api/jobs/${jobId}/cube-geometry?name=${encodeURIComponent(name)}`),
   ]);
   if (requestId !== volumetricRequestId || jobId !== selectedJob || !response.ok) return;
-  const cube = await response.text();
+  const cube = await response.blob();
   if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
   const geometry = geometryResponse.ok ? await geometryResponse.json() : null;
   if (requestId !== volumetricRequestId || jobId !== selectedJob) return;
   if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
-  activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
+  activeCubeUrl = URL.createObjectURL(cube);
   pushToResultViewer({
     type: "oqp-cube",
     ...(typeof geometry?.xyz === "string" ? { xyz: geometry.xyz } : {}),
@@ -2042,12 +2061,12 @@ async function showSurface(): Promise<void> {
     status.textContent = detail?.detail ?? `surface operation failed (${response.status})`;
     return;
   }
-  const cube = await response.text();
+  const cube = await response.blob();
   if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   const geometry = geometryResponse.ok ? await geometryResponse.json() : null;
   if (requestId !== volumetricRequestId || !selectionIsCurrent()) return;
   if (activeCubeUrl) URL.revokeObjectURL(activeCubeUrl);
-  activeCubeUrl = URL.createObjectURL(new Blob([cube], { type: "text/plain" }));
+  activeCubeUrl = URL.createObjectURL(cube);
   cubeUrl = activeCubeUrl;
   if (operation !== "display") {
     status.textContent = `${operation}: ${primary} and ${secondary}`;

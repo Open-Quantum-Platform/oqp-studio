@@ -67,15 +67,37 @@ def _rotation(axis: np.ndarray, angle: float) -> np.ndarray:
 
 def _rotation_orders(symbols: list[str], coordinates: np.ndarray, axis: np.ndarray,
                      tolerance: float) -> list[int]:
-    """Orders compatible with every same-element orbit away from this axis."""
-    counts = Counter(
-        symbol for symbol, point in zip(symbols, coordinates)
-        if np.linalg.norm(point - float(np.dot(point, axis)) * axis) > tolerance
-    )
-    multiplicity = 0
-    for count in counts.values():
-        multiplicity = gcd(multiplicity, count)
-    return [order for order in range(2, multiplicity + 1) if multiplicity % order == 0]
+    """Orders compatible with atoms detectably moved by each candidate rotation."""
+    maximum = max(Counter(symbols).values(), default=1)
+    orders: list[int] = []
+    for order in range(2, maximum + 1):
+        matrix = _rotation(axis, 2 * pi / order)
+        displacement = np.linalg.norm(coordinates @ matrix.T - coordinates, axis=1)
+        counts = Counter(
+            symbol for symbol, moved in zip(symbols, displacement) if moved > tolerance
+        )
+        multiplicity = 0
+        for count in counts.values():
+            multiplicity = gcd(multiplicity, count)
+        if multiplicity and multiplicity % order == 0:
+            orders.append(order)
+    return orders
+
+
+def _distinct_rotation_axes(entries: list[tuple[np.ndarray, Operation]],
+                            coordinates: np.ndarray, tolerance: float) -> list[np.ndarray]:
+    """Cluster axes that cannot be distinguished at the coordinate tolerance."""
+    radius = float(np.max(np.linalg.norm(coordinates, axis=1))) if len(coordinates) else 0.0
+    if radius <= tolerance:
+        angular_cosine = -1.0
+    else:
+        angular_cosine = cos(min(pi / 2, tolerance / radius))
+    axes: list[np.ndarray] = []
+    for axis, _operation in entries:
+        if any(abs(float(np.dot(axis, other))) >= angular_cosine for other in axes):
+            continue
+        axes.append(axis)
+    return axes
 
 
 def _face_normal_axes(coordinates: np.ndarray) -> list[np.ndarray]:
@@ -343,11 +365,12 @@ def analyze(xyz: str, tolerance: float = 0.05) -> dict:
         point_group = "Kh"
     elif linear:
         point_group = "Dinfh" if inversion else "Cinfv"
-    elif len(rotations.get(5, [])) >= 6:
+    elif len(_distinct_rotation_axes(rotations.get(5, []), coordinates, tolerance)) >= 6:
         point_group = "Ih" if inversion else "I"
-    elif len(rotations.get(4, [])) >= 3:
+    elif len(_distinct_rotation_axes(rotations.get(4, []), coordinates, tolerance)) >= 3:
         point_group = "Oh" if inversion else "O"
-    elif len(rotations.get(3, [])) >= 4 and len(rotations.get(2, [])) >= 3:
+    elif (len(_distinct_rotation_axes(rotations.get(3, []), coordinates, tolerance)) >= 4
+          and len(_distinct_rotation_axes(rotations.get(2, []), coordinates, tolerance)) >= 3):
         point_group = "Th" if inversion else "Td" if mirrors else "T"
     else:
         principal_order = max(rotations, default=1)

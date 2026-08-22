@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -82,7 +82,63 @@ async def _lifespan(_app: FastAPI):
     yield
 
 
+MAX_SYMMETRY_REQUEST_BYTES = 1_100_000
+
+
+class _SymmetryBodyLimit:
+    """Reject oversized symmetry JSON before FastAPI buffers or binds it."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope.get("path") != "/api/symmetry":
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers", []))
+        content_length = headers.get(b"content-length")
+        if content_length is not None:
+            try:
+                if int(content_length) > MAX_SYMMETRY_REQUEST_BYTES:
+                    await JSONResponse(
+                        {"detail": "symmetry request body is too large"}, status_code=413,
+                    )(scope, receive, send)
+                    return
+            except ValueError:
+                pass
+
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            chunk = message.get("body", b"")
+            total += len(chunk)
+            if total > MAX_SYMMETRY_REQUEST_BYTES:
+                await JSONResponse(
+                    {"detail": "symmetry request body is too large"}, status_code=413,
+                )(scope, receive, send)
+                return
+            chunks.append(chunk)
+            if not message.get("more_body", False):
+                break
+
+        body = b"".join(chunks)
+        delivered = False
+
+        async def replay():
+            nonlocal delivered
+            if delivered:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            delivered = True
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        await self.app(scope, replay, send)
+
+
 app = FastAPI(title="OQP Studio backend", version=__version__, lifespan=_lifespan)
+app.add_middleware(_SymmetryBodyLimit)
 _trace("app built")
 
 # FastAPI reads this as the file field; kept module level so it is not a
